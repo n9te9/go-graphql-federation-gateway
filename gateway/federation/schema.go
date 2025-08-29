@@ -8,7 +8,10 @@ type SuperGraph struct {
 }
 
 type SubGraph struct {
+	Name         string
 	Schema       *schema.Schema
+	SDL          string
+	Host         string
 	IsIntegrated bool
 }
 
@@ -73,16 +76,22 @@ func (sg *SuperGraph) registerExtentions(subGraphSchema *schema.Schema) {
 	for _, inputDefinition := range sg.Schema.Inputs {
 		inputDefinition.Extentions = append(inputDefinition.Extentions, subGraphSchema.Inputs...)
 	}
+
+	for _, directiveDefinition := range sg.Schema.Directives {
+		directiveDefinition.Extentions = append(directiveDefinition.Extentions, subGraphSchema.Directives...)
+	}
 }
 
-func NewSubGraph(src []byte) (*SubGraph, error) {
+func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 	schema, err := schema.NewParser(schema.NewLexer()).Parse(src)
 	if err != nil {
 		return nil, err
 	}
 
 	return &SubGraph{
+		Name:         name,
 		Schema:       schema,
+		Host:         host,
 		IsIntegrated: false,
 	}, nil
 }

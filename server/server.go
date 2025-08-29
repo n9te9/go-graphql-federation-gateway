@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net/http"
 	"os"
@@ -9,15 +10,16 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/n9te9/federation-gateway/gateway"
 	"github.com/n9te9/federation-gateway/registry"
 )
 
-type server struct {
+type registryServer struct {
 	registry        *registry.Registry
 	graphqlEndpoint string
 }
 
-func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+func (s *registryServer) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	switch req.URL.Path {
 	case "/schema/registration":
 		if req.Method == http.MethodPost {
@@ -25,20 +27,24 @@ func (s *server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 		} else {
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	case s.graphqlEndpoint:
-		if req.Method == http.MethodPost {
-			s.registry.AppliedGateway().ServeHTTP(w, req)
-		} else {
-			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		}
 	}
 }
 
-func Run() error {
-	reg := registry.NewRegistry("http://localhost:8080", http.NotFoundHandler())
+type Graph struct {
+	Name string
+	Host string
+	SDL  string
+}
+
+func RunRegistry(graphs []*Graph) error {
+	if len(graphs) == 0 {
+		return errors.New("no graphs provided")
+	}
+
+	reg := registry.NewRegistry()
 	reg.Start()
 
-	s := &server{
+	s := &registryServer{
 		registry:        reg,
 		graphqlEndpoint: "/graphql",
 	}
@@ -65,4 +71,18 @@ func Run() error {
 	}
 
 	return nil
+}
+
+func RunGateway() {
+	gw := gateway.NewGateway()
+	srv := &http.Server{
+		Addr:    ":8081",
+		Handler: gw,
+	}
+
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			log.Fatal(err)
+		}
+	}()
 }

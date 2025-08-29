@@ -2,3 +2,5 @@ github.com/google/go-cmp v0.6.0 h1:ofyhxvXcZhMsU5ulbFiLKl/XBFqE1GSq7atu8tAmTRI=
 github.com/google/go-cmp v0.6.0/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
 github.com/n9te9/goliteql v1.6.9 h1:tD+fto4u8vBJv1bUPLvSMvdgf1Z9XvdoX+GwElF79uw=
 github.com/n9te9/goliteql v1.6.9/go.mod h1:u2c00tmthAVbrV64wisueu3lCDeQ1NE9C4IQz3VUFtA=
+github.com/n9te9/goliteql v1.6.10 h1:tdPY3XOsyfY7uBCgR71GlGJlrMQOr1VycwtrfWT6Quw=
+github.com/n9te9/goliteql v1.6.10/go.mod h1:u2c00tmthAVbrV64wisueu3lCDeQ1NE9C4IQz3VUFtA=

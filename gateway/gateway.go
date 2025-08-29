@@ -1,10 +1,13 @@
 package gateway
 
 import (
-	"log"
+	"encoding/json"
+	"io"
 	"net/http"
 
-	"github.com/n9te9/federation-gateway/federation"
+	"github.com/n9te9/federation-gateway/gateway/federation"
+	"github.com/n9te9/federation-gateway/registry"
+	"github.com/n9te9/goliteql/schema"
 )
 
 type gateway struct {
@@ -13,38 +16,45 @@ type gateway struct {
 
 var _ http.Handler = (*gateway)(nil)
 
-func NewGateway(initializeSchema []byte) (*gateway, error) {
-	superGraph, err := federation.NewSuperGraphFromBytes(initializeSchema)
-	if err != nil {
-		return nil, err
-	}
-
+func NewGateway() *gateway {
 	return &gateway{
-		superGraph: superGraph,
-	}, nil
+		superGraph: &federation.SuperGraph{},
+	}
 }
 
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
+	switch r.URL.Path {
+	case "/schema/register":
+		if r.Method == http.MethodPost {
+			g.RegisterSchema(w, r)
+		}
+	case "/graphql":
+		g.Routing(w, r)
+	}
 }
 
-func GenerateNextGateway(currentGateway http.Handler, src []byte) (http.Handler, error) {
-	cg, ok := currentGateway.(*gateway)
-	if !ok {
-		log.Fatal("currentGateway is not a *gateway")
+func (g *gateway) RegisterSchema(w http.ResponseWriter, r *http.Request) {
+	reqs := make([]*registry.RegistrationGraph, 0)
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
+		return
 	}
 
-	newSubGraph, err := federation.NewSubGraph(src)
+	for _, req := range reqs {
+		s, err := schema.NewParser(schema.NewLexer()).Parse(req.SDL)
+	}
+}
+
+func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	query, err := io.ReadAll(r.Body)
 	if err != nil {
-		return nil, err
+		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+		return
 	}
-	cg.superGraph.SubGraphs = append(cg.superGraph.SubGraphs, newSubGraph)
 
-	nextSuperGraph := new(federation.SuperGraph)
-	nextSuperGraph.Schema = cg.superGraph.Schema
-	nextSuperGraph.SubGraphs = append(nextSuperGraph.SubGraphs, cg.superGraph.SubGraphs...)
-
-	return &gateway{
-		superGraph: nextSuperGraph,
-	}, nil
 }

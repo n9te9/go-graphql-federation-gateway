@@ -1,59 +1,137 @@
 package registry
 
 import (
-	"io"
+	"bytes"
+	"encoding/json"
 	"net/http"
 	"sync/atomic"
 
-	"github.com/n9te9/federation-gateway/gateway"
+	"github.com/n9te9/federation-gateway/registry/federation"
 )
 
 type Registry struct {
-	gatewayEndpoint string
-	currentGateway  atomic.Value
-	nextGateway     atomic.Value
-	registerChan    chan struct{}
+	gatewayHosts     atomic.Value
+	addHostChan      chan string
+	registratedGraph atomic.Value
+	client           *http.Client
 }
 
-func NewRegistry(gatewayEndpoint string, initializeGateway http.Handler) *Registry {
-	currentGateway := atomic.Value{}
-	currentGateway.Store(initializeGateway)
+func NewRegistry() *Registry {
+	gatewayHosts := atomic.Value{}
+	gatewayHosts.Store(make(map[string]struct{}))
+
+	registratedGraph := atomic.Value{}
+	registratedGraph.Store(make([]*federation.SubGraph, 0))
 
 	return &Registry{
-		gatewayEndpoint: gatewayEndpoint,
-		currentGateway:  currentGateway,
-		nextGateway:     atomic.Value{},
-		registerChan:    make(chan struct{}),
+		gatewayHosts:     gatewayHosts,
+		addHostChan:      make(chan string),
+		registratedGraph: registratedGraph,
+		client:           &http.Client{},
 	}
 }
 
 func (r *Registry) Start() {
-	for range r.registerChan {
-		// TODO: implement graceful shut-down for currentGateway.
-		r.currentGateway.Store(r.nextGateway.Load().(http.Handler))
-	}
+	go func() {
+		for host := range r.addHostChan {
+			r.addGatewayHost(host)
+		}
+	}()
 }
 
-func (r *Registry) AppliedGateway() http.Handler {
-	return r.currentGateway.Load().(http.Handler)
+func (r *Registry) addGatewayHost(host string) {
+	gatewayHosts := r.gatewayHosts.Load().(map[string]struct{})
+	gatewayHosts[host] = struct{}{}
+	r.gatewayHosts.Store(gatewayHosts)
+}
+
+type RegistrationGraph struct {
+	Name string `json:"name"`
+	Host string `json:"host"`
+	SDL  string `json:"sdl"`
+}
+
+type RegistrationRequest struct {
+	RegistrationGraphs []RegistrationGraph `json:"registration_graphs"`
+}
+
+func (r *Registry) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	switch req.URL.Path {
+	case "/schema/registration":
+		r.RegisterGateway(w, req)
+	}
 }
 
 func (r *Registry) RegisterGateway(w http.ResponseWriter, req *http.Request) {
-	body, err := io.ReadAll(req.Body)
-	if err != nil {
-		http.Error(w, "Failed to read request body", http.StatusBadRequest)
+	var body RegistrationRequest
+	if err := json.NewDecoder(req.Body).Decode(&body); err != nil {
+		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
 		return
 	}
 
-	currentGateway := r.currentGateway.Load().(http.Handler)
-	nextGateway, err := gateway.GenerateNextGateway(currentGateway, body)
-	if err != nil {
-		http.Error(w, "Failed to generate next gateway", http.StatusInternalServerError)
-		return
+	registratedGraphs := r.registratedGraph.Load().([]*federation.SubGraph)
+	for _, rg := range body.RegistrationGraphs {
+		r.addHostChan <- rg.Host
+		registratedGraphs = append(registratedGraphs, federation.NewSubGraph(rg.Name, rg.Host, rg.SDL))
 	}
 
-	r.nextGateway.Store(nextGateway)
+	gatewayHosts := r.gatewayHosts.Load().(map[string]struct{})
+	for sgHost := range gatewayHosts {
+		reqBody, err := json.Marshal(body)
+		if err != nil {
+			http.Error(w, "Failed to marshal request body", http.StatusInternalServerError)
+			return
+		}
 
-	// register the new gateway
-	r.registerChan <- struct{}{}
+		registerGatewayRequest, err := http.NewRequestWithContext(req.Context(), http.MethodPost, sgHost+"/schema/registration", bytes.NewBuffer(reqBody))
+		if err != nil {
+			http.Error(w, "Failed to create gateway request", http.StatusInternalServerError)
+			return
+		}
+
+		go func() {
+			if _, err := r.client.Do(registerGatewayRequest); err != nil {
+				http.Error(w, "Failed to register gateway", http.StatusInternalServerError)
+				return
+			}
+		}()
+	}
+
+	r.registratedGraph.Store(registratedGraphs)
+}
+
+func (r *Registry) RegisterSubGraph(name, host string, sdl []byte) error {
+	registratedGraphs := r.registratedGraph.Load().([]*federation.SubGraph)
+	registratedGraphs = append(registratedGraphs, federation.NewSubGraph(name, host, string(sdl)))
+	r.registratedGraph.Store(registratedGraphs)
+
+	gatewayHosts := r.gatewayHosts.Load().(map[string]struct{})
+	for sgHost := range gatewayHosts {
+		body := RegistrationRequest{
+			RegistrationGraphs: []RegistrationGraph{
+				{
+					Name: name,
+					Host: host,
+					SDL:  string(sdl),
+				},
+			},
+		}
+		reqBody, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+
+		registerGatewayRequest, err := http.NewRequest(http.MethodPost, sgHost+"/schema/registration", bytes.NewBuffer(reqBody))
+		if err != nil {
+			return err
+		}
+
+		go func() {
+			if _, err := r.client.Do(registerGatewayRequest); err != nil {
+				return
+			}
+		}()
+	}
+
+	return nil
 }
