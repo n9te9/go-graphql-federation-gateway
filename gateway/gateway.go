@@ -1,50 +1,82 @@
 package gateway
 
 import (
-	"log"
+	"encoding/json"
 	"net/http"
 
 	"github.com/n9te9/federation-gateway/federation"
+	"github.com/n9te9/federation-gateway/registry"
+	"github.com/n9te9/goliteql/query"
 )
 
 type gateway struct {
-	superGraph *federation.SuperGraph
+	superGraph  *federation.SuperGraph
+	queryParser *query.Parser
 }
 
 var _ http.Handler = (*gateway)(nil)
 
-func NewGateway(initializeSchema []byte) (*gateway, error) {
-	superGraph, err := federation.NewSuperGraphFromBytes(initializeSchema)
-	if err != nil {
-		return nil, err
-	}
-
+func NewGateway() *gateway {
 	return &gateway{
-		superGraph: superGraph,
-	}, nil
+		superGraph:  &federation.SuperGraph{},
+		queryParser: query.NewParserWithLexer(),
+	}
 }
 
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-
+	switch r.URL.Path {
+	case "/schema/registeration":
+		if r.Method == http.MethodPost {
+			g.RegisterSchema(w, r)
+		}
+	case "/graphql":
+		g.Routing(w, r)
+	}
 }
 
-func GenerateNextGateway(currentGateway http.Handler, src []byte) (http.Handler, error) {
-	cg, ok := currentGateway.(*gateway)
-	if !ok {
-		log.Fatal("currentGateway is not a *gateway")
+func (g *gateway) RegisterSchema(w http.ResponseWriter, r *http.Request) {
+	reqs := make([]*registry.RegistrationGraph, 0)
+	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
+		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
+		return
 	}
 
-	newSubGraph, err := federation.NewSubGraph(src)
+	for _, req := range reqs {
+		subgraph, err := federation.NewSubGraph(req.Name, []byte(req.SDL), req.Host)
+		if err != nil {
+			http.Error(w, "Failed to create subgraph", http.StatusBadRequest)
+			return
+		}
+
+		if err := g.superGraph.Merge(subgraph); err != nil {
+			http.Error(w, "Failed to merge subgraph", http.StatusBadRequest)
+			return
+		}
+	}
+}
+
+type Request struct {
+	Query     []byte                 `json:"query"`
+	Variables map[string]interface{} `json:"variables"`
+}
+
+func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req Request
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
+		return
+	}
+
+	document, err := g.queryParser.Parse(req.Query)
 	if err != nil {
-		return nil, err
+		http.Error(w, "Failed to parse query", http.StatusBadRequest)
+		return
 	}
-	cg.superGraph.SubGraphs = append(cg.superGraph.SubGraphs, newSubGraph)
 
-	nextSuperGraph := new(federation.SuperGraph)
-	nextSuperGraph.Schema = cg.superGraph.Schema
-	nextSuperGraph.SubGraphs = append(nextSuperGraph.SubGraphs, cg.superGraph.SubGraphs...)
-
-	return &gateway{
-		superGraph: nextSuperGraph,
-	}, nil
+	g.superGraph.Execute(r.Context(), document, req.Variables)
 }
