@@ -77,4 +77,6 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Failed to parse query", http.StatusBadRequest)
 		return
 	}
+
+	g.superGraph.Execute(r.Context(), document, req.Variables)
 }

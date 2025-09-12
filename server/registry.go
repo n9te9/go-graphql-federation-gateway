@@ -10,7 +10,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/n9te9/federation-gateway/gateway"
 	"github.com/n9te9/federation-gateway/registry"
 )
 
@@ -71,18 +70,4 @@ func RunRegistry(graphs []*Graph) error {
 	}
 
 	return nil
-}
-
-func RunGateway() {
-	gw := gateway.NewGateway()
-	srv := &http.Server{
-		Addr:    ":8081",
-		Handler: gw,
-	}
-
-	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			log.Fatal(err)
-		}
-	}()
 }

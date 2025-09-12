@@ -14,7 +14,7 @@ type SuperGraph struct {
 	Schema       *schema.Schema
 	SubGraphs    []*SubGraph
 	SDL          string
-	OwnershipMap map[string]string
+	OwnershipMap map[string]schema.ExtendDefinition
 }
 
 type SubGraph struct {
@@ -55,14 +55,22 @@ func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
 	}
 
 	sg.Schema = newSchema
-	sg.OwnershipMap = subGraph.OwnershipMap()
+
+	// initialize ownership map
+	subGraphOwnershipMap := subGraph.OwnershipMap()
+	for k, v := range subGraphOwnershipMap {
+		if _, exists := sg.OwnershipMap[k]; exists {
+			return fmt.Errorf("ownership conflict for field %s", k)
+		}
+
+		sg.OwnershipMap[k] = v
+	}
 
 	return nil
 }
 
-func (sg *SuperGraph) Execute(ctx context.Context, plan *Plan) (any, error) {
+func (sg *SuperGraph) Execute(ctx context.Context, doc *query.Document, variables map[string]interface{}) {
 
-	return nil, nil
 }
 
 type Plan struct {
@@ -112,10 +120,6 @@ func newOwnershipMap(s *schema.Schema) map[string]schema.ExtendDefinition {
 		}
 	}
 	return ownershipMap
-}
-
-func (sg *SubGraph) Plan(document *query.Document) *Plan {
-	return nil
 }
 
 func (sg *SubGraph) OwnershipMap() map[string]schema.ExtendDefinition {
