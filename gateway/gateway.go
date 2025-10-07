@@ -78,5 +78,5 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g.superGraph.Execute(r.Context(), document, req.Variables)
+	g.superGraph.Plan(document)
 }

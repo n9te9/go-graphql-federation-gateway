@@ -2,7 +2,7 @@ package federation
 
 import (
 	"bytes"
-	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -14,7 +14,7 @@ type SuperGraph struct {
 	Schema       *schema.Schema
 	SubGraphs    []*SubGraph
 	SDL          string
-	OwnershipMap map[string]schema.ExtendDefinition
+	OwnershipMap map[string]struct{}
 }
 
 type SubGraph struct {
@@ -30,8 +30,9 @@ type SubGraph struct {
 
 func NewSuperGraph(root *schema.Schema, subGraphs []*SubGraph) *SuperGraph {
 	return &SuperGraph{
-		Schema:    root,
-		SubGraphs: subGraphs,
+		Schema:       root,
+		SubGraphs:    subGraphs,
+		OwnershipMap: newOwnershipMapForSuperGraph(root),
 	}
 }
 
@@ -58,19 +59,61 @@ func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
 
 	// initialize ownership map
 	subGraphOwnershipMap := subGraph.OwnershipMap()
-	for k, v := range subGraphOwnershipMap {
+
+	for k, _ := range subGraphOwnershipMap {
 		if _, exists := sg.OwnershipMap[k]; exists {
 			return fmt.Errorf("ownership conflict for field %s", k)
 		}
 
-		sg.OwnershipMap[k] = v
+		sg.OwnershipMap[k] = struct{}{}
+	}
+
+	sg.SubGraphs = append(sg.SubGraphs, subGraph)
+
+	return nil
+}
+
+func (sg *SuperGraph) GetSubGraphByKey(key string) *SubGraph {
+	for _, subGraph := range sg.SubGraphs {
+		fmt.Println(subGraph.ownershipMap)
+		if _, exist := subGraph.ownershipMap[key]; exist {
+			return subGraph
+		}
 	}
 
 	return nil
 }
 
-func (sg *SuperGraph) Execute(ctx context.Context, doc *query.Document, variables map[string]interface{}) {
+func (sg *SuperGraph) MustGetSubGraphByKey(key string) *SubGraph {
+	subgraph := sg.GetSubGraphByKey(key)
+	if subgraph == nil {
+		panic("SubGraph is nil")
+	}
 
+	return subgraph
+}
+
+func (sg *SuperGraph) Plan(doc *query.Document) (*Plan, error) {
+	op := sg.getOperation(doc)
+	if op != nil {
+		return nil, errors.New("failed to get query document operation")
+	}
+}
+
+func (sg *SuperGraph) getOperation(doc *query.Document) *query.Operation {
+	if q := doc.Operations.GetQuery(); q != nil {
+		return q
+	}
+
+	if m := doc.Operations.GetMutation(); m != nil {
+		return m
+	}
+
+	if s := doc.Operations.GetSubscription(); s != nil {
+		return s
+	}
+
+	return nil
 }
 
 type Plan struct {
@@ -109,6 +152,18 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		ownershipMap:    newOwnershipMap(schema),
 		uniqueKeyFields: newUniqueKeyFields(schema),
 	}, nil
+}
+
+func newOwnershipMapForSuperGraph(s *schema.Schema) map[string]struct{} {
+	ownershipMap := make(map[string]struct{})
+
+	for _, typ := range s.Types {
+		for _, f := range typ.Fields {
+			ownershipMap[fmt.Sprintf("%s.%s", typ.Name, f.Name)] = struct{}{}
+		}
+	}
+
+	return ownershipMap
 }
 
 func newOwnershipMap(s *schema.Schema) map[string]schema.ExtendDefinition {
