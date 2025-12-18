@@ -13,11 +13,10 @@ type ownership struct {
 }
 
 type SubGraph struct {
-	Name         string
-	Schema       *schema.Schema
-	SDL          string
-	Host         string
-	IsIntegrated bool
+	Name   string
+	Schema *schema.Schema
+	SDL    string
+	Host   string
 
 	ownershipMap    map[string]*ownership
 	uniqueKeyFields map[*schema.TypeDefinition][]string
@@ -33,7 +32,6 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		Name:            name,
 		Schema:          schema,
 		Host:            host,
-		IsIntegrated:    false,
 		SDL:             string(src),
 		ownershipMap:    newOwnershipMap(schema),
 		uniqueKeyFields: newUniqueKeyFields(schema),
@@ -50,7 +48,6 @@ func NewRootSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		Name:            name,
 		Schema:          schema,
 		Host:            host,
-		IsIntegrated:    true,
 		SDL:             string(src),
 		ownershipMap:    newOwnershipMapForSuperGraph(schema),
 		uniqueKeyFields: newUniqueKeyFields(schema),
