@@ -29,6 +29,18 @@ type Step struct {
 	Err    error
 }
 
+func (s *Step) Run() {
+	s.Status = Running
+}
+
+func (s *Step) Complete() {
+	s.Status = Completed
+}
+
+func (s *Step) Fail() {
+	s.Status = Failed
+}
+
 func (s *Step) findExtendKeys() [][]string {
 	for _, ext := range s.SubGraph.Schema.Extends {
 		switch t := ext.(type) {
@@ -111,6 +123,16 @@ func (s Steps) findDependedStep(step *Step) []int {
 
 type Plan struct {
 	Steps Steps
+}
+
+func (p *Plan) GetStepByID(id int) *Step {
+	for _, step := range p.Steps {
+		if step.ID == id {
+			return step
+		}
+	}
+
+	return nil
 }
 
 func (p *planner) Plan(doc *query.Document) (*Plan, error) {
