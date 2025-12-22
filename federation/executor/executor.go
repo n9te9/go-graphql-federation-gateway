@@ -11,43 +11,38 @@ type Executor interface {
 }
 
 type executor struct {
-	mutex *sync.Mutex
 }
 
 func NewExecutor() *executor {
-	return &executor{
-		mutex: &sync.Mutex{},
-	}
+	return &executor{}
 }
 
 func (e *executor) Execute(plan *planner.Plan) error {
+	wg := sync.WaitGroup{}
 	for _, step := range plan.Steps {
+		wg.Add(1)
 		go func(step *planner.Step) {
 			e.waitDependStepEnded(plan, step)
 
-			e.mutex.Lock()
 			step.Run()
-			step.Complete()
+			if step.Err != nil {
+				step.Fail()
+			} else {
+				step.Complete()
+			}
+			close(step.Done)
 
-			defer e.mutex.Unlock()
+			wg.Done()
 		}(step)
 	}
+
+	wg.Wait()
 	return nil
 }
 
 func (e *executor) waitDependStepEnded(plan *planner.Plan, step *planner.Step) {
-	for {
-		ended := true
-
-		for _, dependStepID := range step.DependsOn {
-			dependsStep := plan.GetStepByID(dependStepID)
-			if dependsStep.Status == planner.Running {
-				ended = false
-			}
-		}
-
-		if ended {
-			break
-		}
+	for _, dependStepID := range step.DependsOn {
+		dependsStep := plan.GetStepByID(dependStepID)
+		<-dependsStep.Done
 	}
 }

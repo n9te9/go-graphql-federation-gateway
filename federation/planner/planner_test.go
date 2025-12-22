@@ -113,6 +113,7 @@ func TestPlanner_Plan(t *testing.T) {
 						DependsOn: []int{},
 						Status:    planner.Pending,
 						Err:       nil,
+						Done:      make(chan struct{}),
 					},
 					{
 						ID: 1,
@@ -143,6 +144,7 @@ func TestPlanner_Plan(t *testing.T) {
 						DependsOn: []int{0},
 						Status:    planner.Pending,
 						Err:       nil,
+						Done:      make(chan struct{}),
 					},
 				},
 			},
@@ -165,6 +167,7 @@ func TestPlanner_Plan(t *testing.T) {
 				cmpopts.IgnoreUnexported(planner.Step{}, graph.SubGraph{}),
 				cmpopts.IgnoreFields(schema.Schema{}, "Tokens"),
 				cmpopts.IgnoreFields(graph.SubGraph{}, "SDL"),
+				cmpopts.IgnoreFields(planner.Step{}, "Done"),
 			}
 
 			if diff := cmp.Diff(got, tt.want, ignores...); diff != "" {

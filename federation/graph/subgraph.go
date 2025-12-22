@@ -54,6 +54,10 @@ func NewBaseSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 	}, nil
 }
 
+func (s *SubGraph) Run() error {
+	return nil
+}
+
 func newOwnershipMapForSuperGraph(s *schema.Schema) map[string]*ownership {
 	ownershipMap := make(map[string]*ownership)
 

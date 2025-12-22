@@ -50,6 +50,7 @@ func TestExecutor_Execute(t *testing.T) {
 						DependsOn: []int{},
 						Status:    planner.Pending,
 						Err:       nil,
+						Done:      make(chan struct{}),
 					},
 					{
 						ID: 1,
@@ -80,6 +81,7 @@ func TestExecutor_Execute(t *testing.T) {
 						DependsOn: []int{0},
 						Status:    planner.Pending,
 						Err:       nil,
+						Done:      make(chan struct{}),
 					},
 				},
 			},

@@ -24,6 +24,7 @@ type Step struct {
 
 	Selections []*Selection
 	DependsOn  []int
+	Done       chan struct{}
 
 	Status StepStatus
 	Err    error
@@ -209,6 +210,7 @@ func (p *planner) plan(keys []string) *Plan {
 			DependsOn:  nil,
 			Status:     Pending,
 			Err:        nil,
+			Done:       make(chan struct{}),
 		})
 	}
 
