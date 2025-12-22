@@ -11,6 +11,7 @@ type Executor interface {
 }
 
 type executor struct {
+	QueryBuilder
 }
 
 func NewExecutor() *executor {

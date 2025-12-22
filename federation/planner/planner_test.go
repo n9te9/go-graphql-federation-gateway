@@ -97,6 +97,7 @@ func TestPlanner_Plan(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
+							sg.BaseName = "products"
 
 							return sg
 						}(),
