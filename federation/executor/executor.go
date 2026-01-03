@@ -29,9 +29,10 @@ func NewExecutor(httpClient *http.Client) *executor {
 	}
 }
 
-func (e *executor) Execute(ctx context.Context, plan *planner.Plan) error {
+func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[string]any, error) {
 	wg := sync.WaitGroup{}
 	entities := make(Entities, 0)
+	result := make([]map[string]any, 0)
 	for _, step := range plan.Steps {
 		wg.Add(1)
 		go func(step *planner.Step) {
@@ -42,7 +43,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) error {
 				step.Err = err
 			}
 
-			resp, err := e.doRequest(ctx, query, variables)
+			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, variables)
 			if err != nil {
 				step.Err = err
 			}
@@ -55,6 +56,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) error {
 				}
 				entities = append(entities, newEntities...)
 			}
+			result = append(result, resp)
 			e.mux.Unlock()
 
 			close(step.Done)
@@ -64,7 +66,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) error {
 	}
 
 	wg.Wait()
-	return nil
+	return result, nil
 }
 
 func (e *executor) waitDependStepEnded(plan *planner.Plan, step *planner.Step) {
@@ -74,7 +76,7 @@ func (e *executor) waitDependStepEnded(plan *planner.Plan, step *planner.Step) {
 	}
 }
 
-func (e *executor) doRequest(ctx context.Context, query string, variables map[string]any) (map[string]any, error) {
+func (e *executor) doRequest(ctx context.Context, host string, query string, variables map[string]any) (map[string]any, error) {
 	body := map[string]any{
 		"query":     query,
 		"variables": variables,
@@ -85,7 +87,7 @@ func (e *executor) doRequest(ctx context.Context, query string, variables map[st
 		return nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "", bytes.NewBuffer(b))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, host, bytes.NewBuffer(b))
 	if err != nil {
 		return nil, err
 	}

@@ -1,23 +1,74 @@
 package executor_test
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/n9te9/federation-gateway/federation/executor"
 	"github.com/n9te9/federation-gateway/federation/graph"
 	"github.com/n9te9/federation-gateway/federation/planner"
 )
+
+type testRoundTripper func(req *http.Request) (*http.Response, error)
+
+func (t testRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return t(req)
+}
 
 func TestExecutor_Execute(t *testing.T) {
 	tests := []struct {
 		name       string
 		plan       *planner.Plan
 		httpClient *http.Client
+		want       []map[string]any
 		wantErr    error
 	}{
 		{
 			name: "happy case: execute simple plan",
+			httpClient: &http.Client{
+				Transport: testRoundTripper(func(req *http.Request) (*http.Response, error) {
+					switch req.Host {
+					case "product.example.com":
+						reqBody, err := io.ReadAll(req.Body)
+						if err != nil {
+							return nil, err
+						}
+
+						wantQuery := `{"query":"query {\n\t {\n\t\tupc\n\t\tname\n\t}\n}","variables":null}`
+
+						if string(reqBody) != wantQuery {
+							return nil, fmt.Errorf("want query: %s, got: %s", wantQuery, string(reqBody))
+						}
+
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader(`{"data": {"products": [{"upc": "1", "name": "A"}]}}`)),
+						}, nil
+					case "inventory.example.com":
+						reqBody, err := io.ReadAll(req.Body)
+						if err != nil {
+							return nil, err
+						}
+
+						wantQuery := `{"query":"query ($representations: [_Any!]!) {\n\t_entities(representations: $representations) {\n\t\t... on Product {\n\t\t\tweight\n\t\t\theight\n\t\t}\n\t}\n}","variables":{"representations":null}}`
+
+						if string(reqBody) != wantQuery {
+							return nil, fmt.Errorf("want query: %s, got: %s", wantQuery, string(reqBody))
+						}
+
+						return &http.Response{
+							StatusCode: 200,
+							Body:       io.NopCloser(strings.NewReader(`{"data": {"_entities": [{"weight": 10, "height": 20}]}}`)),
+						}, nil
+					}
+
+					return nil, fmt.Errorf("not found")
+				}),
+			},
 			plan: &planner.Plan{
 				Steps: []*planner.Step{
 					{
@@ -32,7 +83,7 @@ func TestExecutor_Execute(t *testing.T) {
 					name: String
 					price: Int
 				}`
-							sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
+							sg, err := graph.NewBaseSubGraph("product", []byte(sdl), "http://product.example.com")
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -62,7 +113,7 @@ func TestExecutor_Execute(t *testing.T) {
 								height: Int
 								price: Int @external
 							}`
-							sg, err := graph.NewSubGraph("hogehoge", []byte(sdl), "")
+							sg, err := graph.NewSubGraph("inventory", []byte(sdl), "http://inventory.example.com")
 							if err != nil {
 								t.Fatal(err)
 							}
@@ -85,6 +136,28 @@ func TestExecutor_Execute(t *testing.T) {
 					},
 				},
 			},
+			want: []map[string]any{
+				{
+					"data": map[string]any{
+						"products": []any{
+							map[string]any{
+								"upc":  "1",
+								"name": "A",
+							},
+						},
+					},
+				},
+				{
+					"data": map[string]any{
+						"_entities": []any{
+							map[string]any{
+								"weight": float64(10),
+								"height": float64(20),
+							},
+						},
+					},
+				},
+			},
 			wantErr: nil,
 		},
 	}
@@ -92,17 +165,20 @@ func TestExecutor_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := executor.NewExecutor(tt.httpClient)
-			gotErr := e.Execute(t.Context(), tt.plan)
-			if gotErr == nil && tt.wantErr == nil {
-				return
-			}
+			got, gotErr := e.Execute(t.Context(), tt.plan)
 
 			if gotErr == nil && tt.wantErr != nil || tt.wantErr == nil && gotErr != nil {
-				t.Fatalf("Planner.Plan() error = %v, wantErr %v", gotErr, tt.wantErr)
+				t.Fatalf("Executor.Execute() error = %v, wantErr %v", gotErr, tt.wantErr)
 			}
 
-			if gotErr.Error() != tt.wantErr.Error() {
-				t.Fatalf("Planner.Plan() error = %v, wantErr %v", gotErr, tt.wantErr)
+			if gotErr != nil && tt.wantErr != nil {
+				if gotErr.Error() != tt.wantErr.Error() {
+					t.Fatalf("Executor.Execute() error = %v, wantErr %v", gotErr, tt.wantErr)
+				}
+			}
+
+			if d := cmp.Diff(got, tt.want); d != "" {
+				t.Fatalf("Executor.Execute() diff: %s", d)
 			}
 		})
 	}
