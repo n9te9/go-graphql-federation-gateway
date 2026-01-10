@@ -183,3 +183,42 @@ func TestExecutor_Execute(t *testing.T) {
 		})
 	}
 }
+
+func TestBuildPath(t *testing.T) {
+	tests := []struct {
+		name string
+		v    any
+		want []executor.Path
+	}{
+		{
+			name: "build path for simple field",
+			v: map[string]any{
+				"products": []any{
+					map[string]any{
+						"upc":  "1",
+						"name": "A",
+					},
+				},
+			},
+			want: []executor.Path{
+				{
+					{FieldName: "products", Index: &[]int{0}[0]},
+					{FieldName: "upc", Index: nil},
+				},
+				{
+					{FieldName: "products", Index: &[]int{0}[0]},
+					{FieldName: "name", Index: nil},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := executor.BuildPaths(tt.v)
+			if d := cmp.Diff(got, tt.want); d != "" {
+				t.Fatalf("BuildPath() diff: %s", d)
+			}
+		})
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"sync"
 
@@ -49,7 +50,14 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[strin
 			}
 
 			e.mux.Lock()
-			if !step.SubGraph.IsBase {
+			if step.SubGraph.IsBase {
+				if resp["data"] == nil {
+					step.Err = errors.New("no data in response")
+					return
+				}
+
+				paths := BuildPaths(resp["data"])
+			} else {
 				newEntities, err := e.fetchEntities(step, resp)
 				if err != nil {
 					step.Err = err
@@ -67,6 +75,85 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) ([]map[strin
 
 	wg.Wait()
 	return result, nil
+}
+
+type PathSegment struct {
+	FieldName string
+	Index     *int
+}
+
+type Path []*PathSegment
+
+func (p Path) Merge() Path {
+	merged := make(Path, 0, len(p))
+
+	length := len(p)
+	for i := 0; i < length; i++ {
+		if i < length-1 && p[i+1].Index != nil {
+			merged = append(merged, &PathSegment{
+				FieldName: p[i].FieldName,
+				Index:     p[i+1].Index,
+			})
+			i++
+		} else {
+			merged = append(merged, p[i])
+		}
+	}
+
+	return merged
+}
+
+func BuildPaths(v any) []Path {
+	var paths Paths
+
+	var walk func(value any, path Path)
+
+	walk = func(value any, path Path) {
+		switch vv := value.(type) {
+		case map[string]any:
+			for field, child := range vv {
+				next := appendPath(path, &PathSegment{FieldName: field})
+				walk(child, next)
+			}
+
+		case []any:
+			for i, elem := range vv {
+				idx := i
+				next := appendPath(path, &PathSegment{Index: &idx})
+				walk(elem, next)
+			}
+
+		default:
+			paths = append(paths, path)
+		}
+	}
+
+	walk(v, Path{})
+	return paths.Merge()
+}
+
+func appendPath(p Path, seg *PathSegment) Path {
+	next := make(Path, len(p), len(p)+1)
+	copy(next, p)
+	return append(next, seg)
+}
+
+type Paths []Path
+
+func (p Paths) Merge() Paths {
+	length := len(p)
+	merged := make(Paths, 0, length)
+	for _, path := range p {
+		merged = append(merged, path.Merge())
+	}
+
+	return merged
+}
+
+type entityRef struct {
+	Typename string
+	Key      map[string]any
+	Path     []PathSegment
 }
 
 func (e *executor) waitDependStepEnded(plan *planner.Plan, step *planner.Step) {
