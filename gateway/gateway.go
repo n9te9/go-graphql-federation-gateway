@@ -4,54 +4,32 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/n9te9/federation-gateway/federation"
-	"github.com/n9te9/federation-gateway/registry"
+	"github.com/n9te9/federation-gateway/federation/graph"
+	"github.com/n9te9/federation-gateway/federation/planner"
 	"github.com/n9te9/goliteql/query"
 )
 
 type gateway struct {
-	superGraph  *federation.SuperGraph
-	queryParser *query.Parser
+	graphQLEndpoint string
+	planner         planner.Planner
+	superGraph      *graph.SuperGraph
+	queryParser     *query.Parser
 }
 
 var _ http.Handler = (*gateway)(nil)
 
-func NewGateway() *gateway {
+func NewGateway(graphQLEndpoint string) *gateway {
 	return &gateway{
-		superGraph:  &federation.SuperGraph{},
-		queryParser: query.NewParserWithLexer(),
+		graphQLEndpoint: graphQLEndpoint,
+		superGraph:      &graph.SuperGraph{},
+		queryParser:     query.NewParserWithLexer(),
 	}
 }
 
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch r.URL.Path {
-	case "/schema/registeration":
-		if r.Method == http.MethodPost {
-			g.RegisterSchema(w, r)
-		}
-	case "/graphql":
+	case g.graphQLEndpoint:
 		g.Routing(w, r)
-	}
-}
-
-func (g *gateway) RegisterSchema(w http.ResponseWriter, r *http.Request) {
-	reqs := make([]*registry.RegistrationGraph, 0)
-	if err := json.NewDecoder(r.Body).Decode(&reqs); err != nil {
-		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
-		return
-	}
-
-	for _, req := range reqs {
-		subgraph, err := federation.NewSubGraph(req.Name, []byte(req.SDL), req.Host)
-		if err != nil {
-			http.Error(w, "Failed to create subgraph", http.StatusBadRequest)
-			return
-		}
-
-		if err := g.superGraph.Merge(subgraph); err != nil {
-			http.Error(w, "Failed to merge subgraph", http.StatusBadRequest)
-			return
-		}
 	}
 }
 
@@ -78,5 +56,5 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	g.superGraph.Execute(r.Context(), document, req.Variables)
+	g.planner.Plan(document)
 }

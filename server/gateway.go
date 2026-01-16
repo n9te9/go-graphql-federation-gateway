@@ -8,7 +8,7 @@ import (
 )
 
 func RunGateway() {
-	gw := gateway.NewGateway()
+	gw := gateway.NewGateway("/graphql")
 	srv := &http.Server{
 		Addr:    ":8081",
 		Handler: gw,
