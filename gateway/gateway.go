@@ -53,6 +53,8 @@ func NewGateway(settings *GatewaySetting) (*gateway, error) {
 	return &gateway{
 		graphQLEndpoint: settings.Endpoint,
 		superGraph:      superGraph,
+		planner:         planner.NewPlanner(superGraph),
+		executor:        executor.NewExecutor(&http.Client{}),
 		queryParser:     query.NewParserWithLexer(),
 	}, nil
 }
@@ -65,7 +67,7 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 type Request struct {
-	Query     []byte         `json:"query"`
+	Query     string         `json:"query"`
 	Variables map[string]any `json:"variables"`
 }
 
@@ -81,7 +83,7 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	document, err := g.queryParser.Parse(req.Query)
+	document, err := g.queryParser.Parse([]byte(req.Query))
 	if err != nil {
 		http.Error(w, "Failed to parse query", http.StatusBadRequest)
 		return

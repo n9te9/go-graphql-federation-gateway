@@ -20,11 +20,19 @@ func NewSuperGraph(allSchemaSrc []byte, subGraphs []*SubGraph) (*SuperGraph, err
 		return nil, err
 	}
 
-	return &SuperGraph{
+	superGraph := &SuperGraph{
 		Schema:       root,
 		SubGraphs:    subGraphs,
 		OwnershipMap: newOwnershipMapForSuperGraph(root),
-	}, nil
+	}
+
+	for _, sg := range subGraphs {
+		if err := superGraph.Merge(sg); err != nil {
+			return nil, err
+		}
+	}
+
+	return superGraph, nil
 }
 
 func NewSuperGraphFromBytes(src []byte) (*SuperGraph, error) {

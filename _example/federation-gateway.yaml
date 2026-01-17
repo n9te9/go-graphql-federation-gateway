@@ -1,6 +1,6 @@
 endpoint: /graphql
 port: 9000
-timeout_duration: "30s"
+timeout_duration: "1s"
 services:
   - name: products
     host: http://localhost:8000

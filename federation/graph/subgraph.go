@@ -31,11 +31,16 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		return nil, err
 	}
 
+	isBase := false
+	if len(schema.Types) > 0 {
+		isBase = true
+	}
+
 	return &SubGraph{
 		Name:            name,
 		Schema:          schema,
 		Host:            host,
-		IsBase:          false,
+		IsBase:          isBase,
 		SDL:             string(src),
 		ownershipMap:    newOwnershipMap(schema),
 		uniqueKeyFields: newUniqueKeyFields(schema),

@@ -43,6 +43,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 	for _, step := range plan.Steps {
 		wg.Add(1)
 		go func(step *planner.Step) {
+			defer wg.Done()
 			e.waitDependStepEnded(plan, step)
 
 			var reqVariables map[string]any
@@ -99,12 +100,14 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 				}
 				stepInputs.Store(step.ID, refs)
 			} else {
-				value, ok := stepInputs.Load(step.DependsOn[0])
-				if ok {
-					currentRefs = value.([]entityRef)
-				} else {
-					step.Err = errors.New("no entity refs for dependent step")
-					close(step.Done)
+				for _, dependStepID := range step.DependsOn {
+					value, ok := stepInputs.Load(dependStepID)
+					if ok {
+						currentRefs = value.([]entityRef)
+					} else {
+						step.Err = errors.New("no entity refs for dependent step")
+						close(step.Done)
+					}
 				}
 
 				entitiesData, ok := resp["data"].(map[string]any)["_entities"].([]any)
@@ -119,7 +122,6 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 			}
 			close(step.Done)
 
-			wg.Done()
 		}(step)
 	}
 
