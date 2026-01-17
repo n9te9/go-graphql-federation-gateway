@@ -14,12 +14,14 @@ type Entities []map[string]any
 
 type queryBuilder struct{}
 
+var _ QueryBuilder = (*queryBuilder)(nil)
+
 func NewQueryBuilder() *queryBuilder {
 	return &queryBuilder{}
 }
 
 func (qb *queryBuilder) Build(step *planner.Step, entities Entities) (string, map[string]any, error) {
-	if step.SubGraph.IsBase {
+	if step.IsBase {
 		return qb.buildBaseQuery(step)
 	}
 

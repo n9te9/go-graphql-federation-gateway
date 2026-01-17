@@ -15,7 +15,7 @@ import (
 )
 
 type Executor interface {
-	Execute(plan *planner.Plan) error
+	Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) (map[string]any, error)
 }
 
 type executor struct {
@@ -23,6 +23,8 @@ type executor struct {
 	httpClient *http.Client
 	mux        sync.Mutex
 }
+
+var _ Executor = (*executor)(nil)
 
 func NewExecutor(httpClient *http.Client) *executor {
 	qb := NewQueryBuilder()
@@ -33,7 +35,7 @@ func NewExecutor(httpClient *http.Client) *executor {
 	}
 }
 
-func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]any, error) {
+func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables map[string]any) (map[string]any, error) {
 	wg := sync.WaitGroup{}
 	entities := make(Entities, 0)
 	stepInputs := sync.Map{}
@@ -41,12 +43,13 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]
 	for _, step := range plan.Steps {
 		wg.Add(1)
 		go func(step *planner.Step) {
+			defer wg.Done()
 			e.waitDependStepEnded(plan, step)
 
-			var variables map[string]any
+			var reqVariables map[string]any
 			var currentRefs []entityRef
 
-			if !step.SubGraph.IsBase {
+			if !step.IsBase {
 				for _, dependStepID := range step.DependsOn {
 					value, ok := stepInputs.Load(dependStepID)
 					if ok {
@@ -63,17 +66,23 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]
 				}
 			}
 
-			query, variables, err := e.QueryBuilder.Build(step, entities)
+			query, builtVariables, err := e.QueryBuilder.Build(step, entities)
 			if err != nil {
 				step.Err = err
 			}
 
-			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, variables)
+			if step.IsBase {
+				reqVariables = vareiables
+			} else {
+				reqVariables = builtVariables
+			}
+
+			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, reqVariables)
 			if err != nil {
 				step.Err = err
 			}
 
-			if step.SubGraph.IsBase {
+			if step.IsBase {
 				if resp["data"] == nil {
 					step.Err = errors.New("no data in response")
 					return
@@ -91,12 +100,14 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]
 				}
 				stepInputs.Store(step.ID, refs)
 			} else {
-				value, ok := stepInputs.Load(step.DependsOn[0])
-				if ok {
-					currentRefs = value.([]entityRef)
-				} else {
-					step.Err = errors.New("no entity refs for dependent step")
-					close(step.Done)
+				for _, dependStepID := range step.DependsOn {
+					value, ok := stepInputs.Load(dependStepID)
+					if ok {
+						currentRefs = value.([]entityRef)
+					} else {
+						step.Err = errors.New("no entity refs for dependent step")
+						close(step.Done)
+					}
 				}
 
 				entitiesData, ok := resp["data"].(map[string]any)["_entities"].([]any)
@@ -111,7 +122,6 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan) (map[string]
 			}
 			close(step.Done)
 
-			wg.Done()
 		}(step)
 	}
 

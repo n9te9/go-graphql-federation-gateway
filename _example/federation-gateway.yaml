@@ -1,0 +1,23 @@
+endpoint: /graphql
+port: 9000
+timeout_duration: "1s"
+services:
+  - name: products
+    host: http://localhost:8000
+    schema: |
+      type Product @key(fields: "upc") {
+        upc: String!
+        name: String
+        price: Float
+      }
+      type Query {
+        products: [Product]
+      }
+  - name: inventory
+    host: http://localhost:8888
+    schema: |
+      extend type Product @key(fields: "upc") {
+        upc: String! @external
+        width: Float
+        height: Float
+      }

@@ -14,12 +14,25 @@ type SuperGraph struct {
 	OwnershipMap map[string]*ownership
 }
 
-func NewSuperGraph(root *schema.Schema, subGraphs []*SubGraph) *SuperGraph {
-	return &SuperGraph{
+func NewSuperGraph(allSchemaSrc []byte, subGraphs []*SubGraph) (*SuperGraph, error) {
+	root, err := schema.NewParser(schema.NewLexer()).Parse(allSchemaSrc)
+	if err != nil {
+		return nil, err
+	}
+
+	superGraph := &SuperGraph{
 		Schema:       root,
-		SubGraphs:    subGraphs,
+		SubGraphs:    make([]*SubGraph, 0, len(subGraphs)),
 		OwnershipMap: newOwnershipMapForSuperGraph(root),
 	}
+
+	for _, sg := range subGraphs {
+		if err := superGraph.Merge(sg); err != nil {
+			return nil, err
+		}
+	}
+
+	return superGraph, nil
 }
 
 func NewSuperGraphFromBytes(src []byte) (*SuperGraph, error) {
@@ -54,7 +67,7 @@ func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
 }
 
 func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
-	subGraphOwnershipMap := subGraph.OwnershipMap()
+	subGraphOwnershipMap := subGraph.OwnershipFieldMap()
 
 	for k, v := range subGraphOwnershipMap {
 		if _, exists := sg.OwnershipMap[k]; exists {
@@ -69,7 +82,7 @@ func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
 
 func (sg *SuperGraph) GetSubGraphByKey(key string) *SubGraph {
 	for _, subGraph := range sg.SubGraphs {
-		if _, exist := subGraph.ownershipMap[key]; exist {
+		if _, exist := subGraph.ownershipFieldMap[key]; exist {
 			return subGraph
 		}
 	}

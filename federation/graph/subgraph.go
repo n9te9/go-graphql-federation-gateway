@@ -19,10 +19,10 @@ type SubGraph struct {
 	Host   string
 
 	BaseName string
-	IsBase   bool
 
-	ownershipMap    map[string]*ownership
-	uniqueKeyFields map[*schema.TypeDefinition][]string
+	OwnershipTypes    map[string]struct{}
+	ownershipFieldMap map[string]*ownership
+	uniqueKeyFields   map[*schema.TypeDefinition][]string
 }
 
 func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
@@ -31,14 +31,19 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		return nil, err
 	}
 
+	ownershipTypes := make(map[string]struct{})
+	for _, typ := range schema.Types {
+		ownershipTypes[string(typ.Name)] = struct{}{}
+	}
+
 	return &SubGraph{
-		Name:            name,
-		Schema:          schema,
-		Host:            host,
-		IsBase:          false,
-		SDL:             string(src),
-		ownershipMap:    newOwnershipMap(schema),
-		uniqueKeyFields: newUniqueKeyFields(schema),
+		Name:              name,
+		Schema:            schema,
+		Host:              host,
+		SDL:               string(src),
+		OwnershipTypes:    ownershipTypes,
+		ownershipFieldMap: newOwnershipMap(schema),
+		uniqueKeyFields:   newUniqueKeyFields(schema),
 	}, nil
 }
 
@@ -49,13 +54,12 @@ func NewBaseSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 	}
 
 	return &SubGraph{
-		Name:            name,
-		Schema:          schema,
-		Host:            host,
-		IsBase:          true,
-		SDL:             string(src),
-		ownershipMap:    newOwnershipMapForSuperGraph(schema),
-		uniqueKeyFields: newUniqueKeyFields(schema),
+		Name:              name,
+		Schema:            schema,
+		Host:              host,
+		SDL:               string(src),
+		ownershipFieldMap: newOwnershipMapForSuperGraph(schema),
+		uniqueKeyFields:   newUniqueKeyFields(schema),
 	}, nil
 }
 
@@ -87,8 +91,8 @@ func newOwnershipMap(s *schema.Schema) map[string]*ownership {
 	return ownershipMap
 }
 
-func (sg *SubGraph) OwnershipMap() map[string]*ownership {
-	return sg.ownershipMap
+func (sg *SubGraph) OwnershipFieldMap() map[string]*ownership {
+	return sg.ownershipFieldMap
 }
 
 func getOwnershipMapKeys(ext schema.ExtendDefinition) map[string]struct{} {

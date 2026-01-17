@@ -1,0 +1,13 @@
+services:
+  product:
+    build: 
+      context: ./product 
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+  inventory:
+    build: 
+      context: ./inventory 
+      dockerfile: Dockerfile
+    ports:
+      - "8888:8888"

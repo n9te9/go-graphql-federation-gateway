@@ -23,6 +23,7 @@ func TestExecutor_Execute(t *testing.T) {
 	tests := []struct {
 		name       string
 		plan       *planner.Plan
+		variables  map[string]any
 		httpClient *http.Client
 		want       map[string]any
 		wantErr    error
@@ -159,7 +160,7 @@ func TestExecutor_Execute(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			e := executor.NewExecutor(tt.httpClient)
-			got, gotErr := e.Execute(t.Context(), tt.plan)
+			got, gotErr := e.Execute(t.Context(), tt.plan, tt.variables)
 
 			if gotErr == nil && tt.wantErr != nil || tt.wantErr == nil && gotErr != nil {
 				t.Fatalf("Executor.Execute() error = %v, wantErr %v", gotErr, tt.wantErr)

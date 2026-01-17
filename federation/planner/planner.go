@@ -22,6 +22,7 @@ type Step struct {
 	ID       int
 	SubGraph *graph.SubGraph
 
+	IsBase     bool
 	Selections []*Selection
 	DependsOn  []int
 	Done       chan struct{}
@@ -131,7 +132,7 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 	}
 	keys := p.generateFieldKeys(schemaTypeDefinition, queryField)
 
-	return p.plan(string(queryField.Name), keys), nil
+	return p.plan(string(queryField.Name), keys, schemaTypeDefinition), nil
 }
 
 func (p *planner) findOperationField(op *query.Operation) (*schema.TypeDefinition, *query.Field, error) {
@@ -171,19 +172,21 @@ type Selection struct {
 	Field      string
 }
 
-func (p *planner) plan(queryName string, keys []string) *Plan {
+func (p *planner) plan(queryName string, keys []string, typeDefinition *schema.TypeDefinition) *Plan {
 	plan := &Plan{
 		Steps: make([]*Step, 0),
 	}
 
 	for _, subGraph := range p.superGraph.SubGraphs {
-		if subGraph.IsBase {
+		isBase := false
+		if _, ok := subGraph.OwnershipTypes[string(typeDefinition.Name)]; ok {
+			isBase = true
 			subGraph.BaseName = queryName
 		}
 
 		sels := make([]*Selection, 0)
 		for _, key := range keys {
-			if _, exist := subGraph.OwnershipMap()[key]; exist {
+			if _, exist := subGraph.OwnershipFieldMap()[key]; exist {
 				var parentType, field string
 				parts := strings.SplitN(key, ".", 2)
 				parentType = parts[0]
@@ -199,6 +202,7 @@ func (p *planner) plan(queryName string, keys []string) *Plan {
 			SubGraph:   subGraph,
 			Selections: sels,
 			DependsOn:  nil,
+			IsBase:     isBase,
 			Err:        nil,
 			Done:       make(chan struct{}),
 		})
