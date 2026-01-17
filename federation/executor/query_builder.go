@@ -14,6 +14,8 @@ type Entities []map[string]any
 
 type queryBuilder struct{}
 
+var _ QueryBuilder = (*queryBuilder)(nil)
+
 func NewQueryBuilder() *queryBuilder {
 	return &queryBuilder{}
 }
