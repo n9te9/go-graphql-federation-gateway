@@ -25,7 +25,7 @@ func main() {
 		if strings.Contains(bodyStr, "_entities") {
 			w.Header().Set("Content-Type", "application/json")
 			// テストで期待されているレスポンス
-			response := `{"data": {"_entities": [{"weight": 10.0, "height": 20.0}, null]}}`
+			response := `{"data": {"_entities": [{"width": 10.0, "height": 20.0}, null]}}`
 			w.Write([]byte(response))
 			log.Println("Responded to _entities query")
 			return

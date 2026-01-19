@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/n9te9/federation-gateway/federation/graph"
 	"github.com/n9te9/federation-gateway/federation/planner"
 	"github.com/n9te9/goliteql/schema"
 )
@@ -20,16 +21,19 @@ type Executor interface {
 
 type executor struct {
 	QueryBuilder
+
+	superGraph *graph.SuperGraph
 	httpClient *http.Client
 	mux        sync.Mutex
 }
 
 var _ Executor = (*executor)(nil)
 
-func NewExecutor(httpClient *http.Client) *executor {
+func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph) *executor {
 	qb := NewQueryBuilder()
 	return &executor{
 		QueryBuilder: qb,
+		superGraph:   superGraph,
 		httpClient:   httpClient,
 		mux:          sync.Mutex{},
 	}
@@ -126,7 +130,8 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 	}
 
 	wg.Wait()
-	return mergedResponse, nil
+
+	return e.pruneResponse(mergedResponse, plan.RootSelections)
 }
 
 func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, entitiesData []any) error {
@@ -156,6 +161,58 @@ func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, 
 	}
 
 	return nil
+}
+
+func (e *executor) pruneResponse(resp map[string]any, rootSelections []*planner.Selection) (map[string]any, error) {
+	data, ok := resp["data"].(map[string]any)
+	if !ok {
+		return nil, errors.New("no data in response")
+	}
+
+	var prune func(obj any, sels []*planner.Selection) any
+
+	prune = func(obj any, sels []*planner.Selection) any {
+		if obj == nil {
+			return nil
+		}
+
+		if len(sels) == 0 {
+			return obj
+		}
+
+		switch v := obj.(type) {
+		case map[string]any:
+			prunedObj := make(map[string]any)
+
+			for _, sel := range sels {
+				val, exists := v[sel.Field]
+				if !exists {
+					continue
+				}
+
+				prunedObj[sel.Field] = prune(val, sel.SubSelections)
+			}
+
+			return prunedObj
+
+		case []any:
+			prunedArr := make([]any, 0, len(v))
+			for _, elem := range v {
+				prunedArr = append(prunedArr, prune(elem, sels))
+			}
+			return prunedArr
+
+		default:
+			return v
+		}
+	}
+
+	prunedResult, ok := prune(data, rootSelections).(map[string]any)
+	if !ok {
+		return map[string]any{"data": nil}, nil
+	}
+
+	return map[string]any{"data": prunedResult}, nil
 }
 
 type PathSegment struct {

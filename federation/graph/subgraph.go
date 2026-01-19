@@ -88,6 +88,15 @@ func newOwnershipMap(s *schema.Schema) map[string]*ownership {
 		}
 	}
 
+	for _, typ := range s.Types {
+		for _, f := range typ.Fields {
+			key := fmt.Sprintf("%s.%s", typ.Name, f.Name)
+			if _, exists := ownershipMap[key]; !exists {
+				ownershipMap[key] = &ownership{Source: typ}
+			}
+		}
+	}
+
 	return ownershipMap
 }
 

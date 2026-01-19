@@ -159,7 +159,7 @@ func TestExecutor_Execute(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			e := executor.NewExecutor(tt.httpClient)
+			e := executor.NewExecutor(tt.httpClient, nil)
 			got, gotErr := e.Execute(t.Context(), tt.plan, tt.variables)
 
 			if gotErr == nil && tt.wantErr != nil || tt.wantErr == nil && gotErr != nil {

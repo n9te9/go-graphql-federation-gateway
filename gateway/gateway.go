@@ -54,7 +54,7 @@ func NewGateway(settings *GatewaySetting) (*gateway, error) {
 		graphQLEndpoint: settings.Endpoint,
 		superGraph:      superGraph,
 		planner:         planner.NewPlanner(superGraph),
-		executor:        executor.NewExecutor(&http.Client{}),
+		executor:        executor.NewExecutor(&http.Client{}, superGraph),
 		queryParser:     query.NewParserWithLexer(),
 	}, nil
 }
