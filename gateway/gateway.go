@@ -91,7 +91,6 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 
 	plan, err := g.planner.Plan(document)
 	if err != nil {
-		fmt.Println(err)
 		http.Error(w, "Failed to create execution plan", http.StatusInternalServerError)
 		return
 	}
