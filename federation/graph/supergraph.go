@@ -1,6 +1,8 @@
 package graph
 
 import (
+	"errors"
+
 	"github.com/n9te9/goliteql/query"
 	"github.com/n9te9/goliteql/schema"
 )
@@ -69,7 +71,7 @@ func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
 
 	for k, v := range subGraphOwnershipMap {
 		if _, exists := sg.OwnershipMap[k]; exists {
-			continue
+			return errors.New("ownership conflict for field " + k)
 		}
 
 		sg.OwnershipMap[k] = v

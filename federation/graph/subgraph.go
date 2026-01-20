@@ -53,11 +53,17 @@ func NewBaseSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		return nil, err
 	}
 
+	ownershipTypes := make(map[string]struct{})
+	for _, typ := range schema.Types {
+		ownershipTypes[string(typ.Name)] = struct{}{}
+	}
+
 	return &SubGraph{
 		Name:              name,
 		Schema:            schema,
 		Host:              host,
 		SDL:               string(src),
+		OwnershipTypes:    ownershipTypes,
 		ownershipFieldMap: newOwnershipMapForSuperGraph(schema),
 		uniqueKeyFields:   newUniqueKeyFields(schema),
 	}, nil

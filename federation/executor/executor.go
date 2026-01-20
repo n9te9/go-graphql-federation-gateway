@@ -39,7 +39,7 @@ func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph) *executo
 	}
 }
 
-func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables map[string]any) (map[string]any, error) {
+func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) (map[string]any, error) {
 	wg := sync.WaitGroup{}
 	entities := make(Entities, 0)
 	stepInputs := sync.Map{}
@@ -48,6 +48,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 		wg.Add(1)
 		go func(step *planner.Step) {
 			defer wg.Done()
+			defer close(step.Done)
 			e.waitDependStepEnded(plan, step)
 
 			var reqVariables map[string]any
@@ -60,7 +61,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 						currentRefs = value.([]entityRef)
 					} else {
 						step.Err = errors.New("no entity refs for dependent step")
-						close(step.Done)
+						return
 					}
 
 					entities = make(Entities, 0)
@@ -76,7 +77,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 			}
 
 			if step.IsBase {
-				reqVariables = vareiables
+				reqVariables = variables
 			} else {
 				reqVariables = builtVariables
 			}
@@ -100,7 +101,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 				refs, err := CollectEntityRefs(paths, resp["data"].(map[string]any), step.SubGraph.Schema)
 				if err != nil {
 					step.Err = err
-					close(step.Done)
+					return
 				}
 				stepInputs.Store(step.ID, refs)
 			} else {
@@ -110,11 +111,16 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 						currentRefs = value.([]entityRef)
 					} else {
 						step.Err = errors.New("no entity refs for dependent step")
-						close(step.Done)
+						return
 					}
 				}
 
-				entitiesData, ok := resp["data"].(map[string]any)["_entities"].([]any)
+				data, ok := resp["data"].(map[string]any)
+				if !ok {
+					step.Err = errors.New("no data in response")
+					return
+				}
+				entitiesData, ok := data["_entities"].([]any)
 				if ok {
 					e.mux.Lock()
 					defer e.mux.Unlock()
@@ -124,8 +130,6 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, vareiables m
 					}
 				}
 			}
-			close(step.Done)
-
 		}(step)
 	}
 

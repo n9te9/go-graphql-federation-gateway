@@ -48,6 +48,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 						Field:      "name",
 					},
 				},
+				IsBase: true,
 			},
 			query: `query {
 	products {
@@ -67,7 +68,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 				SubGraph: func() *graph.SubGraph {
 					sdl := `extend type Product @key(fields: "upc") {
 					upc: String! @external
-					weight: Int
+					width: Int
 					height: Int
 					price: Int @external
 				}`
@@ -81,7 +82,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 				Selections: []*planner.Selection{
 					{
 						ParentType: "Product",
-						Field:      "weight",
+						Field:      "width",
 					},
 					{
 						ParentType: "Product",
@@ -100,7 +101,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 			want: `query ($representations: [_Any!]!) {
 	_entities(representations: $representations) {
 		... on Product {
-			weight
+			width
 			height
 		}
 	}

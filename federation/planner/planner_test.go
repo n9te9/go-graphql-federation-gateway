@@ -29,7 +29,7 @@ func TestPlanner_Plan(t *testing.T) {
 						products {
 							upc
 							name
-							weight
+							width
 							height
 						}
 					}
@@ -63,7 +63,7 @@ func TestPlanner_Plan(t *testing.T) {
 
 				subgraphSDL := `extend type Product @key(fields: "upc") {
 					upc: String! @external
-					weight: Int
+					width: Int
 					height: Int
 					price: Int @external
 				}`
@@ -111,6 +111,7 @@ func TestPlanner_Plan(t *testing.T) {
 								Field:      "name",
 							},
 						},
+						IsBase:    true,
 						DependsOn: []int{},
 						Err:       nil,
 						Done:      make(chan struct{}),
@@ -120,7 +121,7 @@ func TestPlanner_Plan(t *testing.T) {
 						SubGraph: func() *graph.SubGraph {
 							sdl := `extend type Product @key(fields: "upc") {
 								upc: String! @external
-								weight: Int
+								width: Int
 								height: Int
 								price: Int @external
 							}`
@@ -134,7 +135,7 @@ func TestPlanner_Plan(t *testing.T) {
 						Selections: []*planner.Selection{
 							{
 								ParentType: "Product",
-								Field:      "weight",
+								Field:      "width",
 							},
 							{
 								ParentType: "Product",
@@ -144,6 +145,156 @@ func TestPlanner_Plan(t *testing.T) {
 						DependsOn: []int{0},
 						Err:       nil,
 						Done:      make(chan struct{}),
+					},
+				},
+				RootSelections: []*planner.Selection{
+					{
+						ParentType: "Product",
+						Field:      "products",
+						SubSelections: []*planner.Selection{
+							{
+								ParentType: "Product",
+								Field:      "upc",
+							},
+							{
+								ParentType: "Product",
+								Field:      "name",
+							},
+							{
+								ParentType: "Product",
+								Field:      "width",
+							},
+							{
+								ParentType: "Product",
+								Field:      "height",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "Complex case: Plan query with nested dependencies across 3 subgraphs",
+			doc: func() *query.Document {
+				lexer := query.NewLexer()
+				parser := query.NewParser(lexer)
+				doc, err := parser.Parse([]byte(`
+					query {
+						products {
+							upc
+							name
+							reviews {
+								body
+								author {
+									username
+								}
+							}
+						}
+					}
+				`))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return doc
+			}(),
+			superGraph: func() *graph.SuperGraph {
+				productSDL := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String }`
+				reviewSDL := `type Review { id: ID! body: String author: User product: Product }
+							extend type User @key(fields: "id") { id: ID! @external reviews: [Review] }
+							extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }`
+				userSDL := `type Query { me: User } type User @key(fields: "id") { id: ID! username: String }`
+
+				sg1, _ := graph.NewBaseSubGraph("product", []byte(productSDL), "")
+				sg2, _ := graph.NewSubGraph("review", []byte(reviewSDL), "")
+				sg3, _ := graph.NewSubGraph("user", []byte(userSDL), "")
+
+				superGraph, _ := graph.NewSuperGraphFromBytes([]byte(productSDL))
+				superGraph.SubGraphs = append(superGraph.SubGraphs, sg1)
+				superGraph.Merge(sg2)
+				superGraph.Merge(sg3)
+
+				return superGraph
+			}(),
+			want: &planner.Plan{
+				Steps: []*planner.Step{
+					{
+						ID: 0,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String }`
+							sg, _ := graph.NewBaseSubGraph("product", []byte(sdl), "")
+							sg.BaseName = "products"
+							sg.OwnershipTypes = map[string]struct{}{"Product": {}}
+							return sg
+						}(),
+						IsBase: true,
+						Selections: []*planner.Selection{
+							{ParentType: "Product", Field: "upc"},
+							{ParentType: "Product", Field: "name"},
+						},
+						DependsOn: []int{},
+					},
+					{
+						ID: 1,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type Review { id: ID! body: String author: User product: Product }
+									extend type User @key(fields: "id") { id: ID! @external reviews: [Review] }
+									extend type Product @key(fields: "upc") { upc: String! @external reviews: [Review] }`
+							sg, _ := graph.NewSubGraph("review", []byte(sdl), "")
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{
+								ParentType: "Product",
+								Field:      "reviews",
+								SubSelections: []*planner.Selection{
+									{ParentType: "Review", Field: "body"},
+									{
+										ParentType: "Review",
+										Field:      "author",
+										SubSelections: []*planner.Selection{
+											{ParentType: "User", Field: "id"},
+										},
+									},
+								},
+							},
+						},
+						DependsOn: []int{0},
+					},
+					{
+						ID: 2,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type Query { me: User } type User @key(fields: "id") { id: ID! username: String }`
+							sg, _ := graph.NewSubGraph("user", []byte(sdl), "")
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{ParentType: "User", Field: "username"},
+						},
+						DependsOn: []int{1},
+					},
+				},
+				RootSelections: []*planner.Selection{
+					{
+						ParentType: "Product",
+						Field:      "products",
+						SubSelections: []*planner.Selection{
+							{ParentType: "Product", Field: "upc"},
+							{ParentType: "Product", Field: "name"},
+							{
+								ParentType: "Product",
+								Field:      "reviews",
+								SubSelections: []*planner.Selection{
+									{ParentType: "Review", Field: "body"},
+									{
+										ParentType: "Review",
+										Field:      "author",
+										SubSelections: []*planner.Selection{
+											{ParentType: "User", Field: "username"},
+										},
+									},
+								},
+							},
+						},
 					},
 				},
 			},

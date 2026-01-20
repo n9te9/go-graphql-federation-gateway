@@ -39,7 +39,7 @@ func TestExecutor_Execute(t *testing.T) {
 							return nil, err
 						}
 
-						wantQuery := `{"query":"query {\n\t {\n\t\tupc\n\t\tname\n\t}\n}","variables":null}`
+						wantQuery := `{"query":"query {\n\tproducts {\n\t\tupc\n\t\tname\n\t}\n}","variables":null}`
 
 						if string(reqBody) != wantQuery {
 							return nil, fmt.Errorf("want query: %s, got: %s", wantQuery, string(reqBody))
@@ -55,7 +55,7 @@ func TestExecutor_Execute(t *testing.T) {
 							return nil, err
 						}
 
-						wantQuery := `{"query":"query ($representations: [_Any!]!) {\n\t_entities(representations: $representations) {\n\t\t... on Product {\n\t\t\tweight\n\t\t\theight\n\t\t}\n\t}\n}","variables":{"representations":[{"__typename":"Product","name":"A","upc":"1"},{"__typename":"Product","name":"B","upc":"2"}]}}`
+						wantQuery := `{"query":"query ($representations: [_Any!]!) {\n\t_entities(representations: $representations) {\n\t\t... on Product {\n\t\t\twidth\n\t\t\theight\n\t\t}\n\t}\n}","variables":{"representations":[{"__typename":"Product","name":"A","upc":"1"},{"__typename":"Product","name":"B","upc":"2"}]}}`
 
 						if string(reqBody) != wantQuery {
 							return nil, fmt.Errorf("want query: %s, got: %s", wantQuery, string(reqBody))
@@ -63,7 +63,7 @@ func TestExecutor_Execute(t *testing.T) {
 
 						return &http.Response{
 							StatusCode: 200,
-							Body:       io.NopCloser(strings.NewReader(`{"data": {"_entities": [{"weight": 10.0, "height": 20.0}, null]}}`)),
+							Body:       io.NopCloser(strings.NewReader(`{"data": {"_entities": [{"width": 10.0, "height": 20.0}, null]}}`)),
 						}, nil
 					}
 
@@ -88,6 +88,7 @@ func TestExecutor_Execute(t *testing.T) {
 							if err != nil {
 								t.Fatal(err)
 							}
+							sg.BaseName = "products"
 
 							return sg
 						}(),
@@ -101,6 +102,7 @@ func TestExecutor_Execute(t *testing.T) {
 								Field:      "name",
 							},
 						},
+						IsBase:    true,
 						DependsOn: []int{},
 						Err:       nil,
 						Done:      make(chan struct{}),
@@ -110,7 +112,7 @@ func TestExecutor_Execute(t *testing.T) {
 						SubGraph: func() *graph.SubGraph {
 							sdl := `extend type Product @key(fields: "upc") {
 								upc: String! @external
-								weight: Int
+								width: Int
 								height: Int
 								price: Int @external
 							}`
@@ -124,7 +126,7 @@ func TestExecutor_Execute(t *testing.T) {
 						Selections: []*planner.Selection{
 							{
 								ParentType: "Product",
-								Field:      "weight",
+								Field:      "width",
 							},
 							{
 								ParentType: "Product",
@@ -143,7 +145,7 @@ func TestExecutor_Execute(t *testing.T) {
 						map[string]any{
 							"upc":    "1",
 							"name":   "A",
-							"weight": 10.0,
+							"width":  10.0,
 							"height": 20.0,
 						},
 						map[string]any{
