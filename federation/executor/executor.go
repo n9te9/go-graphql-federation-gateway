@@ -407,29 +407,6 @@ func (e *executor) doRequest(ctx context.Context, host string, query string, var
 	return respBody, nil
 }
 
-func (e *executor) fetchEntities(step *planner.Step, resp map[string]any) (Entities, error) {
-	data, ok := resp["data"].(map[string]any)
-	if !ok {
-		return nil, nil
-	}
-
-	entities, ok := data["_entities"].([]any)
-	if !ok {
-		return nil, nil
-	}
-
-	result := make(Entities, 0)
-	for _, entity := range entities {
-		entityMap, ok := entity.(map[string]any)
-		if !ok {
-			continue
-		}
-		result = append(result, entityMap)
-	}
-
-	return result, nil
-}
-
 func getObjectFromPath(path Path, obj any) any {
 	if obj == nil {
 		return nil

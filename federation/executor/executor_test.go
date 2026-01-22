@@ -295,7 +295,6 @@ func TestExecutor_Execute(t *testing.T) {
 							return sg
 						}(),
 						Selections: []*planner.Selection{
-							{ParentType: "User", Field: "id"},
 							{ParentType: "User", Field: "username"},
 						},
 						DependsOn: []int{1},
