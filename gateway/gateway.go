@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/google/uuid"
 	"github.com/n9te9/federation-gateway/federation/executor"
 	"github.com/n9te9/federation-gateway/federation/graph"
 	"github.com/n9te9/federation-gateway/federation/planner"
@@ -17,17 +18,21 @@ type GatewayService struct {
 	Schema string `yaml:"schema"`
 }
 type GatewaySetting struct {
-	Endpoint        string           `yaml:"endpoint"`
-	Port            int              `yaml:"port"`
-	TimeoutDuration string           `yaml:"timeout_duration" default:"5s"`
-	Services        []GatewayService `yaml:"services"`
+	Endpoint                    string           `yaml:"endpoint"`
+	Port                        int              `yaml:"port"`
+	TimeoutDuration             string           `yaml:"timeout_duration" default:"5s"`
+	EnableComplementRequestId   bool             `yaml:"enable_complement_request_id" default:"false"`
+	EnableHangOverRequestHeader bool             `yaml:"enable_hang_over_request_header" default:"true"`
+	Services                    []GatewayService `yaml:"services"`
 }
 type gateway struct {
-	graphQLEndpoint string
-	planner         planner.Planner
-	executor        executor.Executor
-	superGraph      *graph.SuperGraph
-	queryParser     *query.Parser
+	graphQLEndpoint             string
+	planner                     planner.Planner
+	executor                    executor.Executor
+	enableComplementRequestId   bool
+	enableHangOverRequestHeader bool
+	superGraph                  *graph.SuperGraph
+	queryParser                 *query.Parser
 }
 
 var _ http.Handler = (*gateway)(nil)
@@ -51,11 +56,13 @@ func NewGateway(settings *GatewaySetting) (*gateway, error) {
 	}
 
 	return &gateway{
-		graphQLEndpoint: settings.Endpoint,
-		superGraph:      superGraph,
-		planner:         planner.NewPlanner(superGraph),
-		executor:        executor.NewExecutor(&http.Client{}, superGraph),
-		queryParser:     query.NewParserWithLexer(),
+		graphQLEndpoint:             settings.Endpoint,
+		superGraph:                  superGraph,
+		planner:                     planner.NewPlanner(superGraph),
+		enableComplementRequestId:   settings.EnableComplementRequestId,
+		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
+		executor:                    executor.NewExecutor(&http.Client{}, superGraph),
+		queryParser:                 query.NewParserWithLexer(),
 	}, nil
 }
 
@@ -95,7 +102,22 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp, err := g.executor.Execute(r.Context(), plan, req.Variables)
+	ctx := r.Context()
+	if g.enableComplementRequestId {
+		requestId := r.Header.Get("X-Request-Id")
+		if requestId == "" {
+			requestId = uuid.NewString()
+		}
+
+		r.Header.Set("X-Request-Id", requestId)
+		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
+	}
+
+	if g.enableHangOverRequestHeader {
+		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
+	}
+
+	resp, err := g.executor.Execute(ctx, plan, req.Variables)
 	if err != nil {
 		http.Error(w, "Failed to execute query", http.StatusInternalServerError)
 		return

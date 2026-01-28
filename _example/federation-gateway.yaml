@@ -1,6 +1,8 @@
 endpoint: /graphql
 port: 9000
 timeout_duration: "1s"
+enable_complement_request_id: false
+enable_hang_over_request_header: true
 services:
   - name: products
     host: http://localhost:8000

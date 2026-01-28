@@ -391,6 +391,11 @@ func (e *executor) doRequest(ctx context.Context, host string, query string, var
 		return nil, err
 	}
 
+	header := GetRequestHeaderFromContext(ctx)
+
+	if header != nil {
+		req.Header = header
+	}
 	req.Header.Set("Content-Type", "application/json")
 
 	resp, err := e.httpClient.Do(req)
@@ -574,4 +579,14 @@ func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]ent
 	}
 
 	return refs, nil
+}
+
+type requestHeaderContextKey struct{}
+
+func SetRequestHeaderToContext(ctx context.Context, header http.Header) context.Context {
+	return context.WithValue(ctx, requestHeaderContextKey{}, header)
+}
+
+func GetRequestHeaderFromContext(ctx context.Context) http.Header {
+	return ctx.Value(requestHeaderContextKey{}).(http.Header)
 }
