@@ -22,34 +22,16 @@ var SampleGatewaySetting = &gateway.GatewaySetting{
 		{
 			Name: "products",
 			Host: "http://localhost:4001/graphql",
-			Schema: `
-				type Product @key(fields: "upc") {
-					upc: String!
-					name: String
-					price: Float
-				}
-				type Query {
-					products: [Product]
-				}
-			`,
+			SchemaFiles: []string{
+				"./federation/product.gql",
+			},
 		},
 		{
 			Name: "reviews",
 			Host: "http://localhost:4002/graphql",
-			Schema: `
-				type Review {
-					id: ID!
-					body: String
-					product: Product
-				}
-				extend type Product @key(fields: "upc") {
-					upc: String! @external
-					reviews: [Review]
-				}
-				type Query {
-					reviews: [Review]
-				}
-			`,
+			SchemaFiles: []string{
+				"./federation/review.gql",
+			},
 		},
 	},
 }

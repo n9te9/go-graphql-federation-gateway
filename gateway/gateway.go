@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 
 	"github.com/google/uuid"
 	"github.com/n9te9/federation-gateway/federation/executor"
@@ -13,10 +14,11 @@ import (
 )
 
 type GatewayService struct {
-	Name   string `yaml:"name"`
-	Host   string `yaml:"host"`
-	Schema string `yaml:"schema"`
+	Name        string   `yaml:"name"`
+	Host        string   `yaml:"host"`
+	SchemaFiles []string `yaml:"schema_files"`
 }
+
 type GatewaySetting struct {
 	Endpoint                    string           `yaml:"endpoint"`
 	Port                        int              `yaml:"port"`
@@ -37,17 +39,37 @@ type gateway struct {
 
 var _ http.Handler = (*gateway)(nil)
 
+func readSchemaFiles(paths []string) ([]byte, error) {
+	ret := make([]byte, 0)
+	for _, path := range paths {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read file(%s): %w", path, err)
+		}
+
+		ret = append(ret, b...)
+		ret = append(ret, '\n')
+	}
+
+	return ret, nil
+}
+
 func NewGateway(settings *GatewaySetting) (*gateway, error) {
 	subGraphs := make([]*graph.SubGraph, 0, len(settings.Services))
 	allSchemaSrc := []byte{}
 
 	for _, srv := range settings.Services {
-		subGraph, err := graph.NewSubGraph(srv.Name, []byte(srv.Schema), srv.Host)
+		schema, err := readSchemaFiles(srv.SchemaFiles)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read schema file: %w", err)
+		}
+
+		subGraph, err := graph.NewSubGraph(srv.Name, schema, srv.Host)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create subgraph for service %s: %w", srv.Name, err)
 		}
 		subGraphs = append(subGraphs, subGraph)
-		allSchemaSrc = append(allSchemaSrc, []byte(srv.Schema+"\n")...)
+		allSchemaSrc = append(allSchemaSrc, schema...)
 	}
 
 	superGraph, err := graph.NewSuperGraph(allSchemaSrc, subGraphs)
@@ -103,18 +125,22 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	header := http.Header{}
 	if g.enableComplementRequestId {
 		requestId := r.Header.Get("X-Request-Id")
 		if requestId == "" {
 			requestId = uuid.NewString()
 		}
 
+		header.Set("X-Request-Id", requestId)
 		r.Header.Set("X-Request-Id", requestId)
-		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
+		ctx = executor.SetRequestHeaderToContext(ctx, header)
 	}
 
 	if g.enableHangOverRequestHeader {
 		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
+	} else {
+		ctx = executor.SetRequestHeaderToContext(ctx, header)
 	}
 
 	resp, err := g.executor.Execute(ctx, plan, req.Variables)
