@@ -56,7 +56,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			var reqVariables map[string]any
 			var currentRefs []entityRef
 
-			if !step.IsBase {
+			if len(step.DependsOn) != 0 {
 				targetTypes := make(map[string]struct{})
 				for _, sel := range step.Selections {
 					targetTypes[sel.ParentType] = struct{}{}
@@ -89,7 +89,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				return
 			}
 
-			if step.IsBase {
+			if len(step.DependsOn) == 0 {
 				reqVariables = variables
 			} else {
 				reqVariables = builtVariables
@@ -101,7 +101,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				return
 			}
 
-			if step.IsBase {
+			if len(step.DependsOn) == 0 {
 				if resp["data"] == nil {
 					step.Err = errors.New("no data in response")
 					return

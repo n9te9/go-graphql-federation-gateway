@@ -15,44 +15,6 @@ import (
 	"github.com/n9te9/federation-gateway/gateway"
 )
 
-var SampleGatewaySetting = &gateway.GatewaySetting{
-	Endpoint: "/graphql",
-	Port:     8080,
-	Services: []gateway.GatewayService{
-		{
-			Name: "products",
-			Host: "http://localhost:4001/graphql",
-			SchemaFiles: []string{
-				"./federation/product.gql",
-			},
-		},
-		{
-			Name: "reviews",
-			Host: "http://localhost:4002/graphql",
-			SchemaFiles: []string{
-				"./federation/review.gql",
-			},
-		},
-	},
-}
-
-func Init() {
-	f, err := os.Create("federation-gateway.yaml")
-	if err != nil {
-		log.Fatalf("failed to create sample gateway settings file: %v", err)
-	}
-	defer f.Close()
-
-	b, err := yaml.Marshal(SampleGatewaySetting)
-	if err != nil {
-		log.Fatalf("failed to marshal sample gateway settings: %v", err)
-	}
-
-	if _, err := f.Write(b); err != nil {
-		log.Fatalf("failed to write sample gateway settings file: %v", err)
-	}
-}
-
 func Run() {
 	settings, err := loadGatewaySetting()
 	if err != nil {

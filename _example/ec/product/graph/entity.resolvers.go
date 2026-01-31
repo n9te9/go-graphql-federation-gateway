@@ -7,14 +7,20 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/federation-gateway/_example/ec/product/graph/model"
 )
 
 // FindProductByUpc is the resolver for the findProductByUpc field.
 func (r *entityResolver) FindProductByUpc(ctx context.Context, upc string) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: FindProductByUpc - findProductByUpc"))
+	if upc == "1" || upc == "2" || upc == "3" {
+		return products[upc], nil
+	}
+
+	return &model.Product{
+		Upc:  upc,
+		Name: "Unknown Product",
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

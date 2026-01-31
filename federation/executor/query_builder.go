@@ -21,7 +21,7 @@ func NewQueryBuilder() *queryBuilder {
 }
 
 func (qb *queryBuilder) Build(step *planner.Step, entities Entities) (string, map[string]any, error) {
-	if step.IsBase {
+	if len(step.DependsOn) == 0 {
 		return qb.buildBaseQuery(step)
 	}
 
@@ -34,18 +34,14 @@ func (qb *queryBuilder) buildFetchEntitiesQuery(step *planner.Step, entities Ent
 	builder.WriteString("query ($representations: [_Any!]!) {\n")
 	builder.WriteString("\t_entities(representations: $representations) {\n")
 
-	selectionMap := make(map[string][]string)
 	for _, sel := range step.Selections {
-		selectionMap[sel.ParentType] = append(selectionMap[sel.ParentType], sel.Field)
-	}
-
-	for parentType, fields := range selectionMap {
-		builder.WriteString("\t\t... on " + parentType + " {\n")
-		for _, field := range fields {
-			builder.WriteString("\t\t\t" + field + "\n")
+		builder.WriteString("\t\t... on " + sel.ParentType + " {\n")
+		if err := qb.writeSelections(&builder, step.Selections, "\t\t\t"); err != nil {
+			return "", nil, err
 		}
 		builder.WriteString("\t\t}\n")
 	}
+
 	builder.WriteString("\t}\n")
 	builder.WriteString("}")
 
@@ -55,6 +51,23 @@ func (qb *queryBuilder) buildFetchEntitiesQuery(step *planner.Step, entities Ent
 	}
 
 	return builder.String(), map[string]any{"representations": resp}, nil
+}
+
+func (qb *queryBuilder) writeSelections(sb *strings.Builder, selections []*planner.Selection, indent string) error {
+	for _, sel := range selections {
+		sb.WriteString(indent + sel.Field)
+
+		if len(sel.SubSelections) > 0 {
+			sb.WriteString(" {\n")
+			if err := qb.writeSelections(sb, sel.SubSelections, indent+"\t"); err != nil {
+				return err
+			}
+			sb.WriteString(indent + "}")
+		}
+
+		sb.WriteString("\n")
+	}
+	return nil
 }
 
 func (qb *queryBuilder) buildBaseQuery(step *planner.Step) (string, map[string]any, error) {

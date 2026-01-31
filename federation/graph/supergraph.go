@@ -50,13 +50,17 @@ func NewSuperGraphFromBytes(src []byte) (*SuperGraph, error) {
 }
 
 func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
-	sg.SDL += "\n" + subGraph.SDL
-	newSchema, err := schema.NewParser(schema.NewLexer()).Parse([]byte(sg.SDL))
+	newSchema, err := schema.NewParser(schema.NewLexer()).Parse([]byte(subGraph.SDL))
 	if err != nil {
 		return err
 	}
 
-	sg.Schema = newSchema
+	if sg.Schema == nil {
+		sg.Schema = newSchema
+		return sg.UpdateOwnershipMap(subGraph)
+	}
+
+	sg.mergeSchema(newSchema)
 	if err := sg.UpdateOwnershipMap(subGraph); err != nil {
 		return err
 	}
@@ -66,13 +70,34 @@ func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
 	return nil
 }
 
+func (sg *SuperGraph) mergeSchema(newSchema *schema.Schema) {
+	sg.Schema.Types = append(sg.Schema.Types, newSchema.Types...)
+	for _, ext := range sg.Schema.Indexes.TypeIndex {
+		schemaIndex, ok := newSchema.Indexes.TypeIndex[string(ext.Name)]
+		if ok {
+			ext.Fields = append(ext.Fields, schemaIndex.Fields...)
+		}
+	}
+}
+
 func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
 	subGraphOwnershipMap := subGraph.OwnershipFieldMap()
 
 	for k, v := range subGraphOwnershipMap {
 		_, exists := sg.OwnershipMap[k]
 		if exists {
-			return errors.New("ownership conflict for field " + k)
+			var ok bool
+			for _, existingSubGraph := range sg.SubGraphs {
+				existingSubGraph.OwnershipFieldMap()
+				if _, exist := existingSubGraph.ownershipFieldMap[k]; exist {
+					ok = true
+					break
+				}
+			}
+
+			if !ok {
+				return errors.New("ownership conflict for field " + k)
+			}
 		}
 
 		sg.OwnershipMap[k] = v

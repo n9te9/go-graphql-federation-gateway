@@ -145,6 +145,7 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := g.executor.Execute(ctx, plan, req.Variables)
 	if err != nil {
+		fmt.Println(err)
 		http.Error(w, "Failed to execute query", http.StatusInternalServerError)
 		return
 	}

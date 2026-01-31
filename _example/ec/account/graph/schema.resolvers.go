@@ -9,12 +9,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/n9te9/federation-gateway/_example/ec/inventory/graph/model"
+	"github.com/n9te9/federation-gateway/_example/ec/account/graph/model"
 )
 
-// Inventories is the resolver for the inventories field.
-func (r *queryResolver) Inventories(ctx context.Context) ([]*model.Product, error) {
-	panic(fmt.Errorf("not implemented: Inventories - inventories"))
+// Me is the resolver for the me field.
+func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
+	panic(fmt.Errorf("not implemented: Me - me"))
 }
 
 // Query returns QueryResolver implementation.
@@ -29,16 +29,12 @@ type queryResolver struct{ *Resolver }
 //    it when you're done.
 //  - You have helper methods in this file. Move them out to keep these resolver files clean.
 /*
-	func (r *queryResolver) Products(ctx context.Context) ([]*model.Product, error) {
-	return []*model.Product{
-		{
-			Upc:    "1",
-			Width:  ptr(30.0),
-			Height: ptr(10.0),
-		},
-		{
-			Upc: "2",
-		},
-	}
+	func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) (*model.Todo, error) {
+	panic(fmt.Errorf("not implemented: CreateTodo - createTodo"))
 }
+func (r *queryResolver) Todos(ctx context.Context) ([]*model.Todo, error) {
+	panic(fmt.Errorf("not implemented: Todos - todos"))
+}
+func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
+type mutationResolver struct{ *Resolver }
 */

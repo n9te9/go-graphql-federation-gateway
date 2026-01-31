@@ -5,10 +5,14 @@ enable_complement_request_id: false
 enable_hang_over_request_header: false
 services:
 - name: products
-  host: http://localhost:8000/query
+  host: http://localhost:8001/query
   schema_files:
   - ./product/graph/schema.graphqls
 - name: reviews
-  host: http://localhost:8888/query
+  host: http://localhost:8002/query
   schema_files:
-  - ./inventory/graph/schema.graphqls
+  - ./review/graph/schema.graphqls
+- name: accounts
+  host: http://localhost:8003/query
+  schema_files:
+  - ./account/graph/schema.graphqls

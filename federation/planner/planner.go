@@ -329,7 +329,8 @@ func (p *planner) solveStepDependency(steps Steps, targetStep *Step) {
 								break
 							}
 						}
-						if !exists {
+
+						if !exists && targetStep.ID != 0 {
 							targetStep.DependsOn = append(targetStep.DependsOn, providerStep.ID)
 						}
 					}

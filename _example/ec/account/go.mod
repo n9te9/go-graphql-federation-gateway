@@ -1,6 +1,6 @@
-module github.com/n9te9/federation-gateway/_example/ec/inventory
+module github.com/n9te9/federation-gateway/_example/ec/account
 
-go 1.25.4
+go 1.25.1
 
 require (
 	github.com/99designs/gqlgen v0.17.86

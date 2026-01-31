@@ -153,21 +153,21 @@ func (ec *executionContext) resolveEntity(
 	}()
 
 	switch typeName {
-	case "Product":
-		resolverName, err := entityResolverNameForProduct(ctx, rep)
+	case "User":
+		resolverName, err := entityResolverNameForUser(ctx, rep)
 		if err != nil {
-			return nil, fmt.Errorf(`finding resolver for Entity "Product": %w`, err)
+			return nil, fmt.Errorf(`finding resolver for Entity "User": %w`, err)
 		}
 		switch resolverName {
 
-		case "findProductByUpc":
-			id0, err := ec.unmarshalNString2string(ctx, rep["upc"])
+		case "findUserByID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["id"])
 			if err != nil {
-				return nil, fmt.Errorf(`unmarshalling param 0 for findProductByUpc(): %w`, err)
+				return nil, fmt.Errorf(`unmarshalling param 0 for findUserByID(): %w`, err)
 			}
-			entity, err := ec.resolvers.Entity().FindProductByUpc(ctx, id0)
+			entity, err := ec.resolvers.Entity().FindUserByID(ctx, id0)
 			if err != nil {
-				return nil, fmt.Errorf(`resolving Entity "Product": %w`, err)
+				return nil, fmt.Errorf(`resolving Entity "User": %w`, err)
 			}
 
 			return entity, nil
@@ -198,7 +198,7 @@ func (ec *executionContext) resolveManyEntities(
 	}
 }
 
-func entityResolverNameForProduct(ctx context.Context, rep EntityRepresentation) (string, error) {
+func entityResolverNameForUser(ctx context.Context, rep EntityRepresentation) (string, error) {
 	// we collect errors because a later entity resolver may work fine
 	// when an entity has multiple keys
 	entityResolverErrs := []error{}
@@ -213,10 +213,10 @@ func entityResolverNameForProduct(ctx context.Context, rep EntityRepresentation)
 		// we shouldn't use use it
 		allNull := true
 		m = rep
-		val, ok = m["upc"]
+		val, ok = m["id"]
 		if !ok {
 			entityResolverErrs = append(entityResolverErrs,
-				fmt.Errorf("%w due to missing Key Field \"upc\" for Product", ErrTypeNotFound))
+				fmt.Errorf("%w due to missing Key Field \"id\" for User", ErrTypeNotFound))
 			break
 		}
 		if allNull {
@@ -224,11 +224,11 @@ func entityResolverNameForProduct(ctx context.Context, rep EntityRepresentation)
 		}
 		if allNull {
 			entityResolverErrs = append(entityResolverErrs,
-				fmt.Errorf("%w due to all null value KeyFields for Product", ErrTypeNotFound))
+				fmt.Errorf("%w due to all null value KeyFields for User", ErrTypeNotFound))
 			break
 		}
-		return "findProductByUpc", nil
+		return "findUserByID", nil
 	}
-	return "", fmt.Errorf("%w for Product due to %v", ErrTypeNotFound,
+	return "", fmt.Errorf("%w for User due to %v", ErrTypeNotFound,
 		errors.Join(entityResolverErrs...).Error())
 }

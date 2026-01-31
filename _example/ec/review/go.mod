@@ -1,4 +1,4 @@
-module github.com/n9te9/federation-gateway/_example/ec/product
+module github.com/n9te9/federation-gateway/_example/ec/inventory
 
 go 1.25.4
 

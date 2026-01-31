@@ -11,40 +11,40 @@ import (
 	"github.com/n9te9/federation-gateway/_example/ec/product/graph/model"
 )
 
-// Products is the resolver for the products field.
-func (r *queryResolver) Products(ctx context.Context) ([]*model.Product, error) {
-	return []*model.Product{
-		{
-			Upc:   "1",
-			Name:  &[]string{"hogehoge"}[0],
-			Price: &[]float64{1000}[0],
-		},
-		{
-			Upc:   "2",
-			Name:  &[]string{"fugafuga"}[0],
-			Price: &[]float64{2000}[0],
-		},
-	}, nil
+var products = map[string]*model.Product{
+	"1": {
+		Upc:   "1",
+		Name:  "hogehoge",
+		Price: &[]int32{1000}[0],
+	},
+	"2": {
+		Upc:   "2",
+		Name:  "fugafuga",
+		Price: &[]int32{2000}[0],
+	},
+	"3": {
+		Upc:   "3",
+		Name:  "piyopiyo",
+		Price: &[]int32{3000}[0],
+	},
+}
+
+// TopProducts is the resolver for the topProducts field.
+func (r *queryResolver) TopProducts(ctx context.Context, first *int32) ([]*model.Product, error) {
+	var result []*model.Product
+	count := int32(0)
+	for _, p := range products {
+		result = append(result, p)
+		count++
+		if first != nil && count >= *first {
+			break
+		}
+	}
+
+	return result, nil
 }
 
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
 type queryResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *mutationResolver) CreateTodo(ctx context.Context, input model.NewTodo) (*model.Todo, error) {
-	panic(fmt.Errorf("not implemented: CreateTodo - createTodo"))
-}
-func (r *queryResolver) Todos(ctx context.Context) ([]*model.Todo, error) {
-	panic(fmt.Errorf("not implemented: Todos - todos"))
-}
-func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
-type mutationResolver struct{ *Resolver }
-*/
