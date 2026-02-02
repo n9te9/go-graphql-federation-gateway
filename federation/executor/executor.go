@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strings"
@@ -17,7 +18,7 @@ import (
 )
 
 type Executor interface {
-	Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) (map[string]any, error)
+	Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) map[string]any
 }
 
 type executor struct {
@@ -40,11 +41,12 @@ func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph) *executo
 	}
 }
 
-func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) (map[string]any, error) {
+func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) map[string]any {
 	wg := sync.WaitGroup{}
 	entities := make(Entities, 0)
 	stepInputs := sync.Map{}
 	mergedResponse := make(map[string]any)
+	mergedResponse["errors"] = make([]any, 0)
 
 	for _, step := range plan.Steps {
 		wg.Add(1)
@@ -99,6 +101,13 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			if err != nil {
 				step.Err = err
 				return
+			}
+
+			errorsResp, ok := resp["errors"].([]any)
+			if ok {
+				e.mux.Lock()
+				mergedResponse["errors"] = append(mergedResponse["errors"].([]any), errorsResp...)
+				e.mux.Unlock()
 			}
 
 			if len(step.DependsOn) == 0 {
@@ -160,10 +169,21 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 
 	wg.Wait()
 
+	errors := make([]string, 0)
+	responseErrors, ok := mergedResponse["errors"].([]string)
+	if ok {
+		errors = append(errors, responseErrors...)
+	}
+
 	for _, step := range plan.Steps {
 		if step.Err != nil {
-			return nil, step.Err
+			slog.Error("failed to execute step", "error", step.Err)
+			errors = append(errors, step.Err.Error())
 		}
+	}
+
+	if len(errors) > 0 {
+		mergedResponse["errors"] = errors
 	}
 
 	return e.pruneResponse(mergedResponse, plan.RootSelections)
@@ -175,6 +195,11 @@ func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, 
 	}
 
 	data := resp["data"].(map[string]any)
+	errors, ok := resp["errors"].([]any)
+	if !ok {
+		errors = make([]any, 0)
+		resp["errors"] = errors
+	}
 
 	for i, entityResult := range entitiesData {
 		if entityResult == nil {
@@ -203,10 +228,11 @@ func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, 
 	return nil
 }
 
-func (e *executor) pruneResponse(resp map[string]any, rootSelections []*planner.Selection) (map[string]any, error) {
+func (e *executor) pruneResponse(resp map[string]any, rootSelections []*planner.Selection) map[string]any {
 	data, ok := resp["data"].(map[string]any)
 	if !ok {
-		return nil, errors.New("no data in response")
+		slog.Error("no data in response")
+		return map[string]any{"data": nil, "errors": resp["errors"]}
 	}
 
 	var prune func(obj any, sels []*planner.Selection) any
@@ -249,10 +275,10 @@ func (e *executor) pruneResponse(resp map[string]any, rootSelections []*planner.
 
 	prunedResult, ok := prune(data, rootSelections).(map[string]any)
 	if !ok {
-		return map[string]any{"data": nil}, nil
+		return map[string]any{"data": nil, "errors": resp["errors"]}
 	}
 
-	return map[string]any{"data": prunedResult}, nil
+	return map[string]any{"data": prunedResult, "errors": resp["errors"]}
 }
 
 type PathSegment struct {

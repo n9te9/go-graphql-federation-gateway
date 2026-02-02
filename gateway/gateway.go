@@ -143,13 +143,7 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		ctx = executor.SetRequestHeaderToContext(ctx, header)
 	}
 
-	resp, err := g.executor.Execute(ctx, plan, req.Variables)
-	if err != nil {
-		fmt.Println(err)
-		http.Error(w, "Failed to execute query", http.StatusInternalServerError)
-		return
-	}
-
+	resp := g.executor.Execute(ctx, plan, req.Variables)
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)

@@ -13,9 +13,9 @@ import (
 )
 
 var users = map[string]*model.User{
-	"1": {ID: "1", Username: "Alice"},
-	"2": {ID: "2", Username: "Bob"},
-	"3": {ID: "3", Username: "Charlie"},
+	// "1": {ID: "1", Username: "Alice"},
+	// "2": {ID: "2", Username: "Bob"},
+	// "3": {ID: "3", Username: "Charlie"},
 }
 
 // FindUserByID is the resolver for the findUserByID field.

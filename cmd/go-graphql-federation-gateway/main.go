@@ -35,7 +35,7 @@ var SampleGatewaySetting = &gateway.GatewaySetting{
 }
 
 func Init() {
-	f, err := os.Create("go-graphql-federation-gateway.yaml")
+	f, err := os.Create("gateway.yaml")
 	if err != nil {
 		log.Fatalf("failed to create sample gateway settings file: %v", err)
 	}

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -16,6 +17,9 @@ import (
 )
 
 func Run() {
+	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
+	slog.SetDefault(logger)
+
 	settings, err := loadGatewaySetting()
 	if err != nil {
 		log.Fatalf("failed to load gateway settings: %v", err)
@@ -59,7 +63,7 @@ func Run() {
 }
 
 func loadGatewaySetting() (*gateway.GatewaySetting, error) {
-	f, err := os.Open("go-graphql-federation-gateway.yaml")
+	f, err := os.Open("gateway.yaml")
 	if err != nil {
 		return nil, fmt.Errorf("failed to open gateway settings file: %w", err)
 	}
