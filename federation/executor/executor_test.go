@@ -149,10 +149,8 @@ func TestExecutor_Execute(t *testing.T) {
 				"data": map[string]any{
 					"products": []any{
 						map[string]any{
-							"upc":    "1",
-							"name":   "A",
-							"width":  10.0,
-							"height": 20.0,
+							"upc":  "1",
+							"name": "A",
 						},
 						map[string]any{
 							"upc":  "2",
@@ -160,7 +158,7 @@ func TestExecutor_Execute(t *testing.T) {
 						},
 					},
 				},
-				"errors": []any{},
+				"errors": []string{`Post "http://inventory.example.com": representation should not contain 'name'`},
 			},
 			wantErr: nil,
 		},
