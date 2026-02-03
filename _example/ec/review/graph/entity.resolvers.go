@@ -3,7 +3,7 @@ package graph
 import (
 	"context"
 
-	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/inventory/graph/model" // ※importパスは環境に合わせて調整してください
+	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/review/graph/model"
 )
 
 var products = map[string]*model.Product{

@@ -108,19 +108,40 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 
 	var req Request
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "Failed to decode request body", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"errors": []map[string]any{
+				{
+					"message": err.Error(),
+				},
+			},
+		})
 		return
 	}
 
 	document, err := g.queryParser.Parse([]byte(req.Query))
 	if err != nil {
-		http.Error(w, "Failed to parse query", http.StatusBadRequest)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"errors": []map[string]any{
+				{
+					"message": err.Error(),
+				},
+			},
+		})
 		return
 	}
 
 	plan, err := g.planner.Plan(document)
 	if err != nil {
-		http.Error(w, "Failed to create execution plan", http.StatusInternalServerError)
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]any{
+			"errors": []map[string]any{
+				{
+					"message": err.Error(),
+				},
+			},
+		})
 		return
 	}
 

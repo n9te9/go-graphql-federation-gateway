@@ -22,7 +22,7 @@ type SubGraph struct {
 
 	OwnershipTypes    map[string]struct{}
 	ownershipFieldMap map[string]*ownership
-	uniqueKeyFields   map[*schema.TypeDefinition][]string
+	requiredFields    map[string]map[string]struct{}
 }
 
 func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
@@ -43,7 +43,7 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		SDL:               string(src),
 		OwnershipTypes:    ownershipTypes,
 		ownershipFieldMap: newOwnershipMap(schema),
-		uniqueKeyFields:   newUniqueKeyFields(schema),
+		requiredFields:    newRequiredFields(schema),
 	}, nil
 }
 
@@ -65,12 +65,12 @@ func NewBaseSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		SDL:               string(src),
 		OwnershipTypes:    ownershipTypes,
 		ownershipFieldMap: newOwnershipMapForSuperGraph(schema),
-		uniqueKeyFields:   newUniqueKeyFields(schema),
+		requiredFields:    newRequiredFields(schema),
 	}, nil
 }
 
-func (s *SubGraph) Run() error {
-	return nil
+func (sg *SubGraph) RequiredFields() map[string]map[string]struct{} {
+	return sg.requiredFields
 }
 
 func newOwnershipMapForSuperGraph(s *schema.Schema) map[string]*ownership {
@@ -157,28 +157,48 @@ func getOwnershipMapKeys(ext schema.ExtendDefinition) map[string]struct{} {
 	return ret
 }
 
-func newUniqueKeyFields(s *schema.Schema) map[*schema.TypeDefinition][]string {
-	ret := make(map[*schema.TypeDefinition][]string)
+func newRequiredFields(s *schema.Schema) map[string]map[string]struct{} {
+	ret := make(map[string]map[string]struct{})
 	for _, ext := range s.Extends {
 		typeDefinition, ok := ext.(*schema.TypeDefinition)
 		if ok {
-			ret[typeDefinition] = getObjectUniqueKeyFields(typeDefinition)
-		}
-	}
-
-	return ret
-}
-
-func getObjectUniqueKeyFields(t *schema.TypeDefinition) []string {
-	directives := schema.Directives(t.Directives)
-	if keyDirective := directives.Get([]byte("key")); keyDirective != nil {
-		for _, arg := range keyDirective.Arguments {
-			if bytes.Equal(arg.Name, []byte("fields")) {
-				v := bytes.Trim(arg.Value, `"`)
-				return strings.Split(string(v), " ")
+			requiredFields := make(map[string]struct{})
+			for _, field := range typeDefinition.Fields {
+				directives := schema.Directives(field.Directives)
+				if nonNullDirective := directives.Get([]byte("requires")); nonNullDirective != nil {
+					for _, arg := range nonNullDirective.Arguments {
+						v := bytes.Trim(arg.Value, `"`)
+						fields := strings.Split(string(v), " ")
+						for _, field := range fields {
+							requiredFields[field] = struct{}{}
+						}
+					}
+				}
+			}
+			if len(requiredFields) > 0 {
+				ret[string(typeDefinition.Name)] = requiredFields
 			}
 		}
 	}
 
-	return []string{}
+	for _, typ := range s.Types {
+		requiredFields := make(map[string]struct{})
+		for _, field := range typ.Fields {
+			directives := schema.Directives(field.Directives)
+			if nonNullDirective := directives.Get([]byte("requires")); nonNullDirective != nil {
+				for _, arg := range nonNullDirective.Arguments {
+					v := bytes.Trim(arg.Value, `"`)
+					fields := strings.Split(string(v), " ")
+					for _, field := range fields {
+						requiredFields[field] = struct{}{}
+					}
+				}
+			}
+		}
+		if len(requiredFields) > 0 {
+			ret[string(typ.Name)] = requiredFields
+		}
+	}
+
+	return ret
 }

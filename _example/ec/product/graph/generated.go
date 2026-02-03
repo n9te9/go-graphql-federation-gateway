@@ -53,9 +53,10 @@ type ComplexityRoot struct {
 	}
 
 	Product struct {
-		Name  func(childComplexity int) int
-		Price func(childComplexity int) int
-		Upc   func(childComplexity int) int
+		Name   func(childComplexity int) int
+		Price  func(childComplexity int) int
+		Upc    func(childComplexity int) int
+		Weight func(childComplexity int) int
 	}
 
 	Query struct {
@@ -125,6 +126,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Product.Upc(childComplexity), true
+	case "Product.weight":
+		if e.complexity.Product.Weight == nil {
+			break
+		}
+
+		return e.complexity.Product.Weight(childComplexity), true
 
 	case "Query.topProducts":
 		if e.complexity.Query.TopProducts == nil {
@@ -446,7 +453,7 @@ func (ec *executionContext) _Entity_findProductByUpc(ctx context.Context, field 
 			return ec.resolvers.Entity().FindProductByUpc(ctx, fc.Args["upc"].(string))
 		},
 		nil,
-		ec.marshalNProduct2ᚖgithubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct,
+		ec.marshalNProduct2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct,
 		true,
 		true,
 	)
@@ -466,6 +473,8 @@ func (ec *executionContext) fieldContext_Entity_findProductByUpc(ctx context.Con
 				return ec.fieldContext_Product_name(ctx, field)
 			case "price":
 				return ec.fieldContext_Product_price(ctx, field)
+			case "weight":
+				return ec.fieldContext_Product_weight(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Product", field.Name)
 		},
@@ -571,6 +580,35 @@ func (ec *executionContext) fieldContext_Product_price(_ context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _Product_weight(ctx context.Context, field graphql.CollectedField, obj *model.Product) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Product_weight,
+		func(ctx context.Context) (any, error) {
+			return obj.Weight, nil
+		},
+		nil,
+		ec.marshalOInt2ᚖint32,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_Product_weight(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Product",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_topProducts(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -582,7 +620,7 @@ func (ec *executionContext) _Query_topProducts(ctx context.Context, field graphq
 			return ec.resolvers.Query().TopProducts(ctx, fc.Args["first"].(*int32))
 		},
 		nil,
-		ec.marshalOProduct2ᚕᚖgithubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct,
+		ec.marshalOProduct2ᚕᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct,
 		true,
 		false,
 	)
@@ -602,6 +640,8 @@ func (ec *executionContext) fieldContext_Query_topProducts(ctx context.Context, 
 				return ec.fieldContext_Product_name(ctx, field)
 			case "price":
 				return ec.fieldContext_Product_price(ctx, field)
+			case "weight":
+				return ec.fieldContext_Product_weight(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Product", field.Name)
 		},
@@ -2392,6 +2432,8 @@ func (ec *executionContext) _Product(ctx context.Context, sel ast.SelectionSet, 
 			}
 		case "price":
 			out.Values[i] = ec._Product_price(ctx, field, obj)
+		case "weight":
+			out.Values[i] = ec._Product_weight(ctx, field, obj)
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -2931,11 +2973,11 @@ func (ec *executionContext) marshalNFieldSet2string(ctx context.Context, sel ast
 	return res
 }
 
-func (ec *executionContext) marshalNProduct2githubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v model.Product) graphql.Marshaler {
+func (ec *executionContext) marshalNProduct2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v model.Product) graphql.Marshaler {
 	return ec._Product(ctx, sel, &v)
 }
 
-func (ec *executionContext) marshalNProduct2ᚖgithubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v *model.Product) graphql.Marshaler {
+func (ec *executionContext) marshalNProduct2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v *model.Product) graphql.Marshaler {
 	if v == nil {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
@@ -3508,7 +3550,7 @@ func (ec *executionContext) marshalOInt2ᚖint32(ctx context.Context, sel ast.Se
 	return res
 }
 
-func (ec *executionContext) marshalOProduct2ᚕᚖgithubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v []*model.Product) graphql.Marshaler {
+func (ec *executionContext) marshalOProduct2ᚕᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v []*model.Product) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}
@@ -3535,7 +3577,7 @@ func (ec *executionContext) marshalOProduct2ᚕᚖgithubᚗcomᚋn9te9ᚋfederat
 			if !isLen1 {
 				defer wg.Done()
 			}
-			ret[i] = ec.marshalOProduct2ᚖgithubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx, sel, v[i])
+			ret[i] = ec.marshalOProduct2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx, sel, v[i])
 		}
 		if isLen1 {
 			f(i)
@@ -3549,7 +3591,7 @@ func (ec *executionContext) marshalOProduct2ᚕᚖgithubᚗcomᚋn9te9ᚋfederat
 	return ret
 }
 
-func (ec *executionContext) marshalOProduct2ᚖgithubᚗcomᚋn9te9ᚋfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v *model.Product) graphql.Marshaler {
+func (ec *executionContext) marshalOProduct2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋproductᚋgraphᚋmodelᚐProduct(ctx context.Context, sel ast.SelectionSet, v *model.Product) graphql.Marshaler {
 	if v == nil {
 		return graphql.Null
 	}

@@ -49,12 +49,15 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 	mergedResponse["errors"] = make([]any, 0)
 
 	for _, step := range plan.Steps {
+		if len(step.Selections) == 0 {
+			continue
+		}
+
 		wg.Add(1)
 		go func(step *planner.Step) {
 			defer wg.Done()
 			defer close(step.Done)
 			e.waitDependStepEnded(plan, step)
-
 			var reqVariables map[string]any
 			var currentRefs []entityRef
 
@@ -359,9 +362,10 @@ func (p Paths) Merge() Paths {
 }
 
 type entityRef struct {
-	Typename string
-	Key      any
-	Path     Path
+	Typename    string
+	Key         any
+	Path        Path
+	ExtraFields map[string]any
 }
 
 func (e entityRef) toRepresentation() map[string]any {
@@ -369,6 +373,11 @@ func (e entityRef) toRepresentation() map[string]any {
 	for k, v := range e.Key.(map[string]any) {
 		ret[k] = v
 	}
+
+	for k, v := range e.ExtraFields {
+		ret[k] = v
+	}
+
 	ret["__typename"] = e.Typename
 	return ret
 }
@@ -419,8 +428,10 @@ func (e *executor) doRequest(ctx context.Context, host string, query string, var
 
 	header := GetRequestHeaderFromContext(ctx)
 
-	if header != nil {
-		req.Header = header
+	for k, values := range header {
+		for _, v := range values {
+			req.Header.Add(k, v)
+		}
 	}
 	req.Header.Set("Content-Type", "application/json")
 
@@ -597,10 +608,16 @@ func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]ent
 			continue
 		}
 
+		extraFields := make(map[string]any)
+		for k, v := range parentMap {
+			extraFields[k] = v
+		}
+
 		refs = append(refs, entityRef{
-			Typename: string(td.Name),
-			Key:      keyMap,
-			Path:     parentPath,
+			Typename:    string(td.Name),
+			Key:         keyMap,
+			Path:        parentPath,
+			ExtraFields: extraFields,
 		})
 	}
 

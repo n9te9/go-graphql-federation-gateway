@@ -310,6 +310,100 @@ func TestPlanner_Plan(t *testing.T) {
 				},
 			},
 		},
+		{
+			name: "HappyCase: Plan query with @requires directive (injection of unselected field)",
+			doc: func() *query.Document {
+				lexer := query.NewLexer()
+				parser := query.NewParser(lexer)
+				doc, err := parser.Parse([]byte(`
+            query {
+                products {
+                    name
+                    shippingEstimate
+                }
+            }
+        `))
+				if err != nil {
+					t.Fatal(err)
+				}
+				return doc
+			}(),
+			superGraph: func() *graph.SuperGraph {
+				inventorySDL := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String weight: Int price: Int }`
+				shippingSDL := `extend type Product @key(fields: "upc") { upc: String! @external weight: Int @external shippingEstimate: Int @requires(fields: "weight price") }`
+
+				sg1, _ := graph.NewBaseSubGraph("inventory", []byte(inventorySDL), "")
+				sg2, _ := graph.NewSubGraph("shipping", []byte(shippingSDL), "")
+
+				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", inventorySDL, shippingSDL)), []*graph.SubGraph{sg1, sg2})
+
+				return superGraph
+			}(),
+			want: &planner.Plan{
+				Steps: []*planner.Step{
+					{
+						ID: 0,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String weight: Int price: Int }`
+							sg, _ := graph.NewBaseSubGraph("inventory", []byte(sdl), "")
+							sg.BaseName = "products"
+							sg.OwnershipTypes = map[string]struct{}{"Product": {}}
+							return sg
+						}(),
+						IsBase: true,
+						Selections: []*planner.Selection{
+							{
+								ParentType:    "Product",
+								Field:         "upc",
+								SubSelections: []*planner.Selection{},
+							},
+							{
+								ParentType:    "Product",
+								Field:         "name",
+								SubSelections: []*planner.Selection{},
+							},
+							{
+								ParentType:    "Product",
+								Field:         "weight",
+								SubSelections: []*planner.Selection{},
+							},
+							{
+								ParentType:    "Product",
+								Field:         "price",
+								SubSelections: []*planner.Selection{},
+							},
+						},
+						DependsOn: nil,
+					},
+					{
+						ID: 1,
+						SubGraph: func() *graph.SubGraph {
+							sdl := `extend type Product @key(fields: "upc") { upc: String! @external weight: Int @external shippingEstimate: Int @requires(fields: "weight price") }`
+							sg, _ := graph.NewSubGraph("shipping", []byte(sdl), "")
+							return sg
+						}(),
+						Selections: []*planner.Selection{
+							{
+								ParentType:    "Product",
+								Field:         "shippingEstimate",
+								SubSelections: []*planner.Selection{},
+							},
+						},
+						DependsOn: []int{0},
+					},
+				},
+				RootSelections: []*planner.Selection{
+					{
+						ParentType: "Query",
+						Field:      "products",
+						SubSelections: []*planner.Selection{
+							{ParentType: "Product", Field: "name"},
+							{ParentType: "Product", Field: "shippingEstimate"},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	for _, tt := range tests {

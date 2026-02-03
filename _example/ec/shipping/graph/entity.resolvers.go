@@ -7,18 +7,17 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
-	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/account/graph/model"
+	"github.com/go-graphql-federation-gateway/_example/ec/shipping/graph/model"
 )
 
-// FindUserByID is the resolver for the findUserByID field.
-func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.User, error) {
-	user, ok := users[id]
-	if !ok {
-		return nil, fmt.Errorf("user not found: %s", id)
+// FindProductByUpc is the resolver for the findProductByUpc field.
+func (r *entityResolver) FindProductByUpc(ctx context.Context, upc string) (*model.Product, error) {
+	if product, ok := products[upc]; ok {
+		return product, nil
 	}
-	return user, nil
+
+	return nil, nil
 }
 
 // Entity returns EntityResolver implementation.

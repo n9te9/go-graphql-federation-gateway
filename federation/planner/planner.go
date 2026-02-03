@@ -34,7 +34,23 @@ func (s *Step) hasField(fieldName string) bool {
 	for _, t := range s.SubGraph.Schema.Types {
 		for _, field := range t.Fields {
 			if fieldName == string(field.Name) {
+				if dir := field.Directives.Get([]byte("external")); dir != nil {
+					return false
+				}
 				return true
+			}
+		}
+	}
+
+	for _, ext := range s.SubGraph.Schema.Extends {
+		if t, ok := ext.(*schema.TypeDefinition); ok {
+			for _, field := range t.Fields {
+				if fieldName == string(field.Name) {
+					if dir := field.Directives.Get([]byte("external")); dir != nil {
+						return false
+					}
+					return true
+				}
 			}
 		}
 	}
@@ -137,6 +153,9 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 	}
 
 	plan := p.plan(string(queryField.Name), schemaTypeDefinition, rootSelections)
+	if err := p.checkDAG(plan); err != nil {
+		return nil, err
+	}
 
 	return plan, nil
 }
@@ -251,14 +270,20 @@ func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, 
 			subSelections := walk(sel.SubSelections, subGraph)
 
 			key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
+
+			isOwned := false
 			if _, ok := subGraph.OwnershipFieldMap()[key]; ok {
+				isOwned = true
+			}
+
+			if isOwned {
 				selection := &Selection{
 					ParentType:    sel.ParentType,
 					Field:         sel.Field,
 					SubSelections: subSelections,
 				}
 				ret = append(ret, selection)
-			} else {
+			} else if len(subSelections) > 0 {
 				ret = append(ret, subSelections...)
 			}
 		}
@@ -288,6 +313,7 @@ func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, 
 		})
 	}
 
+	p.solveRequiresField(plan)
 	p.solveDependency(plan)
 
 	return plan
@@ -340,6 +366,87 @@ func (p *planner) solveStepDependency(steps Steps, targetStep *Step) {
 	}
 }
 
+func (p *planner) findOwnerStep(steps Steps, parentType, fieldName string) *Step {
+	key := fmt.Sprintf("%s.%s", parentType, fieldName)
+	for _, step := range steps {
+		if _, ok := step.SubGraph.OwnershipFieldMap()[key]; ok {
+			return step
+		}
+	}
+	return nil
+}
+
+func (p *planner) solveRequiresField(plan *Plan) {
+	for _, step := range plan.Steps {
+		requiredFields := step.SubGraph.RequiredFields()
+		if len(requiredFields) == 0 {
+			continue
+		}
+
+		for parentType, fieldsMap := range requiredFields {
+			for requiredSet := range fieldsMap {
+				reqFields := strings.Fields(requiredSet)
+
+				for _, reqField := range reqFields {
+					ownerStep := p.findOwnerStep(plan.Steps, parentType, reqField)
+					if ownerStep == nil {
+						continue
+					}
+
+					newSelections, injected := p.injectField(ownerStep.Selections, parentType, reqField)
+
+					if injected {
+						ownerStep.Selections = newSelections
+					}
+				}
+			}
+		}
+	}
+}
+
+func (p *planner) injectField(selections []*Selection, parentType, fieldName string) ([]*Selection, bool) {
+	injectedAny := false
+
+	isTargetContext := false
+	for _, sel := range selections {
+		if sel.ParentType == parentType {
+			isTargetContext = true
+			break
+		}
+	}
+
+	if isTargetContext {
+		exists := false
+		for _, sel := range selections {
+			if sel.Field == fieldName {
+				exists = true
+				break
+			}
+		}
+
+		if !exists {
+			selections = append(selections, &Selection{
+				ParentType:    parentType,
+				Field:         fieldName,
+				SubSelections: []*Selection{},
+			})
+			injectedAny = true
+		}
+	}
+
+	for _, sel := range selections {
+		if len(sel.SubSelections) > 0 {
+			updatedSubs, childInjected := p.injectField(sel.SubSelections, parentType, fieldName)
+			if childInjected {
+				sel.SubSelections = updatedSubs
+				injectedAny = true
+			}
+		}
+	}
+
+	return selections, injectedAny
+}
+
 func (p *planner) findRequiredKeys(step *Step) map[string][]string {
 	required := make(map[string][]string)
 
@@ -378,6 +485,7 @@ func (p *planner) getEntityKeys(subGraph *graph.SubGraph, typeName string) []str
 			return keys
 		}
 	}
+
 	for _, ext := range subGraph.Schema.Extends {
 		if t, ok := ext.(*schema.TypeDefinition); ok {
 			if string(t.Name) == typeName {
@@ -387,6 +495,7 @@ func (p *planner) getEntityKeys(subGraph *graph.SubGraph, typeName string) []str
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -465,4 +574,35 @@ func (p *planner) injectKey(selections []*Selection, targetTypeName string, keyF
 	}
 
 	return selections, injected
+}
+
+func (p *planner) checkDAG(plan *Plan) error {
+	visited := make(map[int]bool)
+	var visit func(step *Step) error
+	visit = func(step *Step) error {
+		if visited[step.ID] {
+			return fmt.Errorf("cycle detected at step %d", step.ID)
+		}
+
+		visited[step.ID] = true
+		for _, depID := range step.DependsOn {
+			depStep := plan.GetStepByID(depID)
+			if depStep == nil {
+				return fmt.Errorf("step %d depends on unknown step %d", step.ID, depID)
+			}
+			if err := visit(depStep); err != nil {
+				return err
+			}
+		}
+		visited[step.ID] = false
+		return nil
+	}
+
+	for _, step := range plan.Steps {
+		if err := visit(step); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

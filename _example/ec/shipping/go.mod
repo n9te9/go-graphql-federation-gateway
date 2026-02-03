@@ -1,6 +1,8 @@
-module github.com/n9te9/go-graphql-federation-gateway/_example/ec/account
+module github.com/go-graphql-federation-gateway/_example/ec/shipping
 
-go 1.25.1
+go 1.25.4
+
+tool github.com/99designs/gqlgen
 
 require (
 	github.com/99designs/gqlgen v0.17.86
@@ -21,5 +23,3 @@ require (
 	golang.org/x/text v0.33.0 // indirect
 	golang.org/x/tools v0.40.0 // indirect
 )
-
-tool github.com/99designs/gqlgen

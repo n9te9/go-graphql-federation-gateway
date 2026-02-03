@@ -23,3 +23,11 @@ services:
       - "8003:8003"
     environment:
       - PORT=8003
+  shipping:
+    build:
+      context: ./shipping
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8004"
+    environment:
+      - PORT=8004

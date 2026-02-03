@@ -1,4 +1,4 @@
-module github.com/n9te9/go-graphql-federation-gateway/_example/ec/inventory
+module github.com/n9te9/go-graphql-federation-gateway/_example/ec/review
 
 go 1.25.4
 

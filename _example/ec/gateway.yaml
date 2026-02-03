@@ -16,3 +16,7 @@ services:
   host: http://localhost:8003/query
   schema_files:
   - ./account/graph/schema.graphqls
+- name: shipping
+  host: http://localhost:8004/query
+  schema_files:
+  - ./shipping/graph/schema.graphqls
