@@ -132,7 +132,7 @@ func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	plan, err := g.planner.Plan(document)
+	plan, err := g.planner.Plan(document, req.Variables)
 	if err != nil {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]any{

@@ -58,7 +58,6 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			defer wg.Done()
 			defer close(step.Done)
 			e.waitDependStepEnded(plan, step)
-			var reqVariables map[string]any
 			var currentRefs []entityRef
 
 			if len(step.DependsOn) != 0 {
@@ -88,19 +87,13 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				}
 			}
 
-			query, builtVariables, err := e.QueryBuilder.Build(step, entities)
+			query, builtVariables, err := e.QueryBuilder.Build(step, entities, variables)
 			if err != nil {
 				step.Err = err
 				return
 			}
 
-			if len(step.DependsOn) == 0 {
-				reqVariables = variables
-			} else {
-				reqVariables = builtVariables
-			}
-
-			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, reqVariables)
+			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, builtVariables)
 			if err != nil {
 				step.Err = err
 				return
@@ -109,7 +102,13 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			errorsResp, ok := resp["errors"].([]any)
 			if ok {
 				e.mux.Lock()
-				mergedResponse["errors"] = append(mergedResponse["errors"].([]any), errorsResp...)
+				errs, ok := mergedResponse["errors"]
+				if !ok {
+					errs = make([]any, 0)
+					mergedResponse["errors"] = errs
+				} else {
+					mergedResponse["errors"] = append(mergedResponse["errors"].([]any), errorsResp...)
+				}
 				e.mux.Unlock()
 			}
 

@@ -94,21 +94,20 @@ func TestExecutor_Execute(t *testing.T) {
 			plan: &planner.Plan{
 				Steps: []*planner.Step{
 					{
-						ID: 0,
+						ID:         0,
+						RootFields: []string{"products"},
 						SubGraph: func() *graph.SubGraph {
 							sdl := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String price: Int }`
-							sg, err := graph.NewBaseSubGraph("product", []byte(sdl), "http://product.example.com")
+							sg, err := graph.NewSubGraph("product", []byte(sdl), "http://product.example.com")
 							if err != nil {
 								t.Fatal(err)
 							}
-							sg.BaseName = "products"
 							return sg
 						}(),
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc"},
 							{ParentType: "Product", Field: "name"},
 						},
-						IsBase:    true,
 						DependsOn: []int{},
 						Done:      make(chan struct{}),
 						Err:       nil,
@@ -247,12 +246,10 @@ func TestExecutor_Execute(t *testing.T) {
 						ID: 0,
 						SubGraph: func() *graph.SubGraph {
 							sdl := `type Query { products: [Product] } type Product @key(fields: "upc") { upc: String! name: String }`
-							sg, _ := graph.NewBaseSubGraph("product", []byte(sdl), "http://product.example.com")
-							sg.BaseName = "products"
+							sg, _ := graph.NewSubGraph("product", []byte(sdl), "http://product.example.com")
 							sg.OwnershipTypes = map[string]struct{}{"Product": {}}
 							return sg
 						}(),
-						IsBase: true,
 						Selections: []*planner.Selection{
 							{ParentType: "Product", Field: "upc"},
 						},

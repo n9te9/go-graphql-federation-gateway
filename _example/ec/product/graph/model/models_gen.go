@@ -2,6 +2,16 @@
 
 package model
 
+type Mutation struct {
+}
+
+type NewProduct struct {
+	Upc    string `json:"upc"`
+	Name   string `json:"name"`
+	Price  *int32 `json:"price,omitempty"`
+	Weight *int32 `json:"weight,omitempty"`
+}
+
 type Product struct {
 	Upc    string `json:"upc"`
 	Name   string `json:"name"`

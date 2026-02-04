@@ -18,8 +18,6 @@ type SubGraph struct {
 	SDL    string
 	Host   string
 
-	BaseName string
-
 	OwnershipTypes    map[string]struct{}
 	ownershipFieldMap map[string]*ownership
 	requiredFields    map[string]map[string]struct{}
@@ -43,28 +41,6 @@ func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
 		SDL:               string(src),
 		OwnershipTypes:    ownershipTypes,
 		ownershipFieldMap: newOwnershipMap(schema),
-		requiredFields:    newRequiredFields(schema),
-	}, nil
-}
-
-func NewBaseSubGraph(name string, src []byte, host string) (*SubGraph, error) {
-	schema, err := schema.NewParser(schema.NewLexer()).Parse(src)
-	if err != nil {
-		return nil, err
-	}
-
-	ownershipTypes := make(map[string]struct{})
-	for _, typ := range schema.Types {
-		ownershipTypes[string(typ.Name)] = struct{}{}
-	}
-
-	return &SubGraph{
-		Name:              name,
-		Schema:            schema,
-		Host:              host,
-		SDL:               string(src),
-		OwnershipTypes:    ownershipTypes,
-		ownershipFieldMap: newOwnershipMapForSuperGraph(schema),
 		requiredFields:    newRequiredFields(schema),
 	}, nil
 }

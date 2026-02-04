@@ -19,6 +19,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 		{
 			name: "Happy case: Build base simple query",
 			step: &planner.Step{
+				RootFields: []string{"products"},
 				SubGraph: func() *graph.SubGraph {
 					sdl := `type Query {
 					products: [Product]
@@ -29,12 +30,10 @@ func TestQueryBuilder_Build(t *testing.T) {
 					name: String
 					price: Int
 				}`
-					sg, err := graph.NewBaseSubGraph("aaaaaaaaa", []byte(sdl), "")
+					sg, err := graph.NewSubGraph("aaaaaaaaa", []byte(sdl), "")
 					if err != nil {
 						t.Fatal(err)
 					}
-
-					sg.BaseName = "products"
 
 					return sg
 				}(),
@@ -48,7 +47,6 @@ func TestQueryBuilder_Build(t *testing.T) {
 						Field:      "name",
 					},
 				},
-				IsBase: true,
 			},
 			query: `query {
 	products {
@@ -113,7 +111,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			qb := executor.NewQueryBuilder()
-			got, _, err := qb.Build(tt.step, nil)
+			got, _, err := qb.Build(tt.step, nil, nil)
 			if err != nil && tt.wantErr == nil {
 				t.Errorf("QueryBuilder.Build() unexpected error: %v", err)
 				return
