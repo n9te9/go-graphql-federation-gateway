@@ -19,6 +19,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 		{
 			name: "Happy case: Build base simple query",
 			step: &planner.Step{
+				RootFields: []string{"products"},
 				SubGraph: func() *graph.SubGraph {
 					sdl := `type Query {
 					products: [Product]
@@ -33,8 +34,6 @@ func TestQueryBuilder_Build(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-
-					sg.BaseName = "products"
 
 					return sg
 				}(),

@@ -84,7 +84,7 @@ func (qb *queryBuilder) buildBaseQuery(step *planner.Step) (string, map[string]a
 	var builder strings.Builder
 
 	builder.WriteString("query {\n")
-	builder.WriteString("\t" + step.SubGraph.BaseName + " {\n")
+	builder.WriteString("\t" + step.RootFields[0] + " {\n")
 	for _, sel := range step.Selections {
 		builder.WriteString("\t\t" + sel.Field + "\n")
 	}

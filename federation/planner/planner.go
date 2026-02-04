@@ -23,6 +23,7 @@ type Step struct {
 	ID       int
 	SubGraph *graph.SubGraph
 
+	RootFields []string
 	Selections []*Selection
 	DependsOn  []int
 	Done       chan struct{}
@@ -33,35 +34,7 @@ type Step struct {
 }
 
 func (s *Step) IsBase() bool {
-	return len(s.DependsOn) == 0
-}
-
-func (s *Step) hasField(fieldName string) bool {
-	for _, t := range s.SubGraph.Schema.Types {
-		for _, field := range t.Fields {
-			if fieldName == string(field.Name) {
-				if dir := field.Directives.Get([]byte("external")); dir != nil {
-					return false
-				}
-				return true
-			}
-		}
-	}
-
-	for _, ext := range s.SubGraph.Schema.Extends {
-		if t, ok := ext.(*schema.TypeDefinition); ok {
-			for _, field := range t.Fields {
-				if fieldName == string(field.Name) {
-					if dir := field.Directives.Get([]byte("external")); dir != nil {
-						return false
-					}
-					return true
-				}
-			}
-		}
-	}
-
-	return false
+	return len(s.RootFields) > 0
 }
 
 type StepStatus int
@@ -120,8 +93,7 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 		return nil, errors.New("empty selection")
 	}
 
-	schemaTypeDefinition, queryField, err := p.findOperationField(op)
-	selections, err := p.extractSelections(op.Selections[0].GetSelections(), string(schemaTypeDefinition.Name))
+	schemaTypeDefinitions, queryFields, err := p.findOperationField(op)
 	if err != nil {
 		return nil, err
 	}
@@ -140,25 +112,26 @@ func (p *planner) Plan(doc *query.Document) (*Plan, error) {
 		if op.OperationType == query.QueryOperation && len(p.superGraph.Schema.Definition.Query) > 0 {
 			rootTypeName = string(p.superGraph.Schema.Definition.Query)
 		}
-	}
-
-	var rootSelections []*Selection
-	for _, sel := range op.Selections {
-		switch f := sel.(type) {
-		case *query.Field:
-			if string(f.Name) != string(queryField.Name) {
-				continue
-			}
-
-			rootSelections = append(rootSelections, &Selection{
-				ParentType:    rootTypeName,
-				Field:         string(f.Name),
-				SubSelections: selections,
-			})
+		if op.OperationType == query.MutationOperation && len(p.superGraph.Schema.Definition.Mutation) > 0 {
+			rootTypeName = string(p.superGraph.Schema.Definition.Mutation)
 		}
 	}
 
-	plan := p.plan(string(queryField.Name), schemaTypeDefinition, rootSelections)
+	var rootSelections []*Selection
+	for i, f := range queryFields {
+		selections, err := p.extractSelections(f.Selections, string(schemaTypeDefinitions[i].Name))
+		if err != nil {
+			return nil, err
+		}
+
+		rootSelections = append(rootSelections, &Selection{
+			ParentType:    rootTypeName,
+			Field:         string(f.Name),
+			SubSelections: selections,
+		})
+	}
+
+	plan := p.plan(rootTypeName, rootSelections)
 	if err := p.checkDAG(plan); err != nil {
 		return nil, err
 	}
@@ -231,7 +204,9 @@ func (p *planner) getFieldTypeName(parentTypename, fieldName string) (string, er
 	return "", fmt.Errorf("field %s not found in type %s", fieldName, parentTypename)
 }
 
-func (p *planner) findOperationField(op *query.Operation) (*schema.TypeDefinition, *query.Field, error) {
+func (p *planner) findOperationField(op *query.Operation) ([]*schema.TypeDefinition, []*query.Field, error) {
+	ret := make([]*schema.TypeDefinition, 0)
+	fields := make([]*query.Field, 0)
 	for _, schemaOperation := range p.superGraph.Schema.Operations {
 		for _, field := range schemaOperation.Fields {
 			for _, sel := range op.Selections {
@@ -241,12 +216,13 @@ func (p *planner) findOperationField(op *query.Operation) (*schema.TypeDefinitio
 				}
 
 				if string(field.Name) == string(f.Name) {
-					return p.superGraph.Schema.Indexes.TypeIndex[string(field.Type.GetRootType().Name)], f, nil
+					ret = append(ret, p.superGraph.Schema.Indexes.TypeIndex[string(field.Type.GetRootType().Name)])
+					fields = append(fields, f)
 				}
 			}
 		}
 	}
-	return nil, nil, errors.New("not found query operation")
+	return ret, fields, nil
 }
 
 type Selection struct {
@@ -256,72 +232,46 @@ type Selection struct {
 	SubSelections []*Selection
 }
 
-func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, rootSelections []*Selection) *Plan {
+func (p *planner) plan(rootTypeName string, rootSelections []*Selection) *Plan {
 	plan := &Plan{
 		Steps:          make([]*Step, 0),
 		RootSelections: rootSelections,
 	}
 
-	var walk func(sels []*Selection, subGraph *graph.SubGraph) []*Selection
-	walk = func(sels []*Selection, subGraph *graph.SubGraph) []*Selection {
-		ret := make([]*Selection, 0)
-		for _, sel := range sels {
-			switch sel.ParentType {
-			case "mutation":
-				// TODO: implement for mutation
-			case "subscription":
-				// TODO: implement for subscription
-			}
+	for _, rootSel := range rootSelections {
+		for _, subGraph := range p.superGraph.SubGraphs {
+			if p.ownsRootField(subGraph, rootTypeName, rootSel.Field) {
+				sels := p.walk(rootSel.SubSelections, subGraph)
 
-			subSelections := walk(sel.SubSelections, subGraph)
-
-			key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
-
-			isOwned := false
-			if _, ok := subGraph.OwnershipFieldMap()[key]; ok {
-				isOwned = true
-			}
-
-			if isOwned {
-				selection := &Selection{
-					ParentType:    sel.ParentType,
-					Field:         sel.Field,
-					SubSelections: subSelections,
-				}
-				ret = append(ret, selection)
-			} else if len(subSelections) > 0 {
-				ret = append(ret, subSelections...)
+				plan.Steps = append(plan.Steps, &Step{
+					SubGraph:     subGraph,
+					Selections:   sels,
+					RootFields:   []string{rootSel.Field},
+					ownershipMap: make(map[string]struct{}),
+					Done:         make(chan struct{}),
+				})
+				break
 			}
 		}
-
-		return ret
 	}
 
 	for _, subGraph := range p.superGraph.SubGraphs {
-		isBase := false
-		if _, ok := subGraph.OwnershipTypes[string(typeDefinition.Name)]; ok {
-			isBase = true
-			subGraph.BaseName = queryName
+		var resolverSels []*Selection
+		for _, rootSel := range rootSelections {
+			if !p.ownsRootField(subGraph, rootTypeName, rootSel.Field) {
+				resolverSels = append(resolverSels, p.walk([]*Selection{rootSel}, subGraph)...)
+			}
 		}
 
-		sels := walk(rootSelections, subGraph)
-		if len(sels) == 0 && !isBase {
-			continue
+		if len(resolverSels) > 0 {
+			plan.Steps = append(plan.Steps, &Step{
+				SubGraph:     subGraph,
+				Selections:   resolverSels,
+				RootFields:   nil,
+				ownershipMap: make(map[string]struct{}),
+				Done:         make(chan struct{}),
+			})
 		}
-
-		ownership := make(map[string]struct{})
-		for k := range subGraph.OwnershipFieldMap() {
-			ownership[k] = struct{}{}
-		}
-
-		plan.Steps = append(plan.Steps, &Step{
-			SubGraph:     subGraph,
-			Selections:   sels,
-			DependsOn:    nil,
-			Err:          nil,
-			ownershipMap: make(map[string]struct{}),
-			Done:         make(chan struct{}),
-		})
 	}
 
 	p.solveRequiresField(plan)
@@ -330,15 +280,48 @@ func (p *planner) plan(queryName string, typeDefinition *schema.TypeDefinition, 
 	return plan
 }
 
+func (p *planner) walk(sels []*Selection, subGraph *graph.SubGraph) []*Selection {
+	ret := make([]*Selection, 0)
+	for _, sel := range sels {
+		subSelections := p.walk(sel.SubSelections, subGraph)
+		key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
+
+		if _, ok := subGraph.OwnershipFieldMap()[key]; ok {
+			ret = append(ret, &Selection{
+				ParentType:    sel.ParentType,
+				Field:         sel.Field,
+				SubSelections: subSelections,
+			})
+		} else if len(subSelections) > 0 {
+			ret = append(ret, subSelections...)
+		}
+	}
+	return ret
+}
+
+func (p *planner) ownsRootField(subGraph *graph.SubGraph, rootTypeName string, fieldName string) bool {
+	for _, op := range subGraph.Schema.Operations {
+		if strings.EqualFold(string(op.OperationType), rootTypeName) {
+			for _, f := range op.Fields {
+				if string(f.Name) == fieldName {
+					return true
+				}
+			}
+		}
+	}
+	return false
+}
+
 func (p *planner) solveDependency(plan *Plan) {
 	for i, step := range plan.Steps {
 		step.ID = i
 	}
 
 	for _, step := range plan.Steps {
-		if step.ID == 0 {
+		if len(step.RootFields) > 0 {
 			continue
 		}
+
 		p.solveOwnershipDependencies(plan.Steps, step)
 		p.solveProvidingDependencies(plan.Steps, step)
 	}
@@ -362,7 +345,7 @@ func (p *planner) solveOwnershipDependencies(steps Steps, targetStep *Step) {
 
 	dependsOn := make([]int, 0, len(steps))
 	for _, step := range steps {
-		if step == targetStep {
+		if step == targetStep || step.SubGraph == targetStep.SubGraph {
 			continue
 		}
 
@@ -390,7 +373,7 @@ func (p *planner) solveProvidingDependencies(steps Steps, targetStep *Step) {
 	requiredKeysMap := p.findRequiredKeys(targetStep)
 	for typeName := range requiredKeysMap {
 		for _, providerStep := range steps {
-			if targetStep == providerStep {
+			if targetStep == providerStep || targetStep.SubGraph == providerStep.SubGraph {
 				continue
 			}
 
@@ -412,13 +395,13 @@ func (p *planner) solveProvidingDependencies(steps Steps, targetStep *Step) {
 
 func (p *planner) enrichSelection(plan *Plan) {
 	for _, targetStep := range plan.Steps {
+		if !targetStep.IsBase() {
+			targetStep.RootFields = nil
+		}
+
 		requiredKeysMap := p.findRequiredKeys(targetStep)
 		if len(requiredKeysMap) == 0 {
 			continue
-		}
-
-		if targetStep.ID > 0 {
-			targetStep.SubGraph.BaseName = ""
 		}
 
 		for typeName, keys := range requiredKeysMap {

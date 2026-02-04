@@ -18,8 +18,6 @@ type SubGraph struct {
 	SDL    string
 	Host   string
 
-	BaseName string
-
 	OwnershipTypes    map[string]struct{}
 	ownershipFieldMap map[string]*ownership
 	requiredFields    map[string]map[string]struct{}
