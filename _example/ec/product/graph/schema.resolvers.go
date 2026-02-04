@@ -19,15 +19,14 @@ func (r *mutationResolver) CreateProductByName(ctx context.Context, name string)
 
 // CreateProduct is the resolver for the createProduct field.
 func (r *mutationResolver) CreateProduct(ctx context.Context, product model.NewProduct) (*model.Product, error) {
-	newUpc := fmt.Sprintf("%d", len(products)+1)
 	newProduct := &model.Product{
-		Upc:    newUpc,
+		Upc:    product.Upc,
 		Name:   product.Name,
 		Price:  product.Price,
 		Weight: product.Weight,
 	}
 
-	products[newUpc] = newProduct
+	products[product.Upc] = newProduct
 
 	return newProduct, nil
 }
