@@ -17,6 +17,11 @@ import (
 	"github.com/n9te9/goliteql/schema"
 )
 
+type executionContext struct {
+	concurrencyMap map[int]chan struct{}
+	Errs           []error
+}
+
 type Executor interface {
 	Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) map[string]any
 }
@@ -48,17 +53,22 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 	mergedResponse["data"] = make(map[string]any)
 	mergedResponse["errors"] = make([]any, 0)
 	var responseMux sync.Mutex
+	ectx := &executionContext{
+		concurrencyMap: make(map[int]chan struct{}),
+		Errs:           make([]error, 0),
+	}
 
 	for _, step := range plan.Steps {
 		if len(step.Selections) == 0 {
 			continue
 		}
+		ectx.concurrencyMap[step.ID] = make(chan struct{})
 
 		wg.Add(1)
 		go func(step *planner.Step) {
 			defer wg.Done()
-			defer close(step.Done)
-			e.waitDependStepEnded(plan, step)
+			defer close(ectx.concurrencyMap[step.ID])
+			e.waitDependStepEnded(ectx, plan, step)
 			var currentRefs []entityRef
 			var stepEntities Entities = make(Entities, 0)
 
@@ -85,23 +95,19 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				}
 			}
 
-			// fmt.Printf("stepID: %d\n", step.ID)
-			// for _, sel := range step.Selections {
-			// 	fmt.Printf("Type: %s, Field: %s\n", sel.ParentType, sel.Field)
-			// }
-			// for _, ref := range currentRefs {
-			// 	fmt.Printf("Entity Ref - Type: %s, Key: %v, Path: %v\n", ref.Typename, ref.Key, ref.Path)
-			// }
-
 			query, builtVariables, err := e.QueryBuilder.Build(step, stepEntities, variables)
 			if err != nil {
-				step.Err = err
+				e.mux.Lock()
+				ectx.Errs = append(ectx.Errs, err)
+				e.mux.Unlock()
 				return
 			}
 
 			resp, err := e.doRequest(ctx, step.SubGraph.Host, query, builtVariables)
 			if err != nil {
-				step.Err = err
+				e.mux.Lock()
+				ectx.Errs = append(ectx.Errs, err)
+				e.mux.Unlock()
 				return
 			}
 
@@ -121,7 +127,9 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			data, ok := resp["data"].(map[string]any)
 			if !ok || data == nil {
 				if len(step.DependsOn) == 0 {
-					step.Err = errors.New("no data in response")
+					e.mux.Lock()
+					ectx.Errs = append(ectx.Errs, errors.New("no data in response"))
+					e.mux.Unlock()
 				}
 				return
 			}
@@ -135,12 +143,13 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				paths := BuildPaths(data)
 				refs, err := CollectEntityRefs(paths, data, e.superGraph.Schema)
 				slog.Debug("Extracted Refs", "stepID", step.ID, "refsCount", len(refs), "refs", refs)
-				responseMux.Unlock()
 
 				if err != nil {
-					step.Err = err
+					ectx.Errs = append(ectx.Errs, err)
+					responseMux.Unlock()
 					return
 				}
+				responseMux.Unlock()
 				stepInputs.Store(step.ID, refs)
 
 			} else {
@@ -149,20 +158,21 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 					responseMux.Lock()
 					err := e.mergeEntitiesResponse(mergedResponse, currentRefs, entitiesData)
 					if err != nil {
+						ectx.Errs = append(ectx.Errs, err)
 						responseMux.Unlock()
-						step.Err = err
 						return
 					}
 
 					mergedData := mergedResponse["data"].(map[string]any)
 					paths := BuildPaths(mergedData)
 					newRefs, err := CollectEntityRefs(paths, mergedData, e.superGraph.Schema)
-					responseMux.Unlock()
 
 					if err != nil {
-						step.Err = err
+						ectx.Errs = append(ectx.Errs, err)
+						responseMux.Unlock()
 						return
 					}
+					responseMux.Unlock()
 					stepInputs.Store(step.ID, newRefs)
 				}
 			}
@@ -177,11 +187,9 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 		errors = append(errors, responseErrors...)
 	}
 
-	for _, step := range plan.Steps {
-		if step.Err != nil {
-			slog.Error("failed to execute step", "error", step.Err)
-			errors = append(errors, step.Err.Error())
-		}
+	for _, err := range ectx.Errs {
+		slog.Error("failed to execute step", "error", err)
+		errors = append(errors, err.Error())
 	}
 
 	if len(errors) > 0 {
@@ -402,10 +410,10 @@ func getKey(directives []*schema.Directive) []string {
 	return nil
 }
 
-func (e *executor) waitDependStepEnded(plan *planner.Plan, step *planner.Step) {
+func (e *executor) waitDependStepEnded(ectx *executionContext, plan *planner.Plan, step *planner.Step) {
 	for _, dependStepID := range step.DependsOn {
 		dependsStep := plan.GetStepByID(dependStepID)
-		<-dependsStep.Done
+		<-ectx.concurrencyMap[dependsStep.ID]
 	}
 }
 

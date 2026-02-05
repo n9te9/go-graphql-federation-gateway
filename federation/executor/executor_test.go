@@ -109,8 +109,6 @@ func TestExecutor_Execute(t *testing.T) {
 							{ParentType: "Product", Field: "name"},
 						},
 						DependsOn: []int{},
-						Done:      make(chan struct{}),
-						Err:       nil,
 					},
 					{
 						ID: 1,
@@ -127,8 +125,6 @@ func TestExecutor_Execute(t *testing.T) {
 							{ParentType: "Product", Field: "height"},
 						},
 						DependsOn: []int{0},
-						Err:       nil,
-						Done:      make(chan struct{}),
 					},
 				},
 				RootSelections: []*planner.Selection{
@@ -254,7 +250,6 @@ func TestExecutor_Execute(t *testing.T) {
 							{ParentType: "Product", Field: "upc"},
 						},
 						DependsOn: nil,
-						Done:      make(chan struct{}),
 					},
 					{
 						ID: 1,
@@ -281,7 +276,6 @@ func TestExecutor_Execute(t *testing.T) {
 							},
 						},
 						DependsOn: []int{0},
-						Done:      make(chan struct{}),
 					},
 					{
 						ID: 2,
@@ -294,7 +288,6 @@ func TestExecutor_Execute(t *testing.T) {
 							{ParentType: "User", Field: "username"},
 						},
 						DependsOn: []int{1},
-						Done:      make(chan struct{}),
 					},
 				},
 				RootSelections: []*planner.Selection{
