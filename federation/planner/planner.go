@@ -28,11 +28,10 @@ type Step struct {
 	RootArguments map[string]map[string]any
 	OperationType string
 	DependsOn     []int
-	Done          chan struct{}
+}
 
-	ownershipMap map[string]struct{}
-
-	Err error
+type planningContext struct {
+	stepProvidedKeys map[int]map[string]struct{}
 }
 
 func (s *Step) IsBase() bool {
@@ -90,6 +89,7 @@ func (p *Plan) Selections() []*Selection {
 }
 
 func (p *planner) Plan(doc *query.Document, variables map[string]any) (*Plan, error) {
+	// TODO: cache plans for repeated queries
 	op := p.superGraph.GetOperation(doc)
 	if len(op.Selections) == 0 {
 		return nil, errors.New("empty selection")
@@ -139,7 +139,11 @@ func (p *planner) Plan(doc *query.Document, variables map[string]any) (*Plan, er
 		})
 	}
 
-	plan := p.plan(rootTypeName, rootSelections)
+	pctx := &planningContext{
+		stepProvidedKeys: make(map[int]map[string]struct{}),
+	}
+
+	plan := p.plan(pctx, rootTypeName, rootSelections)
 	if err := p.checkDAG(plan); err != nil {
 		return nil, err
 	}
@@ -258,7 +262,7 @@ type Selection struct {
 	SubSelections []*Selection
 }
 
-func (p *planner) plan(rootTypeName string, rootSelections []*Selection) *Plan {
+func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelections []*Selection) *Plan {
 	plan := &Plan{
 		Steps:          make([]*Step, 0),
 		RootSelections: rootSelections,
@@ -275,8 +279,6 @@ func (p *planner) plan(rootTypeName string, rootSelections []*Selection) *Plan {
 					RootFields:    []string{rootSel.Field},
 					RootArguments: map[string]map[string]any{rootSel.Field: rootSel.Arguments},
 					OperationType: strings.ToLower(rootTypeName),
-					ownershipMap:  make(map[string]struct{}),
-					Done:          make(chan struct{}),
 				})
 				break
 			}
@@ -293,17 +295,20 @@ func (p *planner) plan(rootTypeName string, rootSelections []*Selection) *Plan {
 
 		if len(resolverSels) > 0 {
 			plan.Steps = append(plan.Steps, &Step{
-				SubGraph:     subGraph,
-				Selections:   resolverSels,
-				RootFields:   nil,
-				ownershipMap: make(map[string]struct{}),
-				Done:         make(chan struct{}),
+				SubGraph:   subGraph,
+				Selections: resolverSels,
+				RootFields: nil,
 			})
 		}
 	}
 
+	for i, step := range plan.Steps {
+		step.ID = i
+		pctx.stepProvidedKeys[step.ID] = make(map[string]struct{})
+	}
+
 	p.solveRequiresField(plan)
-	p.solveDependency(plan)
+	p.solveDependency(pctx, plan)
 
 	return plan
 }
@@ -341,24 +346,20 @@ func (p *planner) ownsRootField(subGraph *graph.SubGraph, rootTypeName string, f
 	return false
 }
 
-func (p *planner) solveDependency(plan *Plan) {
-	for i, step := range plan.Steps {
-		step.ID = i
-	}
-
+func (p *planner) solveDependency(pctx *planningContext, plan *Plan) {
 	for _, step := range plan.Steps {
 		if len(step.RootFields) > 0 {
 			continue
 		}
 
-		p.solveOwnershipDependencies(plan.Steps, step)
-		p.solveProvidingDependencies(plan.Steps, step)
+		p.solveOwnershipDependencies(pctx, plan.Steps, step)
+		p.solveProvidingDependencies(pctx, plan.Steps, step)
 	}
 
-	p.enrichSelection(plan)
+	p.enrichSelection(pctx, plan)
 }
 
-func (p *planner) solveOwnershipDependencies(steps Steps, targetStep *Step) {
+func (p *planner) solveOwnershipDependencies(pctx *planningContext, steps Steps, targetStep *Step) {
 	neededKeys := make(map[string]struct{})
 	for typeName, requiredField := range p.findRequiredKeys(targetStep) {
 		for _, key := range requiredField {
@@ -398,7 +399,7 @@ func (p *planner) solveOwnershipDependencies(steps Steps, targetStep *Step) {
 	targetStep.DependsOn = dependsOn
 }
 
-func (p *planner) solveProvidingDependencies(steps Steps, targetStep *Step) {
+func (p *planner) solveProvidingDependencies(pctx *planningContext, steps Steps, targetStep *Step) {
 	requiredKeysMap := p.findRequiredKeys(targetStep)
 	for typeName := range requiredKeysMap {
 		for _, providerStep := range steps {
@@ -416,13 +417,13 @@ func (p *planner) solveProvidingDependencies(steps Steps, targetStep *Step) {
 			}
 
 			for _, key := range keys {
-				providerStep.ownershipMap[typeName+"."+key] = struct{}{}
+				pctx.stepProvidedKeys[providerStep.ID][typeName+"."+key] = struct{}{}
 			}
 		}
 	}
 }
 
-func (p *planner) enrichSelection(plan *Plan) {
+func (p *planner) enrichSelection(pctx *planningContext, plan *Plan) {
 	for _, targetStep := range plan.Steps {
 		if !targetStep.IsBase() {
 			targetStep.RootFields = nil
@@ -439,7 +440,7 @@ func (p *planner) enrichSelection(plan *Plan) {
 					providerStep := plan.GetStepByID(providerID)
 
 					fieldKey := typeName + "." + key
-					if _, ok := providerStep.ownershipMap[fieldKey]; ok {
+					if _, ok := pctx.stepProvidedKeys[providerStep.ID][fieldKey]; ok {
 						updated, _ := p.injectKey(providerStep.Selections, typeName, key)
 						providerStep.Selections = updated
 					}

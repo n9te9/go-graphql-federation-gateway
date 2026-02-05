@@ -690,7 +690,6 @@ func TestPlanner_Plan(t *testing.T) {
 				cmpopts.IgnoreUnexported(planner.Step{}, graph.SubGraph{}),
 				cmpopts.IgnoreFields(schema.Schema{}, "Tokens"),
 				cmpopts.IgnoreFields(graph.SubGraph{}, "SDL"),
-				cmpopts.IgnoreFields(planner.Step{}, "Done"),
 				cmpopts.SortSlices(func(i, j int) bool { return i < j }),
 				cmpopts.SortSlices(func(i, j *planner.Selection) bool { return i.Field < j.Field }),
 				cmpopts.EquateEmpty(),
