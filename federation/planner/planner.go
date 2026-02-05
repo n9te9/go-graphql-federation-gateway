@@ -199,8 +199,11 @@ func (p *planner) extractSelections(selection []query.Selection, parentType stri
 }
 
 func (p *planner) getFieldTypeName(parentTypename, fieldName string) (string, error) {
-	td, ok := p.superGraph.Schema.Indexes.TypeIndex[parentTypename]
+	if fieldName == "__typename" {
+		return "String", nil
+	}
 
+	td, ok := p.superGraph.Schema.Indexes.TypeIndex[parentTypename]
 	if ok {
 		for _, field := range td.Fields {
 			if string(field.Name) == fieldName {
