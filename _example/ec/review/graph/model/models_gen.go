@@ -2,6 +2,23 @@
 
 package model
 
+type Mutation struct {
+}
+
+type NewProduct struct {
+	Upc string `json:"upc"`
+}
+
+type NewReview struct {
+	Body    *string     `json:"body,omitempty"`
+	Author  *NewUser    `json:"author,omitempty"`
+	Product *NewProduct `json:"product,omitempty"`
+}
+
+type NewUser struct {
+	ID string `json:"id"`
+}
+
 type Product struct {
 	Upc     string    `json:"upc"`
 	Reviews []*Review `json:"reviews,omitempty"`
@@ -13,6 +30,7 @@ type Query struct {
 }
 
 type Review struct {
+	ID      string   `json:"id"`
 	Body    *string  `json:"body,omitempty"`
 	Author  *User    `json:"author,omitempty"`
 	Product *Product `json:"product,omitempty"`

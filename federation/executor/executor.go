@@ -43,10 +43,11 @@ func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph) *executo
 
 func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables map[string]any) map[string]any {
 	wg := sync.WaitGroup{}
-	entities := make(Entities, 0)
 	stepInputs := sync.Map{}
 	mergedResponse := make(map[string]any)
+	mergedResponse["data"] = make(map[string]any)
 	mergedResponse["errors"] = make([]any, 0)
+	var responseMux sync.Mutex
 
 	for _, step := range plan.Steps {
 		if len(step.Selections) == 0 {
@@ -59,6 +60,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			defer close(step.Done)
 			e.waitDependStepEnded(plan, step)
 			var currentRefs []entityRef
+			var stepEntities Entities = make(Entities, 0)
 
 			if len(step.DependsOn) != 0 {
 				targetTypes := make(map[string]struct{})
@@ -75,19 +77,23 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 								currentRefs = append(currentRefs, ref)
 							}
 						}
-					} else {
-						step.Err = errors.New("no entity refs for dependent step")
-						return
 					}
 				}
 
-				entities = make(Entities, 0)
 				for _, ref := range currentRefs {
-					entities = append(entities, ref.toRepresentation())
+					stepEntities = append(stepEntities, ref.toRepresentation())
 				}
 			}
 
-			query, builtVariables, err := e.QueryBuilder.Build(step, entities, variables)
+			// fmt.Printf("stepID: %d\n", step.ID)
+			// for _, sel := range step.Selections {
+			// 	fmt.Printf("Type: %s, Field: %s\n", sel.ParentType, sel.Field)
+			// }
+			// for _, ref := range currentRefs {
+			// 	fmt.Printf("Entity Ref - Type: %s, Key: %v, Path: %v\n", ref.Typename, ref.Key, ref.Path)
+			// }
+
+			query, builtVariables, err := e.QueryBuilder.Build(step, stepEntities, variables)
 			if err != nil {
 				step.Err = err
 				return
@@ -112,18 +118,25 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				e.mux.Unlock()
 			}
 
-			if len(step.DependsOn) == 0 {
-				if resp["data"] == nil {
+			data, ok := resp["data"].(map[string]any)
+			if !ok || data == nil {
+				if len(step.DependsOn) == 0 {
 					step.Err = errors.New("no data in response")
-					return
+				}
+				return
+			}
+
+			if len(step.DependsOn) == 0 {
+				responseMux.Lock()
+				for k, v := range data {
+					mergedResponse["data"].(map[string]any)[k] = v
 				}
 
-				e.mux.Lock()
-				mergedResponse = resp
-				e.mux.Unlock()
+				paths := BuildPaths(data)
+				refs, err := CollectEntityRefs(paths, data, e.superGraph.Schema)
+				slog.Debug("Extracted Refs", "stepID", step.ID, "refsCount", len(refs), "refs", refs)
+				responseMux.Unlock()
 
-				paths := BuildPaths(resp["data"])
-				refs, err := CollectEntityRefs(paths, resp["data"].(map[string]any), e.superGraph.Schema)
 				if err != nil {
 					step.Err = err
 					return
@@ -131,38 +144,25 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				stepInputs.Store(step.ID, refs)
 
 			} else {
-				for _, dependStepID := range step.DependsOn {
-					if _, ok := stepInputs.Load(dependStepID); !ok {
-						step.Err = errors.New("no entity refs for dependent step")
-						return
-					}
-				}
-
-				data, ok := resp["data"].(map[string]any)
-				if !ok {
-					step.Err = errors.New("no data in response")
-					return
-				}
 				entitiesData, ok := data["_entities"].([]any)
 				if ok {
-					e.mux.Lock()
+					responseMux.Lock()
 					err := e.mergeEntitiesResponse(mergedResponse, currentRefs, entitiesData)
 					if err != nil {
-						e.mux.Unlock()
+						responseMux.Unlock()
 						step.Err = err
 						return
 					}
 
-					mergedData := mergedResponse["data"]
+					mergedData := mergedResponse["data"].(map[string]any)
 					paths := BuildPaths(mergedData)
-					newRefs, err := CollectEntityRefs(paths, mergedData.(map[string]any), e.superGraph.Schema)
-					e.mux.Unlock()
+					newRefs, err := CollectEntityRefs(paths, mergedData, e.superGraph.Schema)
+					responseMux.Unlock()
 
 					if err != nil {
 						step.Err = err
 						return
 					}
-
 					stepInputs.Store(step.ID, newRefs)
 				}
 			}
@@ -568,6 +568,7 @@ func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]ent
 
 		td := getTypeDefinitionFromPath(parentPath, s)
 		if td == nil {
+			slog.Debug("type not found", "path", pathToString(parentPath))
 			continue
 		}
 
