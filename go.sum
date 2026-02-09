@@ -42,6 +42,8 @@ github.com/inconshreveable/mousetrap v1.1.0 h1:wN+x4NVGpMsO7ErUn/mUI3vEoE6Jt13X2
 github.com/inconshreveable/mousetrap v1.1.0/go.mod h1:vpF70FUmC8bwa3OWnCshd2FqLfsEA9PFc4w1p2J65bw=
 github.com/n9te9/goliteql v1.6.15 h1:uD/PZ2JluneclOR8rMdxk0TTu3mabrYOlE0s222qmjY=
 github.com/n9te9/goliteql v1.6.15/go.mod h1:u2c00tmthAVbrV64wisueu3lCDeQ1NE9C4IQz3VUFtA=
+github.com/n9te9/graphql-parser v0.1.0 h1:jDbCMY0Ezk4Xc8HeZp9cTR3LlcM00wyhKntf1qWkrC0=
+github.com/n9te9/graphql-parser v0.1.0/go.mod h1:HZGAF8S1DOQhc5LclYvfMfwF+EPfaFb6xjC0Q73eGPw=
 github.com/pmezard/go-difflib v1.0.0 h1:4DBwDE0NGyQoBHbLQYPwSUPoCMWR5BEzIk/f1lZbAQM=
 github.com/pmezard/go-difflib v1.0.0/go.mod h1:iKH77koFhYxTK1pcRnkKkqfTogsbg7gZNVY4sRDYZ/4=
 github.com/russross/blackfriday/v2 v2.1.0/go.mod h1:+Rmxgy9KzJVeS9/2gXHxylqXiyQDYRxCVz55jmeOWTM=

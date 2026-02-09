@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
-	"github.com/n9te9/goliteql/schema"
+	"github.com/n9te9/graphql-parser/ast"
 )
 
 type QueryBuilder interface {
@@ -43,6 +43,17 @@ func (qb *queryBuilder) buildBaseQuery(step *planner.Step, variables map[string]
 	parentType := "Query"
 	if opKeyword == "mutation" {
 		parentType = "Mutation"
+	}
+
+	for _, def := range step.SubGraph.Schema.Definitions {
+		if sd, ok := def.(*ast.SchemaDefinition); ok {
+			for _, ot := range sd.OperationTypes {
+				if ot.Operation.String() == opKeyword {
+					parentType = ot.Type.Name.String()
+					break
+				}
+			}
+		}
 	}
 
 	rootFieldName := step.RootFields[0]
@@ -158,18 +169,23 @@ func (qb *queryBuilder) writeArguments(sb *strings.Builder, args map[string]any,
 }
 
 func (qb *queryBuilder) getArgumentType(step *planner.Step, parentType, fieldName, argName string) string {
-	for _, op := range step.SubGraph.Schema.Operations {
-		if string(op.OperationType) == step.OperationType {
-			for _, field := range op.Fields {
-				if string(field.Name) == fieldName {
-					for _, arg := range field.Arguments {
-						if string(arg.Name) == argName {
-							if arg.Type.Nullable {
-								return string(arg.Type.Name)
-							} else {
-								return qb.resolveArgumentType(arg.Type)
-							}
-						}
+	// Find parentType definition in subgraph schema
+	var targetTD *ast.ObjectTypeDefinition
+	for _, def := range step.SubGraph.Schema.Definitions {
+		if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if td.Name.String() == parentType {
+				targetTD = td
+				break
+			}
+		}
+	}
+
+	if targetTD != nil {
+		for _, field := range targetTD.Fields {
+			if field.Name.String() == fieldName {
+				for _, arg := range field.Arguments {
+					if arg.Name.String() == argName {
+						return arg.Type.String()
 					}
 				}
 			}
@@ -177,23 +193,6 @@ func (qb *queryBuilder) getArgumentType(step *planner.Step, parentType, fieldNam
 	}
 
 	return "Any!"
-}
-
-func (qb *queryBuilder) resolveArgumentType(argType *schema.FieldType) string {
-	if argType.IsList {
-		innerType := qb.resolveArgumentType(argType.ListType)
-		if argType.Nullable {
-			return fmt.Sprintf("[%s]", innerType)
-		} else {
-			return fmt.Sprintf("[%s]!", innerType)
-		}
-	}
-
-	if argType.Nullable {
-		return string(argType.Name)
-	}
-
-	return fmt.Sprintf("%s!", string(argType.Name))
 }
 
 func (qb *queryBuilder) resolveValue(val any, clientVars map[string]any) any {

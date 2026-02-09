@@ -1,6 +1,6 @@
 module github.com/n9te9/go-graphql-federation-gateway
 
-go 1.24.4
+go 1.25.4
 
 require (
 	github.com/goccy/go-yaml v1.19.2
@@ -24,6 +24,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.27.7 // indirect
 	github.com/inconshreveable/mousetrap v1.1.0 // indirect
+	github.com/n9te9/graphql-parser v0.1.0 // indirect
 	github.com/sosodev/duration v1.3.1 // indirect
 	github.com/spf13/pflag v1.0.9 // indirect
 	github.com/urfave/cli/v3 v3.6.1 // indirect

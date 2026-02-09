@@ -1,20 +1,21 @@
 package graph
 
 import (
-	"bytes"
 	"fmt"
 	"strings"
 
-	"github.com/n9te9/goliteql/schema"
+	"github.com/n9te9/graphql-parser/ast"
+	"github.com/n9te9/graphql-parser/lexer"
+	"github.com/n9te9/graphql-parser/parser"
 )
 
 type ownership struct {
-	Source schema.ExtendDefinition
+	Source ast.Definition
 }
 
 type SubGraph struct {
 	Name   string
-	Schema *schema.Schema
+	Schema *ast.Document
 	SDL    string
 	Host   string
 
@@ -24,24 +25,28 @@ type SubGraph struct {
 }
 
 func NewSubGraph(name string, src []byte, host string) (*SubGraph, error) {
-	schema, err := schema.NewParser(schema.NewLexer()).Parse(src)
-	if err != nil {
-		return nil, err
+	l := lexer.New(string(src))
+	p := parser.New(l)
+	doc := p.ParseDocument()
+	if len(p.Errors()) > 0 {
+		return nil, fmt.Errorf("parse error: %v", p.Errors())
 	}
 
 	ownershipTypes := make(map[string]struct{})
-	for _, typ := range schema.Types {
-		ownershipTypes[string(typ.Name)] = struct{}{}
+	for _, def := range doc.Definitions {
+		if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+			ownershipTypes[td.Name.String()] = struct{}{}
+		}
 	}
 
 	return &SubGraph{
 		Name:              name,
-		Schema:            schema,
+		Schema:            doc,
 		Host:              host,
 		SDL:               string(src),
 		OwnershipTypes:    ownershipTypes,
-		ownershipFieldMap: newOwnershipMap(schema),
-		requiredFields:    newRequiredFields(schema),
+		ownershipFieldMap: newOwnershipMap(doc),
+		requiredFields:    newRequiredFields(doc),
 	}, nil
 }
 
@@ -49,35 +54,41 @@ func (sg *SubGraph) RequiredFields() map[string]map[string]struct{} {
 	return sg.requiredFields
 }
 
-func newOwnershipMapForSuperGraph(s *schema.Schema) map[string]*ownership {
+func newOwnershipMapForSuperGraph(doc *ast.Document) map[string]*ownership {
 	ownershipMap := make(map[string]*ownership)
 
-	for _, typ := range s.Types {
-		for _, f := range typ.Fields {
-			ownershipMap[fmt.Sprintf("%s.%s", typ.Name, f.Name)] = &ownership{Source: typ}
+	for _, def := range doc.Definitions {
+		if typ, ok := def.(*ast.ObjectTypeDefinition); ok {
+			for _, f := range typ.Fields {
+				ownershipMap[fmt.Sprintf("%s.%s", typ.Name.String(), f.Name.String())] = &ownership{Source: typ}
+			}
 		}
 	}
 
 	return ownershipMap
 }
 
-func newOwnershipMap(s *schema.Schema) map[string]*ownership {
+func newOwnershipMap(doc *ast.Document) map[string]*ownership {
 	ownershipMap := make(map[string]*ownership)
-	for _, ext := range s.Extends {
-		keys := getOwnershipMapKeys(ext)
-		for k := range keys {
-			ownershipMap[k] = &ownership{Source: ext}
+	for _, def := range doc.Definitions {
+		if ext, ok := def.(*ast.ObjectTypeExtension); ok {
+			keys := getOwnershipMapKeys(ext)
+			for k := range keys {
+				ownershipMap[k] = &ownership{Source: ext}
+			}
 		}
 	}
 
-	for _, typ := range s.Types {
-		for _, f := range typ.Fields {
-			key := fmt.Sprintf("%s.%s", typ.Name, f.Name)
-			_, exists := ownershipMap[key]
-			d := f.Directives.Get([]byte("external"))
+	for _, def := range doc.Definitions {
+		if typ, ok := def.(*ast.ObjectTypeDefinition); ok {
+			for _, f := range typ.Fields {
+				key := fmt.Sprintf("%s.%s", typ.Name.String(), f.Name.String())
+				_, exists := ownershipMap[key]
+				d := getDirective(f.Directives, "external")
 
-			if !exists && d == nil {
-				ownershipMap[key] = &ownership{Source: typ}
+				if !exists && d == nil {
+					ownershipMap[key] = &ownership{Source: typ}
+				}
 			}
 		}
 	}
@@ -89,92 +100,98 @@ func (sg *SubGraph) OwnershipFieldMap() map[string]*ownership {
 	return sg.ownershipFieldMap
 }
 
-func getOwnershipMapKeys(ext schema.ExtendDefinition) map[string]struct{} {
+func getDirective(directives []*ast.Directive, name string) *ast.Directive {
+	for _, d := range directives {
+		if d.Name == name {
+			return d
+		}
+	}
+	return nil
+}
+
+func getOwnershipMapKeys(def ast.Definition) map[string]struct{} {
 	ret := make(map[string]struct{})
-	switch e := ext.(type) {
-	case *schema.TypeDefinition:
+	switch e := def.(type) {
+	case *ast.ObjectTypeDefinition:
 		for _, field := range e.Fields {
-			if field.Directives.Get([]byte("external")) == nil {
-				key := fmt.Sprintf("%s.%s", e.Name, field.Name)
+			if getDirective(field.Directives, "external") == nil {
+				key := fmt.Sprintf("%s.%s", e.Name.String(), field.Name.String())
 				ret[key] = struct{}{}
 			}
 		}
-	case *schema.InputDefinition:
+	case *ast.ObjectTypeExtension:
 		for _, field := range e.Fields {
-			if field.Directives.Get([]byte("external")) == nil {
-				key := fmt.Sprintf("%s.%s", e.Name, field.Name)
+			if getDirective(field.Directives, "external") == nil {
+				key := fmt.Sprintf("%s.%s", e.Name.String(), field.Name.String())
 				ret[key] = struct{}{}
 			}
 		}
-	case *schema.EnumDefinition:
-		for _, field := range e.Values {
-			if field.Directives.Get([]byte("external")) == nil {
-				key := fmt.Sprintf("%s.%s", e.Name, field.Name)
-				ret[key] = struct{}{}
-			}
-		}
-	case *schema.InterfaceDefinition:
+	case *ast.InputObjectTypeDefinition:
 		for _, field := range e.Fields {
-			if field.Directives.Get([]byte("external")) == nil {
-				key := fmt.Sprintf("%s.%s", e.Name, field.Name)
-				ret[key] = struct{}{}
-			}
-		}
-	case *schema.UnionDefinition:
-		for _, t := range e.Types {
-			key := fmt.Sprintf("%s.%s", e.Name, t)
+			key := fmt.Sprintf("%s.%s", e.Name.String(), field.Name.String())
 			ret[key] = struct{}{}
 		}
-	case *schema.ScalarDefinition:
-		key := string(e.Name)
+	case *ast.EnumTypeDefinition:
+		for _, val := range e.Values {
+			key := fmt.Sprintf("%s.%s", e.Name.String(), val.Name.String())
+			ret[key] = struct{}{}
+		}
+	case *ast.InterfaceTypeDefinition:
+		for _, field := range e.Fields {
+			key := fmt.Sprintf("%s.%s", e.Name.String(), field.Name.String())
+			ret[key] = struct{}{}
+		}
+	case *ast.UnionTypeDefinition:
+		for _, t := range e.Types {
+			key := fmt.Sprintf("%s.%s", e.Name.String(), t.String())
+			ret[key] = struct{}{}
+		}
+	case *ast.ScalarTypeDefinition:
+		key := e.Name.String()
 		ret[key] = struct{}{}
 	}
-
 	return ret
 }
 
-func newRequiredFields(s *schema.Schema) map[string]map[string]struct{} {
+func newRequiredFields(doc *ast.Document) map[string]map[string]struct{} {
 	ret := make(map[string]map[string]struct{})
-	for _, ext := range s.Extends {
-		typeDefinition, ok := ext.(*schema.TypeDefinition)
-		if ok {
-			requiredFields := make(map[string]struct{})
-			for _, field := range typeDefinition.Fields {
-				directives := schema.Directives(field.Directives)
-				if nonNullDirective := directives.Get([]byte("requires")); nonNullDirective != nil {
-					for _, arg := range nonNullDirective.Arguments {
-						v := bytes.Trim(arg.Value, `"`)
-						fields := strings.Split(string(v), " ")
-						for _, field := range fields {
-							requiredFields[field] = struct{}{}
+	for _, def := range doc.Definitions {
+		if typeExtension, ok := def.(*ast.ObjectTypeExtension); ok {
+			for _, field := range typeExtension.Fields {
+				if d := getDirective(field.Directives, "requires"); d != nil {
+					if len(d.Arguments) > 0 {
+						// Assuming the first argument is "fields" and it's a string
+						fieldsVal := d.Arguments[0].Value.String()
+						// Remove quotes if present
+						fieldsVal = strings.Trim(fieldsVal, "\"")
+						fields := strings.Split(fieldsVal, " ")
+						if ret[typeExtension.Name.String()] == nil {
+							ret[typeExtension.Name.String()] = make(map[string]struct{})
+						}
+						for _, f := range fields {
+							ret[typeExtension.Name.String()][f] = struct{}{}
 						}
 					}
 				}
 			}
-			if len(requiredFields) > 0 {
-				ret[string(typeDefinition.Name)] = requiredFields
-			}
 		}
-	}
-
-	for _, typ := range s.Types {
-		requiredFields := make(map[string]struct{})
-		for _, field := range typ.Fields {
-			directives := schema.Directives(field.Directives)
-			if nonNullDirective := directives.Get([]byte("requires")); nonNullDirective != nil {
-				for _, arg := range nonNullDirective.Arguments {
-					v := bytes.Trim(arg.Value, `"`)
-					fields := strings.Split(string(v), " ")
-					for _, field := range fields {
-						requiredFields[field] = struct{}{}
+		if typ, ok := def.(*ast.ObjectTypeDefinition); ok {
+			for _, field := range typ.Fields {
+				if d := getDirective(field.Directives, "requires"); d != nil {
+					if len(d.Arguments) > 0 {
+						fieldsVal := d.Arguments[0].Value.String()
+						fieldsVal = strings.Trim(fieldsVal, "\"")
+						fields := strings.Split(fieldsVal, " ")
+						if ret[typ.Name.String()] == nil {
+							ret[typ.Name.String()] = make(map[string]struct{})
+						}
+						for _, f := range fields {
+							ret[typ.Name.String()][f] = struct{}{}
+						}
 					}
 				}
 			}
 		}
-		if len(requiredFields) > 0 {
-			ret[string(typ.Name)] = requiredFields
-		}
 	}
-
 	return ret
 }

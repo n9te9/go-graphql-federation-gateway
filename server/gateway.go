@@ -28,7 +28,7 @@ func Run() {
 		log.Fatalf("failed to load gateway settings: %v", err)
 	}
 
-	gw, err := gateway.NewGateway(settings)
+	gw, err := gateway.NewGateway(*settings)
 	if err != nil {
 		log.Fatalf("failed to build gateway: %v", err)
 	}
