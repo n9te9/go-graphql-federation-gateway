@@ -368,7 +368,6 @@ func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelection
 					RootArguments: map[string]map[string]any{rootSel.Field: rootSel.Arguments},
 					OperationType: strings.ToLower(rootTypeName),
 				})
-				break
 			}
 		}
 	}

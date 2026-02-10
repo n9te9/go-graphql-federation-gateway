@@ -1,0 +1,14 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external"])
+
+type Booking @key(fields: "id") {
+  id: ID!
+  flight: Flight!
+}
+
+extend type Flight @key(fields: "number departureDate") {
+  number: String! @external
+  departureDate: String! @external
+  bookings: [Booking!]!
+}

@@ -56,7 +56,6 @@ var _ http.Handler = (*gateway)(nil)
 
 func NewGateway(settings GatewayOption) (*gateway, error) {
 	var subGraphs []*graph.SubGraph
-	var allSchemaSrc []byte
 	for _, s := range settings.Services {
 		var schema []byte
 		for _, f := range s.SchemaFiles {
@@ -73,10 +72,9 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		}
 
 		subGraphs = append(subGraphs, subGraph)
-		allSchemaSrc = append(allSchemaSrc, schema...)
 	}
 
-	superGraph, err := graph.NewSuperGraph(allSchemaSrc, subGraphs)
+	superGraph, err := graph.NewSuperGraph(subGraphs)
 	if err != nil {
 		return nil, err
 	}

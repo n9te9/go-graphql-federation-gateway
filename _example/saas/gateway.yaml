@@ -1,0 +1,17 @@
+endpoint: /graphql
+port: 9000
+service_name: saas-gateway
+timeout_duration: "5s"
+services:
+- name: organizations
+  host: http://organizations:8080/query
+  schema_files:
+  - ./organizations/graph/schema.graphqls
+- name: projects
+  host: http://projects:8080/query
+  schema_files:
+  - ./projects/graph/schema.graphqls
+- name: billing
+  host: http://billing:8080/query
+  schema_files:
+  - ./billing/graph/schema.graphqls

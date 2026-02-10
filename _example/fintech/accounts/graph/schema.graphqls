@@ -1,0 +1,14 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external"])
+
+type Account @key(fields: "id") {
+  id: ID!
+  balance: Int!
+  customer: Customer!
+}
+
+extend type Customer @key(fields: "id") {
+  id: ID! @external
+  accounts: [Account!]!
+}

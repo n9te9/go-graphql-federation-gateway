@@ -1,0 +1,17 @@
+endpoint: /graphql
+port: 9000
+service_name: fintech-gateway
+timeout_duration: "5s"
+services:
+- name: customers
+  host: http://customers:8080/query
+  schema_files:
+  - ./customers/graph/schema.graphqls
+- name: accounts
+  host: http://accounts:8080/query
+  schema_files:
+  - ./accounts/graph/schema.graphqls
+- name: transactions
+  host: http://transactions:8080/query
+  schema_files:
+  - ./transactions/graph/schema.graphqls

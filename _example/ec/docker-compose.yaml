@@ -1,42 +1,42 @@
 services:
-  gateway:
+  # gateway:
+  #   build: 
+  #     context: . 
+  #     dockerfile: ../Dockerfile
+  #   ports:
+  #     - "9000:9000"
+  #   environment:
+  #     - "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318"
+  products:
     build: 
-      context: . 
+      context: ./products 
       dockerfile: Dockerfile
     ports:
-      - "9000:9000"
-    environment:
-      - "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318"
-  product:
-    build: 
-      context: ./product 
-      dockerfile: Dockerfile
-    ports:
-      - "8001:8080"
-    environment:
-      - PORT=8080
-  review:
-    build: 
-      context: ./review 
-      dockerfile: Dockerfile
-    ports:
-      - "8002:8080"
+      - "8101:8080"
     environment:
       - PORT=8080
-  account:
+  reviews:
+    build: 
+      context: ./reviews 
+      dockerfile: Dockerfile
+    ports:
+      - "8102:8080"
+    environment:
+      - PORT=8080
+  users:
+    build: 
+      context: ./users 
+      dockerfile: Dockerfile
+    ports:
+      - "8103:8080"
+    environment:
+      - PORT=8080
+  inventory:
     build:
-      context: ./account 
+      context: ./inventory 
       dockerfile: Dockerfile
     ports:
-      - "8003:8080"
-    environment:
-      - PORT=8080
-  shipping:
-    build:
-      context: ./shipping
-      dockerfile: Dockerfile
-    ports:
-      - "8004:8080"
+      - "8104:8080"
     environment:
       - PORT=8080
   jaeger:

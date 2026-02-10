@@ -1,0 +1,16 @@
+schema:
+  - graph/*.graphqls
+federation:
+  filename: graph/federation.go
+  package: graph
+  version: 2
+exec:
+  filename: graph/generated.go
+  package: graph
+model:
+  filename: graph/model/models_gen.go
+  package: model
+resolver:
+  layout: follow-schema
+  dir: graph
+  filename_template: "{name}.resolvers.go"

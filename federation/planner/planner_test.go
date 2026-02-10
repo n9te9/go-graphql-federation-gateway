@@ -1,7 +1,6 @@
 package planner_test
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -47,7 +46,7 @@ func TestPlanner_Plan(t *testing.T) {
 				sg1, _ := graph.NewSubGraph("aaaaaaaaa", []byte(sdl), "")
 				subgraphSDL := `extend type Product @key(fields: "upc") { upc: String! @external width: Int height: Int price: Int @external }`
 				sg2, _ := graph.NewSubGraph("hogehoge", []byte(subgraphSDL), "")
-				superGraph, _ := graph.NewSuperGraph([]byte(fmt.Sprintf("%s\n%s\n", sdl, subgraphSDL)), []*graph.SubGraph{sg1, sg2})
+				superGraph, _ := graph.NewSuperGraph([]*graph.SubGraph{sg1, sg2})
 				return superGraph
 			}(),
 			variables: make(map[string]any),

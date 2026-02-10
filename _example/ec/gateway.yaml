@@ -6,21 +6,21 @@ enable_complement_request_id: false
 enable_hang_over_request_header: false
 services:
 - name: products
-  host: http://product:8080/query
+  host: http://localhost:8101/query
   schema_files:
-  - ./product/graph/schema.graphqls
+  - ./products/graph/schema.graphqls
 - name: reviews
-  host: http://review:8080/query
+  host: http://localhost:8102/query
   schema_files:
-  - ./review/graph/schema.graphqls
-- name: accounts
-  host: http://account:8080/query
+  - ./reviews/graph/schema.graphqls
+- name: users
+  host: http://localhost:8103/query
   schema_files:
-  - ./account/graph/schema.graphqls
-- name: shipping
-  host: http://shipping:8080/query
+  - ./users/graph/schema.graphqls
+- name: inventory
+  host: http://localhost:8104/query
   schema_files:
-  - ./shipping/graph/schema.graphqls
+  - ./inventory/graph/schema.graphqls
 opentelemetry:
   tracing:
     enable: true

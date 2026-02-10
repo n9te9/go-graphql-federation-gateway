@@ -1,0 +1,16 @@
+services:
+  gateway:
+    build: 
+      context: . 
+      dockerfile: ../Dockerfile
+    ports:
+      - "9004:9000"
+  organizations:
+    build: { context: ./organizations, dockerfile: Dockerfile }
+    ports: ["8501:8080"]
+  projects:
+    build: { context: ./projects, dockerfile: Dockerfile }
+    ports: ["8502:8080"]
+  billing:
+    build: { context: ./billing, dockerfile: Dockerfile }
+    ports: ["8503:8080"]
