@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -10,7 +11,8 @@ import (
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
-	"github.com/n9te9/goliteql/query"
+	"github.com/n9te9/graphql-parser/lexer"
+	"github.com/n9te9/graphql-parser/parser"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
@@ -44,7 +46,6 @@ type gateway struct {
 	planner         planner.Planner
 	executor        executor.Executor
 	superGraph      *graph.SuperGraph
-	queryParser     *query.Parser
 
 	enableComplementRequestId   bool
 	enableHangOverRequestHeader bool
@@ -53,149 +54,113 @@ type gateway struct {
 
 var _ http.Handler = (*gateway)(nil)
 
-func readSchemaFiles(paths []string) ([]byte, error) {
-	ret := make([]byte, 0)
-	for _, path := range paths {
-		b, err := os.ReadFile(path)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read file(%s): %w", path, err)
+func NewGateway(settings GatewayOption) (*gateway, error) {
+	var subGraphs []*graph.SubGraph
+	var allSchemaSrc []byte
+	for _, s := range settings.Services {
+		var schema []byte
+		for _, f := range s.SchemaFiles {
+			src, err := os.ReadFile(f)
+			if err != nil {
+				return nil, err
+			}
+			schema = append(schema, src...)
 		}
 
-		ret = append(ret, b...)
-		ret = append(ret, '\n')
-	}
-
-	return ret, nil
-}
-
-func NewGateway(settings *GatewayOption) (*gateway, error) {
-	subGraphs := make([]*graph.SubGraph, 0, len(settings.Services))
-	allSchemaSrc := []byte{}
-
-	for _, srv := range settings.Services {
-		schema, err := readSchemaFiles(srv.SchemaFiles)
+		subGraph, err := graph.NewSubGraph(s.Name, schema, s.Host)
 		if err != nil {
-			return nil, fmt.Errorf("failed to read schema file: %w", err)
+			return nil, err
 		}
 
-		subGraph, err := graph.NewSubGraph(srv.Name, schema, srv.Host)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create subgraph for service %s: %w", srv.Name, err)
-		}
 		subGraphs = append(subGraphs, subGraph)
 		allSchemaSrc = append(allSchemaSrc, schema...)
 	}
 
 	superGraph, err := graph.NewSuperGraph(allSchemaSrc, subGraphs)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create supergraph: %w", err)
-	}
-
-	plannerOption := planner.PlannerOption{
-		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
+		return nil, err
 	}
 
 	executorOption := executor.ExecutorOption{
 		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
 	}
 
-	httpClient := &http.Client{}
+	httpClient := http.DefaultClient
 	if settings.Opentelemetry.TracingSetting.Enable {
-		httpClient.Transport = otelhttp.NewTransport(&http.Transport{})
+		httpClient = &http.Client{
+			Transport: otelhttp.NewTransport(http.DefaultTransport),
+		}
+	}
+
+	plannerOption := planner.PlannerOption{
+		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
 	}
 
 	return &gateway{
 		graphQLEndpoint:             settings.Endpoint,
-		superGraph:                  superGraph,
-		planner:                     planner.NewPlanner(superGraph, plannerOption),
-		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
 		serviceName:                 settings.ServiceName,
+		planner:                     planner.NewPlanner(superGraph, plannerOption),
 		executor:                    executor.NewExecutor(httpClient, superGraph, executorOption),
-		queryParser:                 query.NewParserWithLexer(),
+		superGraph:                  superGraph,
+		enableComplementRequestId:   true,
+		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
 		enableOpentelemetryTracing:  settings.Opentelemetry.TracingSetting.Enable,
 	}, nil
 }
 
-func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	switch r.URL.Path {
-	case g.graphQLEndpoint:
-		g.Routing(w, r)
-	}
-}
-
-type Request struct {
+type graphQLRequest struct {
 	Query     string         `json:"query"`
 	Variables map[string]any `json:"variables"`
 }
 
-func (g *gateway) Routing(w http.ResponseWriter, r *http.Request) {
+func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		w.WriteHeader(http.StatusMethodNotAllowed)
 		return
 	}
 
-	var req Request
+	var req graphQLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{
-			"errors": []map[string]any{
-				{
-					"message": err.Error(),
-				},
-			},
-		})
-		return
-	}
-
-	document, err := g.queryParser.Parse([]byte(req.Query))
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{
-			"errors": []map[string]any{
-				{
-					"message": err.Error(),
-				},
-			},
-		})
-		return
-	}
-
-	plan, err := g.planner.Plan(document, req.Variables)
-	if err != nil {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]any{
-			"errors": []map[string]any{
-				{
-					"message": err.Error(),
-				},
-			},
-		})
 		return
 	}
 
 	ctx := r.Context()
-	header := http.Header{}
 	if g.enableComplementRequestId {
-		requestId := r.Header.Get("X-Request-Id")
-		if requestId == "" {
-			requestId = uuid.NewString()
-		}
-
-		header.Set("X-Request-Id", requestId)
-		r.Header.Set("X-Request-Id", requestId)
-		ctx = executor.SetRequestHeaderToContext(ctx, header)
+		ctx = context.WithValue(ctx, "request_id", uuid.New().String())
 	}
 
 	if g.enableHangOverRequestHeader {
 		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
-	} else {
-		ctx = executor.SetRequestHeaderToContext(ctx, header)
+	}
+
+	l := lexer.New(req.Query)
+	p := parser.New(l)
+	doc := p.ParseDocument()
+	if len(p.Errors()) > 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"errors": p.Errors(),
+		})
+		return
+	}
+
+	plan, err := g.planner.Plan(doc, req.Variables)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"errors": []string{err.Error()},
+		})
+		return
 	}
 
 	resp := g.executor.Execute(ctx, plan, req.Variables)
+
 	w.Header().Set("Content-Type", "application/json")
-	if err := json.NewEncoder(w).Encode(resp); err != nil {
-		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
-		return
-	}
+	json.NewEncoder(w).Encode(resp)
+}
+
+func (g *gateway) Start(port int) error {
+	fmt.Printf("Gateway started on port %d\n", port)
+	return http.ListenAndServe(fmt.Sprintf(":%d", port), g)
 }

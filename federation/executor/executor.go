@@ -14,7 +14,7 @@ import (
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
-	"github.com/n9te9/goliteql/schema"
+	"github.com/n9te9/graphql-parser/ast"
 )
 
 type executionContext struct {
@@ -99,6 +99,10 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 				for _, ref := range currentRefs {
 					stepEntities = append(stepEntities, ref.toRepresentation())
 				}
+			}
+
+			if len(step.DependsOn) != 0 && len(stepEntities) == 0 {
+				return
 			}
 
 			query, builtVariables, err := e.QueryBuilder.Build(step, stepEntities, variables)
@@ -395,19 +399,15 @@ func (e entityRef) toRepresentation() map[string]any {
 	return ret
 }
 
-func getKey(directives []*schema.Directive) []string {
+func getKey(directives []*ast.Directive) []string {
 	for _, dir := range directives {
-		if string(dir.Name) == "key" {
+		if dir.Name == "key" {
 			for _, arg := range dir.Arguments {
-				if string(arg.Name) != "fields" {
+				if arg.Name.String() != "fields" {
 					continue
 				}
 
-				if len(dir.Arguments) == 0 {
-					return nil
-				}
-
-				v := strings.ReplaceAll(string(arg.Value), "\"", "")
+				v := strings.ReplaceAll(arg.Value.String(), "\"", "")
 				return strings.Split(v, " ")
 			}
 		}
@@ -513,16 +513,42 @@ func pathToString(path Path) string {
 	return sb.String()
 }
 
-func getTypeDefinitionFromPath(path Path, s *schema.Schema) *schema.TypeDefinition {
+func getTypeDefinitionFromPath(path Path, doc *ast.Document) *ast.ObjectTypeDefinition {
 	if len(path) == 0 {
 		return nil
 	}
 
-	var currentTD *schema.TypeDefinition
-	for _, op := range s.Operations {
-		for _, f := range op.Fields {
-			if string(f.Name) == path[0].FieldName {
-				currentTD = s.Indexes.TypeIndex[string(f.Type.GetRootType().Name)]
+	var rootTypeName string
+	for _, def := range doc.Definitions {
+		if sd, ok := def.(*ast.SchemaDefinition); ok {
+			for _, ot := range sd.OperationTypes {
+				if ot.Operation.String() == "query" {
+					rootTypeName = ot.Type.Name.String()
+				}
+			}
+		}
+	}
+	if rootTypeName == "" {
+		rootTypeName = "Query"
+	}
+
+	var currentTD *ast.ObjectTypeDefinition
+	for _, def := range doc.Definitions {
+		var fields []*ast.FieldDefinition
+		switch td := def.(type) {
+		case *ast.ObjectTypeDefinition:
+			if td.Name.String() == rootTypeName {
+				fields = td.Fields
+			}
+		case *ast.ObjectTypeExtension:
+			if td.Name.String() == rootTypeName {
+				fields = td.Fields
+			}
+		}
+
+		for _, f := range fields {
+			if f.Name.String() == path[0].FieldName {
+				currentTD = getTD(doc, getNamedType(f.Type))
 				break
 			}
 		}
@@ -535,22 +561,32 @@ func getTypeDefinitionFromPath(path Path, s *schema.Schema) *schema.TypeDefiniti
 		return nil
 	}
 
-	currentTypeName := string(currentTD.Name)
-
 	for _, seg := range path[1:] {
 		if seg.FieldName == "" {
 			continue
 		}
 
-		td, ok := s.Indexes.TypeIndex[currentTypeName]
-		if !ok {
-			return nil
-		}
+		var nextType *ast.ObjectTypeDefinition
+		for _, def := range doc.Definitions {
+			var fields []*ast.FieldDefinition
+			switch td := def.(type) {
+			case *ast.ObjectTypeDefinition:
+				if td.Name.String() == currentTD.Name.String() {
+					fields = td.Fields
+				}
+			case *ast.ObjectTypeExtension:
+				if td.Name.String() == currentTD.Name.String() {
+					fields = td.Fields
+				}
+			}
 
-		var nextType *schema.TypeDefinition
-		for _, f := range td.Fields {
-			if string(f.Name) == seg.FieldName {
-				nextType = s.Indexes.TypeIndex[string(f.Type.GetRootType().Name)]
+			for _, f := range fields {
+				if f.Name.String() == seg.FieldName {
+					nextType = getTD(doc, getNamedType(f.Type))
+					break
+				}
+			}
+			if nextType != nil {
 				break
 			}
 		}
@@ -560,13 +596,45 @@ func getTypeDefinitionFromPath(path Path, s *schema.Schema) *schema.TypeDefiniti
 		}
 
 		currentTD = nextType
-		currentTypeName = string(nextType.Name)
 	}
 
 	return currentTD
 }
 
-func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]entityRef, error) {
+func getNamedType(t ast.Type) string {
+	switch typ := t.(type) {
+	case *ast.NamedType:
+		return typ.Name.String()
+	case *ast.ListType:
+		return getNamedType(typ.Type)
+	case *ast.NonNullType:
+		return getNamedType(typ.Type)
+	default:
+		return ""
+	}
+}
+
+func getTD(doc *ast.Document, typeName string) *ast.ObjectTypeDefinition {
+	for _, def := range doc.Definitions {
+		switch td := def.(type) {
+		case *ast.ObjectTypeDefinition:
+			if td.Name.String() == typeName {
+				return td
+			}
+		case *ast.ObjectTypeExtension:
+			if td.Name.String() == typeName {
+				// While ObjectTypeExtension is not ObjectTypeDefinition,
+				// we return the definition for the type if it exists.
+				// For the purposes of field lookup, we might need a combined view.
+				// But here we need a starting point TD.
+				// Let's look for ObjectTypeDefinition first.
+			}
+		}
+	}
+	return nil
+}
+
+func CollectEntityRefs(paths Paths, obj map[string]any, doc *ast.Document) ([]entityRef, error) {
 	refs := make([]entityRef, 0)
 	seenPaths := make(map[string]struct{})
 
@@ -580,7 +648,7 @@ func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]ent
 			continue
 		}
 
-		td := getTypeDefinitionFromPath(parentPath, s)
+		td := getTypeDefinitionFromPath(parentPath, doc)
 		if td == nil {
 			slog.Debug("type not found", "path", pathToString(parentPath))
 			continue
@@ -628,7 +696,7 @@ func CollectEntityRefs(paths Paths, obj map[string]any, s *schema.Schema) ([]ent
 		}
 
 		refs = append(refs, entityRef{
-			Typename:    string(td.Name),
+			Typename:    td.Name.String(),
 			Key:         keyMap,
 			Path:        parentPath,
 			ExtraFields: extraFields,

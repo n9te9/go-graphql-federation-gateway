@@ -7,12 +7,12 @@ import (
 	"strings"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
-	"github.com/n9te9/goliteql/query"
-	"github.com/n9te9/goliteql/schema"
+	"github.com/n9te9/graphql-parser/ast"
+	"github.com/n9te9/graphql-parser/token"
 )
 
 type Planner interface {
-	Plan(doc *query.Document, variables map[string]any) (*Plan, error)
+	Plan(doc *ast.Document, variables map[string]any) (*Plan, error)
 }
 
 type planner struct {
@@ -94,10 +94,13 @@ func (p *Plan) Selections() []*Selection {
 	return ret
 }
 
-func (p *planner) Plan(doc *query.Document, variables map[string]any) (*Plan, error) {
+func (p *planner) Plan(doc *ast.Document, variables map[string]any) (*Plan, error) {
 	// TODO: cache plans for repeated queries
 	op := p.superGraph.GetOperation(doc)
-	if len(op.Selections) == 0 {
+	if op == nil {
+		return nil, errors.New("no operation found")
+	}
+	if len(op.SelectionSet) == 0 {
 		return nil, errors.New("empty selection")
 	}
 
@@ -107,39 +110,43 @@ func (p *planner) Plan(doc *query.Document, variables map[string]any) (*Plan, er
 	}
 
 	var rootTypeName string
-	switch op.OperationType {
-	case query.QueryOperation:
+	switch op.Operation {
+	case ast.Query:
 		rootTypeName = "Query"
-	case query.MutationOperation:
+	case ast.Mutation:
 		rootTypeName = "Mutation"
-	case query.SubscriptionOperation:
+	case ast.Subscription:
 		rootTypeName = "Subscription"
 	}
 
-	if p.superGraph.Schema.Definition != nil {
-		if op.OperationType == query.QueryOperation && len(p.superGraph.Schema.Definition.Query) > 0 {
-			rootTypeName = string(p.superGraph.Schema.Definition.Query)
-		}
-		if op.OperationType == query.MutationOperation && len(p.superGraph.Schema.Definition.Mutation) > 0 {
-			rootTypeName = string(p.superGraph.Schema.Definition.Mutation)
+	// In graphql-parser, we need to find SchemaDefinition from Document
+	for _, def := range p.superGraph.Schema.Definitions {
+		if sd, ok := def.(*ast.SchemaDefinition); ok {
+			for _, ot := range sd.OperationTypes {
+				if (ot.Operation == token.QUERY && op.Operation == ast.Query) ||
+					(ot.Operation == token.MUTATION && op.Operation == ast.Mutation) ||
+					(ot.Operation == token.SUBSCRIPTION && op.Operation == ast.Subscription) {
+					rootTypeName = ot.Type.Name.String()
+				}
+			}
 		}
 	}
 
 	var rootSelections []*Selection
 	for i, f := range queryFields {
-		selections, err := p.extractSelections(f.Selections, string(schemaTypeDefinitions[i].Name), variables)
+		selections, err := p.extractSelections(f.SelectionSet, schemaTypeDefinitions[i].Name.String(), variables)
 		if err != nil {
 			return nil, err
 		}
 
 		rootArgs := make(map[string]any)
 		for _, arg := range f.Arguments {
-			rootArgs[string(arg.Name)] = p.resolveValue(arg.Value, variables)
+			rootArgs[arg.Name.String()] = p.resolveValue(arg.Value, variables)
 		}
 
 		rootSelections = append(rootSelections, &Selection{
 			ParentType:    rootTypeName,
-			Field:         string(f.Name),
+			Field:         f.Name.String(),
 			Arguments:     rootArgs,
 			SubSelections: selections,
 		})
@@ -157,46 +164,69 @@ func (p *planner) Plan(doc *query.Document, variables map[string]any) (*Plan, er
 	return plan, nil
 }
 
-func (p *planner) resolveValue(v any, variables map[string]any) any {
-	s := fmt.Sprintf("%v", v)
-	if strings.HasPrefix(s, "$") {
-		return variables[strings.TrimPrefix(s, "$")]
+func (p *planner) resolveValue(v ast.Value, variables map[string]any) any {
+	switch val := v.(type) {
+	case *ast.Variable:
+		return variables[val.Name]
+	case *ast.IntValue:
+		return val.Value
+	case *ast.FloatValue:
+		return val.Value
+	case *ast.StringValue:
+		return val.Value
+	case *ast.BooleanValue:
+		return val.Value
+	case *ast.EnumValue:
+		return val.Value
+	case *ast.ListValue:
+		ret := make([]any, 0, len(val.Values))
+		for _, item := range val.Values {
+			ret = append(ret, p.resolveValue(item, variables))
+		}
+		return ret
+	case *ast.ObjectValue:
+		ret := make(map[string]any)
+		for _, field := range val.Fields {
+			ret[field.Name.String()] = p.resolveValue(field.Value, variables)
+		}
+		return ret
+	default:
+		return nil
 	}
-	return v
 }
 
-func (p *planner) extractSelections(selection []query.Selection, parentType string, variables map[string]any) ([]*Selection, error) {
+func (p *planner) extractSelections(selectionSet []ast.Selection, parentType string, variables map[string]any) ([]*Selection, error) {
 	ret := make([]*Selection, 0)
-	for _, sel := range selection {
+	for _, sel := range selectionSet {
 		switch f := sel.(type) {
-		case *query.Field:
-			fieldTypeName, err := p.getFieldTypeName(parentType, string(f.Name))
+		case *ast.Field:
+			fieldTypeName, err := p.getFieldTypeName(parentType, f.Name.String())
 			if err != nil {
 				return nil, err
 			}
 
 			args := make(map[string]any)
 			for _, arg := range f.Arguments {
-				args[string(arg.Name)] = p.resolveValue(arg.Value, variables)
+				args[arg.Name.String()] = p.resolveValue(arg.Value, variables)
 			}
 
 			selection := &Selection{
 				ParentType: parentType,
-				Field:      string(f.Name),
+				Field:      f.Name.String(),
 				Arguments:  args,
 			}
 
-			if len(f.Selections) > 0 {
-				subs, err := p.extractSelections(f.Selections, fieldTypeName, variables)
+			if len(f.SelectionSet) > 0 {
+				subs, err := p.extractSelections(f.SelectionSet, fieldTypeName, variables)
 				if err != nil {
 					return nil, err
 				}
 				selection.SubSelections = subs
 			}
 			ret = append(ret, selection)
-		case *query.InlineFragment:
-			typeCondition := string(f.TypeCondition)
-			subs, err := p.extractSelections(f.Selections, typeCondition, variables)
+		case *ast.InlineFragment:
+			typeCondition := f.TypeCondition.Name.String()
+			subs, err := p.extractSelections(f.SelectionSet, typeCondition, variables)
 			if err != nil {
 				return nil, err
 			}
@@ -213,23 +243,21 @@ func (p *planner) getFieldTypeName(parentTypename, fieldName string) (string, er
 		return "String", nil
 	}
 
-	td, ok := p.superGraph.Schema.Indexes.TypeIndex[parentTypename]
-	if ok {
-		for _, field := range td.Fields {
-			if string(field.Name) == fieldName {
-				return string(field.Type.GetRootType().Name), nil
+	for _, def := range p.superGraph.Schema.Definitions {
+		if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if td.Name.String() == parentTypename {
+				for _, field := range td.Fields {
+					if field.Name.String() == fieldName {
+						return p.getNamedType(field.Type), nil
+					}
+				}
 			}
 		}
-
-		for _, exttd := range p.superGraph.Schema.Extends {
-			if extTypeDef, ok := exttd.(*schema.TypeDefinition); ok {
-				if string(extTypeDef.Name) != parentTypename {
-					continue
-				}
-
-				for _, field := range extTypeDef.Fields {
-					if string(field.Name) == fieldName {
-						return string(field.Type.GetRootType().Name), nil
+		if ext, ok := def.(*ast.ObjectTypeExtension); ok {
+			if ext.Name.String() == parentTypename {
+				for _, field := range ext.Fields {
+					if field.Name.String() == fieldName {
+						return p.getNamedType(field.Type), nil
 					}
 				}
 			}
@@ -239,24 +267,78 @@ func (p *planner) getFieldTypeName(parentTypename, fieldName string) (string, er
 	return "", fmt.Errorf("field %s not found in type %s", fieldName, parentTypename)
 }
 
-func (p *planner) findOperationField(op *query.Operation) ([]*schema.TypeDefinition, []*query.Field, error) {
-	ret := make([]*schema.TypeDefinition, 0)
-	fields := make([]*query.Field, 0)
-	for _, schemaOperation := range p.superGraph.Schema.Operations {
-		for _, field := range schemaOperation.Fields {
-			for _, sel := range op.Selections {
-				f, ok := sel.(*query.Field)
-				if !ok {
-					continue
-				}
+func (p *planner) getNamedType(t ast.Type) string {
+	switch typ := t.(type) {
+	case *ast.NamedType:
+		return typ.Name.String()
+	case *ast.ListType:
+		return p.getNamedType(typ.Type)
+	case *ast.NonNullType:
+		return p.getNamedType(typ.Type)
+	default:
+		return ""
+	}
+}
 
-				if string(field.Name) == string(f.Name) {
-					ret = append(ret, p.superGraph.Schema.Indexes.TypeIndex[string(field.Type.GetRootType().Name)])
-					fields = append(fields, f)
+func (p *planner) findOperationField(op *ast.OperationDefinition) ([]*ast.ObjectTypeDefinition, []*ast.Field, error) {
+	ret := make([]*ast.ObjectTypeDefinition, 0)
+	fields := make([]*ast.Field, 0)
+
+	var rootTypeName string
+	switch op.Operation {
+	case ast.Query:
+		rootTypeName = "Query"
+	case ast.Mutation:
+		rootTypeName = "Mutation"
+	case ast.Subscription:
+		rootTypeName = "Subscription"
+	}
+
+	for _, def := range p.superGraph.Schema.Definitions {
+		if sd, ok := def.(*ast.SchemaDefinition); ok {
+			for _, ot := range sd.OperationTypes {
+				if (ot.Operation == token.QUERY && op.Operation == ast.Query) ||
+					(ot.Operation == token.MUTATION && op.Operation == ast.Mutation) ||
+					(ot.Operation == token.SUBSCRIPTION && op.Operation == ast.Subscription) {
+					rootTypeName = ot.Type.Name.String()
 				}
 			}
 		}
 	}
+
+	var rootTD *ast.ObjectTypeDefinition
+	for _, def := range p.superGraph.Schema.Definitions {
+		if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if td.Name.String() == rootTypeName {
+				rootTD = td
+				break
+			}
+		}
+	}
+
+	if rootTD != nil {
+		for _, sel := range op.SelectionSet {
+			f, ok := sel.(*ast.Field)
+			if !ok {
+				continue
+			}
+			for _, fieldDef := range rootTD.Fields {
+				if fieldDef.Name.String() == f.Name.String() {
+					typeName := p.getNamedType(fieldDef.Type)
+					for _, def := range p.superGraph.Schema.Definitions {
+						if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+							if td.Name.String() == typeName {
+								ret = append(ret, td)
+								fields = append(fields, f)
+								break
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return ret, fields, nil
 }
 
@@ -340,12 +422,21 @@ func (p *planner) walk(sels []*Selection, subGraph *graph.SubGraph) []*Selection
 }
 
 func (p *planner) ownsRootField(subGraph *graph.SubGraph, rootTypeName string, fieldName string) bool {
-	for _, op := range subGraph.Schema.Operations {
-		if strings.EqualFold(string(op.OperationType), rootTypeName) {
-			for _, f := range op.Fields {
-				if string(f.Name) == fieldName {
-					return true
-				}
+	// Find rootTypeName definition in subGraph schema
+	var rootTD *ast.ObjectTypeDefinition
+	for _, def := range subGraph.Schema.Definitions {
+		if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if td.Name.String() == rootTypeName {
+				rootTD = td
+				break
+			}
+		}
+	}
+
+	if rootTD != nil {
+		for _, f := range rootTD.Fields {
+			if f.Name.String() == fieldName {
+				return true
 			}
 		}
 	}
@@ -567,24 +658,26 @@ func (p *planner) findRequiredKeys(step *Step) map[string][]string {
 }
 
 func (p *planner) getEntityKeys(subGraph *graph.SubGraph, typeName string) []string {
-	extract := func(dirs []*schema.Directive) []string {
-		directives := schema.Directives(dirs)
-		if keyDir := directives.Get([]byte("key")); keyDir != nil {
-			return p.findKeyDirectiveFieldArguments(keyDir.Arguments)[0]
+	extract := func(dirs []*ast.Directive) []string {
+		for _, d := range dirs {
+			if d.Name == "key" {
+				return p.findKeyDirectiveFieldArguments(d.Arguments)[0]
+			}
 		}
 		return nil
 	}
 
-	if t, ok := subGraph.Schema.Indexes.TypeIndex[typeName]; ok {
-		if keys := extract(t.Directives); keys != nil {
-			return keys
-		}
-	}
-
-	for _, ext := range subGraph.Schema.Extends {
-		if t, ok := ext.(*schema.TypeDefinition); ok {
-			if string(t.Name) == typeName {
+	for _, def := range subGraph.Schema.Definitions {
+		if t, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if t.Name.String() == typeName {
 				if keys := extract(t.Directives); keys != nil {
+					return keys
+				}
+			}
+		}
+		if ext, ok := def.(*ast.ObjectTypeExtension); ok {
+			if ext.Name.String() == typeName {
+				if keys := extract(ext.Directives); keys != nil {
 					return keys
 				}
 			}
@@ -594,11 +687,11 @@ func (p *planner) getEntityKeys(subGraph *graph.SubGraph, typeName string) []str
 	return nil
 }
 
-func (p *planner) findKeyDirectiveFieldArguments(keyDirectiveArgs []*schema.DirectiveArgument) [][]string {
+func (p *planner) findKeyDirectiveFieldArguments(keyDirectiveArgs []*ast.Argument) [][]string {
 	ret := make([][]string, 0)
 	for _, arg := range keyDirectiveArgs {
-		if string(arg.Name) == "fields" {
-			v := strings.Trim(string(arg.Value), `"`)
+		if arg.Name.String() == "fields" {
+			v := strings.Trim(arg.Value.String(), `"`)
 			keys := strings.Split(v, " ")
 			ret = append(ret, keys)
 		}

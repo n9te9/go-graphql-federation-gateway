@@ -2,32 +2,36 @@ package graph
 
 import (
 	"errors"
+	"fmt"
 
-	"github.com/n9te9/goliteql/query"
-	"github.com/n9te9/goliteql/schema"
+	"github.com/n9te9/graphql-parser/ast"
+	"github.com/n9te9/graphql-parser/lexer"
+	"github.com/n9te9/graphql-parser/parser"
 )
 
 type SuperGraph struct {
-	Schema       *schema.Schema
+	Schema       *ast.Document
 	SubGraphs    []*SubGraph
 	SDL          string
 	OwnershipMap map[string]*ownership
 }
 
 func NewSuperGraph(allSchemaSrc []byte, subGraphs []*SubGraph) (*SuperGraph, error) {
-	root, err := schema.NewParser(schema.NewLexer()).Parse(allSchemaSrc)
-	if err != nil {
-		return nil, err
+	l := lexer.New(string(allSchemaSrc))
+	p := parser.New(l)
+	doc := p.ParseDocument()
+	if len(p.Errors()) > 0 {
+		return nil, fmt.Errorf("parse error: %v", p.Errors())
 	}
 
 	superGraph := &SuperGraph{
-		Schema:       root,
-		SubGraphs:    make([]*SubGraph, 0, len(subGraphs)),
+		Schema:       doc,
+		SubGraphs:    subGraphs,
 		OwnershipMap: make(map[string]*ownership),
 	}
 
 	for _, sg := range subGraphs {
-		if err := superGraph.Merge(sg); err != nil {
+		if err := superGraph.UpdateOwnershipMap(sg); err != nil {
 			return nil, err
 		}
 	}
@@ -36,31 +40,35 @@ func NewSuperGraph(allSchemaSrc []byte, subGraphs []*SubGraph) (*SuperGraph, err
 }
 
 func NewSuperGraphFromBytes(src []byte) (*SuperGraph, error) {
-	root, err := schema.NewParser(schema.NewLexer()).Parse(src)
-	if err != nil {
-		return nil, err
+	l := lexer.New(string(src))
+	p := parser.New(l)
+	doc := p.ParseDocument()
+	if len(p.Errors()) > 0 {
+		return nil, fmt.Errorf("parse error: %v", p.Errors())
 	}
 
 	return &SuperGraph{
-		Schema:       root,
+		Schema:       doc,
 		SDL:          string(src),
 		SubGraphs:    make([]*SubGraph, 0),
-		OwnershipMap: newOwnershipMapForSuperGraph(root),
+		OwnershipMap: newOwnershipMapForSuperGraph(doc),
 	}, nil
 }
 
 func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
-	newSchema, err := schema.NewParser(schema.NewLexer()).Parse([]byte(subGraph.SDL))
-	if err != nil {
-		return err
+	l := lexer.New(subGraph.SDL)
+	p := parser.New(l)
+	newDoc := p.ParseDocument()
+	if len(p.Errors()) > 0 {
+		return fmt.Errorf("parse error: %v", p.Errors())
 	}
 
 	if sg.Schema == nil {
-		sg.Schema = newSchema
-		return sg.UpdateOwnershipMap(subGraph)
+		sg.Schema = newDoc
+	} else {
+		sg.mergeSchema(newDoc)
 	}
 
-	sg.mergeSchema(newSchema)
 	if err := sg.UpdateOwnershipMap(subGraph); err != nil {
 		return err
 	}
@@ -70,14 +78,8 @@ func (sg *SuperGraph) Merge(subGraph *SubGraph) error {
 	return nil
 }
 
-func (sg *SuperGraph) mergeSchema(newSchema *schema.Schema) {
-	sg.Schema.Types = append(sg.Schema.Types, newSchema.Types...)
-	for _, ext := range sg.Schema.Indexes.TypeIndex {
-		schemaIndex, ok := newSchema.Indexes.TypeIndex[string(ext.Name)]
-		if ok {
-			ext.Fields = append(ext.Fields, schemaIndex.Fields...)
-		}
-	}
+func (sg *SuperGraph) mergeSchema(newDoc *ast.Document) {
+	sg.Schema.Definitions = append(sg.Schema.Definitions, newDoc.Definitions...)
 }
 
 func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
@@ -88,7 +90,6 @@ func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
 		if exists {
 			var ok bool
 			for _, existingSubGraph := range sg.SubGraphs {
-				existingSubGraph.OwnershipFieldMap()
 				if _, exist := existingSubGraph.ownershipFieldMap[k]; exist {
 					ok = true
 					break
@@ -107,8 +108,12 @@ func (sg *SuperGraph) UpdateOwnershipMap(subGraph *SubGraph) error {
 }
 
 func (sg *SuperGraph) GetSubGraphByKey(key string) *SubGraph {
+	if _, ok := sg.OwnershipMap[key]; !ok {
+		return nil
+	}
+
 	for _, subGraph := range sg.SubGraphs {
-		if _, exist := subGraph.ownershipFieldMap[key]; exist {
+		if _, ok := subGraph.ownershipFieldMap[key]; ok {
 			return subGraph
 		}
 	}
@@ -117,26 +122,19 @@ func (sg *SuperGraph) GetSubGraphByKey(key string) *SubGraph {
 }
 
 func (sg *SuperGraph) MustGetSubGraphByKey(key string) *SubGraph {
-	subgraph := sg.GetSubGraphByKey(key)
-	if subgraph == nil {
-		panic("SubGraph is nil")
+	subGraph := sg.GetSubGraphByKey(key)
+	if subGraph == nil {
+		panic("subgraph not found for key: " + key)
 	}
 
-	return subgraph
+	return subGraph
 }
 
-func (sg *SuperGraph) GetOperation(doc *query.Document) *query.Operation {
-	if q := doc.Operations.GetQuery(); q != nil {
-		return q
+func (sg *SuperGraph) GetOperation(doc *ast.Document) *ast.OperationDefinition {
+	for _, def := range doc.Definitions {
+		if op, ok := def.(*ast.OperationDefinition); ok {
+			return op
+		}
 	}
-
-	if m := doc.Operations.GetMutation(); m != nil {
-		return m
-	}
-
-	if s := doc.Operations.GetSubscription(); s != nil {
-		return s
-	}
-
 	return nil
 }
