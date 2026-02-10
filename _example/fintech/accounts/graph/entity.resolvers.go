@@ -13,12 +13,21 @@ import (
 
 // FindAccountByID is the resolver for the findAccountByID field.
 func (r *entityResolver) FindAccountByID(ctx context.Context, id string) (*model.Account, error) {
-	return &model.Account{ID: id, Balance: 1000}, nil
+	return &model.Account{
+		ID:       id,
+		Balance:  1000,
+		Customer: &model.Customer{ID: "customer_of_" + id},
+	}, nil
 }
 
 // FindCustomerByID is the resolver for the findCustomerByID field.
 func (r *entityResolver) FindCustomerByID(ctx context.Context, id string) (*model.Customer, error) {
-	return &model.Customer{ID: id}, nil
+	return &model.Customer{
+		ID: id,
+		Accounts: []*model.Account{
+			{ID: "account_1", Balance: 1000, Customer: &model.Customer{ID: id}},
+		},
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

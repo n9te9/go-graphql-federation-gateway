@@ -4,14 +4,14 @@ service_name: fintech-gateway
 timeout_duration: "5s"
 services:
 - name: customers
-  host: http://customers:8080/query
+  host: http://localhost:8201/query
   schema_files:
   - ./customers/graph/schema.graphqls
 - name: accounts
-  host: http://accounts:8080/query
+  host: http://localhost:8202/query
   schema_files:
   - ./accounts/graph/schema.graphqls
 - name: transactions
-  host: http://transactions:8080/query
+  host: http://localhost:8203/query
   schema_files:
   - ./transactions/graph/schema.graphqls
