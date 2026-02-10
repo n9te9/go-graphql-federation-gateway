@@ -1,0 +1,13 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@shareable"])
+
+type BillingInfo @key(fields: "id") {
+  id: ID!
+  plan: String!
+}
+
+extend type Organization @key(fields: "id") @shareable {
+  id: ID!
+  billing: BillingInfo
+}

@@ -1,0 +1,16 @@
+services:
+  gateway:
+    build: 
+      context: . 
+      dockerfile: ../Dockerfile
+    ports:
+      - "9001:9000"
+  customers:
+    build: { context: ./customers, dockerfile: Dockerfile }
+    ports: ["8201:8080"]
+  accounts:
+    build: { context: ./accounts, dockerfile: Dockerfile }
+    ports: ["8202:8080"]
+  transactions:
+    build: { context: ./transactions, dockerfile: Dockerfile }
+    ports: ["8203:8080"]

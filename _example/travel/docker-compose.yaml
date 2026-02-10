@@ -1,0 +1,13 @@
+services:
+  gateway:
+    build: 
+      context: . 
+      dockerfile: ../Dockerfile
+    ports:
+      - "9003:9000"
+  flights:
+    build: { context: ./flights, dockerfile: Dockerfile }
+    ports: ["8401:8080"]
+  bookings:
+    build: { context: ./bookings, dockerfile: Dockerfile }
+    ports: ["8402:8080"]
