@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/social/users/graph/model"
 )
 
 // User is the resolver for the user field.
 func (r *queryResolver) User(ctx context.Context, id string) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: User - user"))
+	return &model.User{ID: id, Name: "User " + id}, nil
 }
 
 // Query returns QueryResolver implementation.

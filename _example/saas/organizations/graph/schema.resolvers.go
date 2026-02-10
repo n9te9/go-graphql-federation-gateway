@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/saas/organizations/graph/model"
 )
 
 // Organization is the resolver for the organization field.
 func (r *queryResolver) Organization(ctx context.Context, id string) (*model.Organization, error) {
-	panic(fmt.Errorf("not implemented: Organization - organization"))
+	return &model.Organization{ID: id, Name: "Org " + id}, nil
 }
 
 // Query returns QueryResolver implementation.

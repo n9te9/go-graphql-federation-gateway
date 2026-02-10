@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/products/graph/model"
 )
 
 // FindProductByID is the resolver for the findProductByID field.
 func (r *entityResolver) FindProductByID(ctx context.Context, id string) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: FindProductByID - findProductByID"))
+	return &model.Product{ID: id, Name: "Product " + id, Price: 1000}, nil
 }
 
 // Entity returns EntityResolver implementation.

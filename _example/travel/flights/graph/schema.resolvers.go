@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/travel/flights/graph/model"
 )
 
 // Flight is the resolver for the flight field.
 func (r *queryResolver) Flight(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
-	panic(fmt.Errorf("not implemented: Flight - flight"))
+	return &model.Flight{Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "JFK"}, nil
 }
 
 // Query returns QueryResolver implementation.

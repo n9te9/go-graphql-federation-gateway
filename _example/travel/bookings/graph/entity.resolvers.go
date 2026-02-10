@@ -7,19 +7,18 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/travel/bookings/graph/model"
 )
 
 // FindBookingByID is the resolver for the findBookingByID field.
 func (r *entityResolver) FindBookingByID(ctx context.Context, id string) (*model.Booking, error) {
-	panic(fmt.Errorf("not implemented: FindBookingByID - findBookingByID"))
+	return &model.Booking{ID: id, Flight: &model.Flight{Number: "NH101", DepartureDate: "2026-02-10"}}, nil
 }
 
 // FindFlightByNumberAndDepartureDate is the resolver for the findFlightByNumberAndDepartureDate field.
 func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
-	panic(fmt.Errorf("not implemented: FindFlightByNumberAndDepartureDate - findFlightByNumberAndDepartureDate"))
+	return &model.Flight{Number: number, DepartureDate: departureDate}, nil
 }
 
 // Entity returns EntityResolver implementation.

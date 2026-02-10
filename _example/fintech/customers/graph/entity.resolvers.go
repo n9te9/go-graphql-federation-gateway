@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/customers/graph/model"
 )
 
 // FindCustomerByID is the resolver for the findCustomerByID field.
 func (r *entityResolver) FindCustomerByID(ctx context.Context, id string) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: FindCustomerByID - findCustomerByID"))
+	return &model.Customer{ID: id, Name: "Customer " + id}, nil
 }
 
 // Entity returns EntityResolver implementation.

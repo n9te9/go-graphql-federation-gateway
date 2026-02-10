@@ -19,7 +19,7 @@ func (r *entityResolver) FindBillingInfoByID(ctx context.Context, id string) (*m
 
 // FindOrganizationByID is the resolver for the findOrganizationByID field.
 func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
-	panic(fmt.Errorf("not implemented: FindOrganizationByID - findOrganizationByID"))
+	return &model.Organization{ID: id}, nil
 }
 
 // Entity returns EntityResolver implementation.

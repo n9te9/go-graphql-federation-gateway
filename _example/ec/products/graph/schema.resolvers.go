@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/products/graph/model"
 )
 
 // Product is the resolver for the product field.
 func (r *queryResolver) Product(ctx context.Context, id string) (*model.Product, error) {
-	panic(fmt.Errorf("not implemented: Product - product"))
+	return &model.Product{ID: id, Name: "Product " + id, Price: 1000}, nil
 }
 
 // Query returns QueryResolver implementation.

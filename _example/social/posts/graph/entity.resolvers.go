@@ -7,19 +7,18 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/social/posts/graph/model"
 )
 
 // FindPostByID is the resolver for the findPostByID field.
 func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Post, error) {
-	panic(fmt.Errorf("not implemented: FindPostByID - findPostByID"))
+	return &model.Post{ID: id, Title: "Post " + id, Content: "Content " + id, Author: &model.User{ID: "1"}}, nil
 }
 
 // FindUserByID is the resolver for the findUserByID field.
 func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.User, error) {
-	panic(fmt.Errorf("not implemented: FindUserByID - findUserByID"))
+	return &model.User{ID: id}, nil
 }
 
 // Entity returns EntityResolver implementation.

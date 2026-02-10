@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/customers/graph/model"
 )
 
 // Customer is the resolver for the customer field.
 func (r *queryResolver) Customer(ctx context.Context, id string) (*model.Customer, error) {
-	panic(fmt.Errorf("not implemented: Customer - customer"))
+	return &model.Customer{ID: id, Name: "Customer " + id}, nil
 }
 
 // Query returns QueryResolver implementation.

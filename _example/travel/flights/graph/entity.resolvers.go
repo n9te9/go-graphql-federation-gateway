@@ -7,14 +7,13 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/travel/flights/graph/model"
 )
 
 // FindFlightByNumberAndDepartureDate is the resolver for the findFlightByNumberAndDepartureDate field.
 func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
-	panic(fmt.Errorf("not implemented: FindFlightByNumberAndDepartureDate - findFlightByNumberAndDepartureDate"))
+	return &model.Flight{Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "JFK"}, nil
 }
 
 // Entity returns EntityResolver implementation.
