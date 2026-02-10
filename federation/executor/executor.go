@@ -135,7 +135,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			}
 
 			data, ok := resp["data"].(map[string]any)
-			if !ok || data == nil {
+			if !ok {
 				if len(step.DependsOn) == 0 {
 					e.mux.Lock()
 					ectx.Errs = append(ectx.Errs, errors.New("no data in response"))

@@ -359,7 +359,7 @@ func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelection
 	for _, rootSel := range rootSelections {
 		for _, subGraph := range p.superGraph.SubGraphs {
 			if p.ownsRootField(subGraph, rootTypeName, rootSel.Field) {
-				sels := p.walk(rootSel.SubSelections, subGraph)
+				sels := p.walkRoot(rootSel.SubSelections, subGraph)
 
 				plan.Steps = append(plan.Steps, &Step{
 					SubGraph:      subGraph,
@@ -375,8 +375,17 @@ func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelection
 	for _, subGraph := range p.superGraph.SubGraphs {
 		var resolverSels []*Selection
 		for _, rootSel := range rootSelections {
-			if !p.ownsRootField(subGraph, rootTypeName, rootSel.Field) {
-				resolverSels = append(resolverSels, p.walk([]*Selection{rootSel}, subGraph)...)
+			if p.ownsRootField(subGraph, rootTypeName, rootSel.Field) {
+				var boundarySelections []*Selection
+				for _, child := range rootSel.SubSelections {
+					key := fmt.Sprintf("%s.%s", child.ParentType, child.Field)
+					if _, ok := subGraph.OwnershipFieldMap()[key]; !ok {
+						boundarySelections = append(boundarySelections, child)
+					}
+				}
+				resolverSels = append(resolverSels, p.walkResolver(boundarySelections, subGraph)...)
+			} else {
+				resolverSels = append(resolverSels, p.walkResolver([]*Selection{rootSel}, subGraph)...)
 			}
 		}
 
@@ -400,21 +409,63 @@ func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelection
 	return plan
 }
 
-func (p *planner) walk(sels []*Selection, subGraph *graph.SubGraph) []*Selection {
+func (p *planner) walkRoot(sels []*Selection, subGraph *graph.SubGraph) []*Selection {
 	ret := make([]*Selection, 0)
 	for _, sel := range sels {
-		subSelections := p.walk(sel.SubSelections, subGraph)
-		key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
+		if sel.Field == "__typename" {
+			ret = append(ret, &Selection{ParentType: sel.ParentType, Field: "__typename"})
+			continue
+		}
 
+		key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
 		if _, ok := subGraph.OwnershipFieldMap()[key]; ok {
+			subSelections := p.walkRoot(sel.SubSelections, subGraph)
+			if len(subSelections) == 0 && len(sel.SubSelections) > 0 {
+				fieldTypeName, _ := p.getFieldTypeName(sel.ParentType, sel.Field)
+				if fieldTypeName != "" {
+					subSelections = append(subSelections, &Selection{
+						ParentType: fieldTypeName,
+						Field:      "__typename",
+					})
+				}
+			}
+
 			ret = append(ret, &Selection{
 				ParentType:    sel.ParentType,
 				Field:         sel.Field,
 				Arguments:     sel.Arguments,
 				SubSelections: subSelections,
 			})
-		} else if len(subSelections) > 0 {
-			ret = append(ret, subSelections...)
+		}
+	}
+	return ret
+}
+
+func (p *planner) walkResolver(sels []*Selection, subGraph *graph.SubGraph) []*Selection {
+	ret := make([]*Selection, 0)
+	for _, sel := range sels {
+		key := fmt.Sprintf("%s.%s", sel.ParentType, sel.Field)
+
+		if _, ok := subGraph.OwnershipFieldMap()[key]; ok {
+			subSelections := p.walkRoot(sel.SubSelections, subGraph)
+			if len(subSelections) == 0 && len(sel.SubSelections) > 0 {
+				fieldTypeName, _ := p.getFieldTypeName(sel.ParentType, sel.Field)
+				if fieldTypeName != "" {
+					subSelections = append(subSelections, &Selection{
+						ParentType: fieldTypeName,
+						Field:      "__typename",
+					})
+				}
+			}
+
+			ret = append(ret, &Selection{
+				ParentType:    sel.ParentType,
+				Field:         sel.Field,
+				Arguments:     sel.Arguments,
+				SubSelections: subSelections,
+			})
+		} else if len(sel.SubSelections) > 0 {
+			ret = append(ret, p.walkResolver(sel.SubSelections, subGraph)...)
 		}
 	}
 	return ret
@@ -644,10 +695,6 @@ func (p *planner) findRequiredKeys(step *Step) map[string][]string {
 					required[sel.ParentType] = make([]string, 0)
 				}
 				required[sel.ParentType] = append(required[sel.ParentType], keys...)
-			}
-
-			if len(sel.SubSelections) > 0 {
-				traverse(sel.SubSelections)
 			}
 		}
 	}
