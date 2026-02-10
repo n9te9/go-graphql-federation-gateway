@@ -56,6 +56,7 @@ var products = map[string]*model.Product{
 				Author: &model.User{
 					ID: "1",
 				},
+				ID: "1",
 			},
 		},
 	},
@@ -67,6 +68,7 @@ var products = map[string]*model.Product{
 				Author: &model.User{
 					ID: "2",
 				},
+				ID: "2",
 			},
 		},
 	},
@@ -78,6 +80,7 @@ var products = map[string]*model.Product{
 				Author: &model.User{
 					ID: "3",
 				},
+				ID: "3",
 			},
 		},
 	},
