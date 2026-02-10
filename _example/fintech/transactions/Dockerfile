@@ -1,9 +1,9 @@
-FROM golang:1.24-alpine
+FROM golang:1.25-alpine
 
 WORKDIR /app
 
 COPY . .
 
-RUN go install github.com/99designs/gqlgen@latest
+RUN go mod tidy
 
-CMD ["go", "run", "graph/resolver.go"]
+CMD ["go", "run", "main.go"]

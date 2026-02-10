@@ -13,7 +13,12 @@ import (
 
 // FindProductByID is the resolver for the findProductByID field.
 func (r *entityResolver) FindProductByID(ctx context.Context, id string) (*model.Product, error) {
-	return &model.Product{ID: id}, nil
+	return &model.Product{
+		ID: id, Reviews: []*model.Review{
+			{ID: "1", Body: "Great product!", AuthorName: "Alice"},
+			{ID: "2", Body: "Not bad", AuthorName: "Bob"},
+		},
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

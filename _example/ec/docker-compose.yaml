@@ -1,12 +1,12 @@
 services:
-  gateway:
-    build: 
-      context: . 
-      dockerfile: ../Dockerfile
-    ports:
-      - "9000:9000"
-    environment:
-      - "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318"
+  # gateway:
+  #   build: 
+  #     context: . 
+  #     dockerfile: ../Dockerfile
+  #   ports:
+  #     - "9000:9000"
+  #   environment:
+  #     - "OTEL_EXPORTER_OTLP_ENDPOINT=http://jaeger:4318"
   products:
     build: 
       context: ./products 
