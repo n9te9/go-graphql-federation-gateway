@@ -16,7 +16,7 @@ func (r *entityResolver) FindProductByID(ctx context.Context, id string) (*model
 	return &model.Product{
 		ID: id, Reviews: []*model.Review{
 			{ID: "1", Body: "Great product!", AuthorName: "Alice", Product: &model.Product{ID: "1"}},
-			{ID: "2", Body: "Not bad", AuthorName: "Bob", Product: &model.Product{ID: "1"}},
+			{ID: "2", Body: "Not bad", AuthorName: "Bob", Product: &model.Product{ID: "2"}},
 		},
 	}, nil
 }
