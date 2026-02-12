@@ -13,7 +13,8 @@ type Query struct {
 }
 
 type Review struct {
-	ID         string `json:"id"`
-	Body       string `json:"body"`
-	AuthorName string `json:"authorName"`
+	ID         string   `json:"id"`
+	Body       string   `json:"body"`
+	AuthorName string   `json:"authorName"`
+	Product    *Product `json:"product,omitempty"`
 }
