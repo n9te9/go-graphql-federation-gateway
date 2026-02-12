@@ -6,6 +6,7 @@ type Review {
   id: ID!
   body: String!
   authorName: String!
+  product: Product
 }
 
 type Product @key(fields: "id") {
