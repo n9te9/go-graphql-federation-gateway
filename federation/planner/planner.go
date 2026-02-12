@@ -147,6 +147,7 @@ func (p *planner) Plan(doc *ast.Document, variables map[string]any) (*Plan, erro
 		rootSelections = append(rootSelections, &Selection{
 			ParentType:    rootTypeName,
 			Field:         f.Name.String(),
+			Alias:         f.Alias.String(),
 			Arguments:     rootArgs,
 			SubSelections: selections,
 		})
@@ -210,9 +211,15 @@ func (p *planner) extractSelections(selectionSet []ast.Selection, parentType str
 				args[arg.Name.String()] = p.resolveValue(arg.Value, variables)
 			}
 
+			var alias string
+			if f.Alias != nil && f.Alias != nil {
+				alias = f.Alias.String()
+			}
+
 			selection := &Selection{
 				ParentType: parentType,
 				Field:      f.Name.String(),
+				Alias:      alias,
 				Arguments:  args,
 			}
 
@@ -346,6 +353,7 @@ type Selection struct {
 	ParentType string
 	Field      string
 	Arguments  map[string]any
+	Alias      string
 
 	SubSelections []*Selection
 }
@@ -433,6 +441,7 @@ func (p *planner) walkRoot(sels []*Selection, subGraph *graph.SubGraph) []*Selec
 			ret = append(ret, &Selection{
 				ParentType:    sel.ParentType,
 				Field:         sel.Field,
+				Alias:         sel.Alias,
 				Arguments:     sel.Arguments,
 				SubSelections: subSelections,
 			})
@@ -461,6 +470,7 @@ func (p *planner) walkResolver(sels []*Selection, subGraph *graph.SubGraph) []*S
 			ret = append(ret, &Selection{
 				ParentType:    sel.ParentType,
 				Field:         sel.Field,
+				Alias:         sel.Alias,
 				Arguments:     sel.Arguments,
 				SubSelections: subSelections,
 			})

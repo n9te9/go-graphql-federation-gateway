@@ -147,7 +147,16 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			if len(step.DependsOn) == 0 {
 				responseMux.Lock()
 				for k, v := range data {
-					mergedResponse["data"].(map[string]any)[k] = v
+					storeKey := k
+					for _, sel := range step.Selections {
+						if sel.Field == k {
+							if sel.Alias != "" {
+								storeKey = sel.Alias
+							}
+							break
+						}
+					}
+					mergedResponse["data"].(map[string]any)[storeKey] = v
 				}
 
 				paths := BuildPaths(data)
@@ -231,8 +240,8 @@ func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, 
 		if !ok {
 			continue
 		}
-
 		targetObj := getObjectFromPath(ref.Path, data)
+
 		if targetObj != nil {
 			targetObjMap, ok := targetObj.(map[string]any)
 			if !ok {
@@ -271,12 +280,22 @@ func (e *executor) pruneResponse(resp map[string]any, rootSelections []*planner.
 			prunedObj := make(map[string]any)
 
 			for _, sel := range sels {
-				val, exists := v[sel.Field]
+				lookupKey := sel.Field
+				if sel.Alias != "" {
+					lookupKey = sel.Alias
+				}
+
+				val, exists := v[lookupKey]
+
+				if !exists && lookupKey != sel.Field {
+					val, exists = v[sel.Field]
+				}
+
 				if !exists {
 					continue
 				}
 
-				prunedObj[sel.Field] = prune(val, sel.SubSelections)
+				prunedObj[lookupKey] = prune(val, sel.SubSelections)
 			}
 
 			return prunedObj
