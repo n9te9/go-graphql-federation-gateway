@@ -68,8 +68,34 @@ func TestPlanner_Plan(t *testing.T) {
 					{
 						ID:       0,
 						SubGraph: &graph.SubGraph{Name: "aaaaaaaaa", OwnershipTypes: map[string]struct{}{"Product": {}, "Query": {}}},
-						RootFields: []string{
-							"products",
+						RootFields: []*planner.Selection{
+							{
+								ParentType: "Query",
+								Field:      "products",
+								Arguments:  map[string]any{},
+								SubSelections: []*planner.Selection{
+									{
+										ParentType: "Product",
+										Field:      "upc",
+										Arguments:  map[string]any{},
+									},
+									{
+										ParentType: "Product",
+										Field:      "name",
+										Arguments:  map[string]any{},
+									},
+									{
+										ParentType: "Product",
+										Field:      "width",
+										Arguments:  map[string]any{},
+									},
+									{
+										ParentType: "Product",
+										Field:      "height",
+										Arguments:  map[string]any{},
+									},
+								},
+							},
 						},
 						Selections: []*planner.Selection{
 							{
@@ -107,7 +133,8 @@ func TestPlanner_Plan(t *testing.T) {
 								SubSelections: []*planner.Selection{},
 							},
 						},
-						DependsOn: []int{0},
+						OperationType: "Query",
+						DependsOn:     []int{0},
 					},
 				},
 			},
