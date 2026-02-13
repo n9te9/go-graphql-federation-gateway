@@ -56,8 +56,13 @@ func (qb *queryBuilder) buildBaseQuery(step *planner.Step, variables map[string]
 		}
 	}
 
-	rootFieldName := step.RootFields[0]
-	bodyBuilder.WriteString("\t" + rootFieldName)
+	rootField := step.RootFields[0]
+	rootFieldName := rootField.Field
+	if rootField.Alias != "" {
+		bodyBuilder.WriteString("\t" + rootField.Alias + ": " + rootFieldName)
+	} else {
+		bodyBuilder.WriteString("\t" + rootFieldName)
+	}
 
 	if args, ok := step.RootArguments[rootFieldName]; ok && len(args) > 0 {
 		qb.writeArguments(&bodyBuilder, args, variables, &varIdx, &varDefs, subgraphVars, step, parentType, rootFieldName)

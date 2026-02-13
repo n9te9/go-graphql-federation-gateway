@@ -24,11 +24,12 @@ type Step struct {
 	ID       int
 	SubGraph *graph.SubGraph
 
-	RootFields    []string
+	RootFields    []*Selection
 	Selections    []*Selection
 	RootArguments map[string]map[string]any
 	OperationType string
 	DependsOn     []int
+	Metadata      any
 }
 
 type planningContext struct {
@@ -73,6 +74,7 @@ func (s Steps) IDs() []int {
 type Plan struct {
 	Steps          Steps
 	RootSelections []*Selection
+	OperationType  string
 }
 
 func (p *Plan) GetStepByID(id int) *Step {
@@ -144,10 +146,15 @@ func (p *planner) Plan(doc *ast.Document, variables map[string]any) (*Plan, erro
 			rootArgs[arg.Name.String()] = p.resolveValue(arg.Value, variables)
 		}
 
+		var alias string
+		if f.Alias != nil {
+			alias = f.Alias.String()
+		}
+
 		rootSelections = append(rootSelections, &Selection{
 			ParentType:    rootTypeName,
 			Field:         f.Name.String(),
-			Alias:         f.Alias.String(),
+			Alias:         alias,
 			Arguments:     rootArgs,
 			SubSelections: selections,
 		})
@@ -161,6 +168,9 @@ func (p *planner) Plan(doc *ast.Document, variables map[string]any) (*Plan, erro
 	if err := p.checkDAG(plan); err != nil {
 		return nil, err
 	}
+
+	plan.RootSelections = rootSelections
+	plan.OperationType = string(op.Operation)
 
 	return plan, nil
 }
@@ -212,7 +222,7 @@ func (p *planner) extractSelections(selectionSet []ast.Selection, parentType str
 			}
 
 			var alias string
-			if f.Alias != nil && f.Alias != nil {
+			if f.Alias != nil {
 				alias = f.Alias.String()
 			}
 
@@ -370,10 +380,12 @@ func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelection
 				sels := p.walkRoot(rootSel.SubSelections, subGraph)
 
 				plan.Steps = append(plan.Steps, &Step{
-					SubGraph:      subGraph,
-					Selections:    sels,
-					RootFields:    []string{rootSel.Field},
-					RootArguments: map[string]map[string]any{rootSel.Field: rootSel.Arguments},
+					SubGraph:   subGraph,
+					Selections: sels,
+					RootFields: []*Selection{rootSel},
+					RootArguments: map[string]map[string]any{
+						rootSel.Field: rootSel.Arguments,
+					},
 					OperationType: strings.ToLower(rootTypeName),
 				})
 			}
@@ -399,9 +411,10 @@ func (p *planner) plan(pctx *planningContext, rootTypeName string, rootSelection
 
 		if len(resolverSels) > 0 {
 			plan.Steps = append(plan.Steps, &Step{
-				SubGraph:   subGraph,
-				Selections: resolverSels,
-				RootFields: nil,
+				SubGraph:      subGraph,
+				Selections:    resolverSels,
+				RootFields:    nil,
+				OperationType: rootTypeName,
 			})
 		}
 	}

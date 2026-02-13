@@ -1,0 +1,33 @@
+[
+  {
+    "name": "Get Customer and Accounts",
+    "query": "query { customer(id: \"1\") { name accounts { iban balance } } }",
+    "variables": {},
+    "expected": {
+      "customer": {
+        "name": "Customer 1",
+        "accounts": [
+          {
+            "iban": "IBAN 1",
+            "balance": 1000
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Get Account and Transactions",
+    "query": "query { account(iban: \"IBAN 1\") { iban transactions { amount } } }",
+    "variables": {},
+    "expected": {
+      "account": {
+        "iban": "IBAN 1",
+        "transactions": [
+          {
+            "amount": 100
+          }
+        ]
+      }
+    }
+  }
+]

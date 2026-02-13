@@ -1,0 +1,112 @@
+[
+  {
+    "name": "Basic Product (Single Service)",
+    "query": "query ProductBase($id: ID!) { product(id: $id) { id name price inStock } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "product": {
+        "id": "p1",
+        "inStock": false,
+        "name": "Product p1",
+        "price": 1000
+      }
+    }
+  },
+  {
+    "name": "Product with Reviews (List & Federation)",
+    "query": "query ProductWithReviews($id: ID!) { product(id: $id) { name price reviews { body authorName } } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "product": {
+        "name": "Product p1",
+        "price": 1000,
+        "reviews": [
+          {
+            "authorName": "Alice",
+            "body": "Great product!"
+          },
+          {
+            "authorName": "Bob",
+            "body": "Not bad"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Loopback (Circular Reference: Product->Review->Product)",
+    "query": "query Loopback($id: ID!) { product(id: $id) { name reviews { body product { name price } } } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "product": {
+        "name": "Product p1",
+        "reviews": [
+          {
+            "body": "Great product!",
+            "product": {
+              "name": "Product 1",
+              "price": 1000
+            }
+          },
+          {
+            "body": "Not bad",
+            "product": {
+              "name": "Product 1",
+              "price": 1000
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Typename Check (Cross-Boundary Metadata)",
+    "query": "query TypenameCheck($id: ID!) { product(id: $id) { __typename id reviews { __typename body product { __typename name } } } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "product": {
+        "__typename": "Product",
+        "id": "p1",
+        "reviews": [
+          {
+            "__typename": "Review",
+            "body": "Great product!",
+            "product": {
+              "__typename": "Product",
+              "name": "Product 1"
+            }
+          },
+          {
+            "__typename": "Review",
+            "body": "Not bad",
+            "product": {
+              "__typename": "Product",
+              "name": "Product 1"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Multi Products (Alias & Root Level Parallelism)",
+    "query": "query MultiProducts { p1: product(id: \"p1\") { name reviews { body } } p2: product(id: \"p2\") { name reviews { body } } }",
+    "variables": {},
+    "expected": {
+      "p1": {
+        "name": "Product p1",
+        "reviews": [
+          { "body": "Great product!" },
+          { "body": "Not bad" }
+        ]
+      },
+      "p2": {
+        "name": "Product p2",
+        "reviews": [
+          { "body": "Great product!" },
+          { "body": "Not bad" }
+        ]
+      }
+    }
+  }
+]

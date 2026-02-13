@@ -8,18 +8,23 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"slices"
 	"strings"
 	"sync"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/graphql-parser/ast"
+	"github.com/n9te9/graphql-parser/token"
 )
 
 type executionContext struct {
 	concurrencyMap map[int]chan struct{}
 	Errs           []error
+}
+
+type stepMetadata struct {
+	repToRefIndices map[string][]int
+	orderedRepKeys  []string
 }
 
 type Executor interface {
@@ -30,6 +35,7 @@ type executor struct {
 	QueryBuilder
 
 	superGraph                 *graph.SuperGraph
+	typeDefinitions            map[string]*ast.ObjectTypeDefinition
 	httpClient                 *http.Client
 	mux                        sync.Mutex
 	enableOpentelemetryTracing bool
@@ -43,12 +49,83 @@ type ExecutorOption struct {
 
 func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph, option ExecutorOption) *executor {
 	qb := NewQueryBuilder()
-	return &executor{
+	e := &executor{
 		QueryBuilder:               qb,
 		superGraph:                 superGraph,
+		typeDefinitions:            make(map[string]*ast.ObjectTypeDefinition),
 		httpClient:                 httpClient,
 		mux:                        sync.Mutex{},
 		enableOpentelemetryTracing: option.EnableOpentelemetryTracing,
+	}
+	e.buildTypeDefinitionsCache()
+	return e
+}
+
+func (e *executor) buildTypeDefinitionsCache() {
+	if e.superGraph == nil || e.superGraph.Schema == nil {
+		return
+	}
+	for _, def := range e.superGraph.Schema.Definitions {
+		switch td := def.(type) {
+		case *ast.ObjectTypeDefinition:
+			name := td.Name.String()
+			if existing, ok := e.typeDefinitions[name]; ok {
+				existing.Fields = append(existing.Fields, td.Fields...)
+				existing.Directives = append(existing.Directives, td.Directives...)
+				existing.Interfaces = append(existing.Interfaces, td.Interfaces...)
+			} else {
+				e.typeDefinitions[name] = td
+			}
+		case *ast.ObjectTypeExtension:
+			name := td.Name.String()
+			if existing, ok := e.typeDefinitions[name]; ok {
+				existing.Fields = append(existing.Fields, td.Fields...)
+				existing.Directives = append(existing.Directives, td.Directives...)
+				existing.Interfaces = append(existing.Interfaces, td.Interfaces...)
+			} else {
+				e.typeDefinitions[name] = &ast.ObjectTypeDefinition{
+					Name:       td.Name,
+					Token:      td.Token,
+					Directives: td.Directives,
+					Fields:     td.Fields,
+					Interfaces: td.Interfaces,
+				}
+			}
+		}
+	}
+}
+
+func getRootTypeName(doc *ast.Document, operation string) string {
+	if doc != nil {
+		for _, def := range doc.Definitions {
+			if sd, ok := def.(*ast.SchemaDefinition); ok {
+				for _, opDef := range sd.OperationTypes {
+					opStr := ""
+					switch opDef.Operation {
+					case token.QUERY:
+						opStr = "query"
+					case token.MUTATION:
+						opStr = "mutation"
+					case token.SUBSCRIPTION:
+						opStr = "subscription"
+					}
+					if opStr == operation {
+						return opDef.Type.Name.String()
+					}
+				}
+			}
+		}
+	}
+
+	switch operation {
+	case "query":
+		return "Query"
+	case "mutation":
+		return "Mutation"
+	case "subscription":
+		return "Subscription"
+	default:
+		return "Query"
 	}
 }
 
@@ -84,25 +161,36 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 					targetTypes[sel.ParentType] = struct{}{}
 				}
 
+				meta := stepMetadata{
+					repToRefIndices: make(map[string][]int),
+					orderedRepKeys:  make([]string, 0),
+				}
+
 				for _, dependStepID := range step.DependsOn {
 					value, ok := stepInputs.Load(dependStepID)
 					if ok {
 						refs := value.([]entityRef)
 						for _, ref := range refs {
 							if _, isTarget := targetTypes[ref.Typename]; isTarget {
+								rep := ref.toRepresentation()
+								repKey := fmt.Sprintf("%s:%v", ref.Typename, ref.Key)
+
 								currentRefs = append(currentRefs, ref)
+								refIdx := len(currentRefs) - 1
+
+								if indices, exists := meta.repToRefIndices[repKey]; exists {
+									meta.repToRefIndices[repKey] = append(indices, refIdx)
+								} else {
+									meta.repToRefIndices[repKey] = []int{refIdx}
+									meta.orderedRepKeys = append(meta.orderedRepKeys, repKey)
+									stepEntities = append(stepEntities, rep)
+								}
 							}
 						}
 					}
 				}
 
-				for _, ref := range currentRefs {
-					stepEntities = append(stepEntities, ref.toRepresentation())
-				}
-			}
-
-			if len(step.DependsOn) != 0 && len(stepEntities) == 0 {
-				return
+				step.Metadata = meta
 			}
 
 			query, builtVariables, err := e.QueryBuilder.Build(step, stepEntities, variables)
@@ -146,36 +234,27 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 
 			if len(step.DependsOn) == 0 {
 				responseMux.Lock()
+				// We need to merge initial data into mergedResponse immediately
+				// so that later steps can collect refs from it.
 				for k, v := range data {
-					storeKey := k
-					for _, sel := range step.Selections {
-						if sel.Field == k {
-							if sel.Alias != "" {
-								storeKey = sel.Alias
-							}
-							break
-						}
-					}
-					mergedResponse["data"].(map[string]any)[storeKey] = v
+					mergedResponse["data"].(map[string]any)[k] = v
 				}
 
-				paths := BuildPaths(data)
-				refs, err := CollectEntityRefs(paths, data, e.superGraph.Schema)
-				slog.Debug("Extracted Refs", "stepID", step.ID, "refsCount", len(refs), "refs", refs)
-
+				rootTypeName := getRootTypeName(e.superGraph.Schema, plan.OperationType)
+				refs, err := e.CollectEntityRefs(data, step.RootFields, rootTypeName, Path{})
 				if err != nil {
 					ectx.Errs = append(ectx.Errs, err)
 					responseMux.Unlock()
 					return
 				}
+
 				responseMux.Unlock()
 				stepInputs.Store(step.ID, refs)
-
 			} else {
 				entitiesData, ok := data["_entities"].([]any)
 				if ok {
 					responseMux.Lock()
-					err := e.mergeEntitiesResponse(mergedResponse, currentRefs, entitiesData)
+					err := e.mergeEntitiesResponse(mergedResponse, step, currentRefs, entitiesData)
 					if err != nil {
 						ectx.Errs = append(ectx.Errs, err)
 						responseMux.Unlock()
@@ -183,8 +262,8 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 					}
 
 					mergedData := mergedResponse["data"].(map[string]any)
-					paths := BuildPaths(mergedData)
-					newRefs, err := CollectEntityRefs(paths, mergedData, e.superGraph.Schema)
+					rootTypeName := getRootTypeName(e.superGraph.Schema, plan.OperationType)
+					newRefs, err := e.CollectEntityRefs(mergedData, plan.RootSelections, rootTypeName, Path{})
 
 					if err != nil {
 						ectx.Errs = append(ectx.Errs, err)
@@ -192,6 +271,12 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 						return
 					}
 					responseMux.Unlock()
+					stepInputs.Store(step.ID, newRefs)
+				} else {
+					// Fallback: If no _entities but data exists (rare but for robustness)
+					mergedData := mergedResponse["data"].(map[string]any)
+					rootTypeName := getRootTypeName(e.superGraph.Schema, plan.OperationType)
+					newRefs, _ := e.CollectEntityRefs(mergedData, plan.RootSelections, rootTypeName, Path{})
 					stepInputs.Store(step.ID, newRefs)
 				}
 			}
@@ -218,43 +303,75 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 	return e.pruneResponse(mergedResponse, plan.RootSelections)
 }
 
-func (e *executor) mergeEntitiesResponse(resp map[string]any, refs []entityRef, entitiesData []any) error {
-	if len(refs) != len(entitiesData) {
-		return fmt.Errorf("mismatched number of entity refs (%d) and entities data (%d)", len(refs), len(entitiesData))
-	}
-
+func (e *executor) mergeEntitiesResponse(resp map[string]any, step *planner.Step, refs []entityRef, entitiesData []any) error {
 	data := resp["data"].(map[string]any)
-	errors, ok := resp["errors"].([]any)
-	if !ok {
-		errors = make([]any, 0)
-		resp["errors"] = errors
-	}
 
-	for i, entityResult := range entitiesData {
-		if entityResult == nil {
-			continue
+	if meta, ok := step.Metadata.(stepMetadata); ok {
+		if len(meta.orderedRepKeys) != len(entitiesData) {
+			return fmt.Errorf("mismatched number of unique reps (%d) and entities data (%d)", len(meta.orderedRepKeys), len(entitiesData))
 		}
 
-		ref := refs[i]
-		resultMap, ok := entityResult.(map[string]any)
-		if !ok {
-			continue
-		}
-		targetObj := getObjectFromPath(ref.Path, data)
+		for i, entityResult := range entitiesData {
+			if entityResult == nil {
+				continue
+			}
 
-		if targetObj != nil {
-			targetObjMap, ok := targetObj.(map[string]any)
+			resultMap, ok := entityResult.(map[string]any)
 			if !ok {
 				continue
 			}
 
-			for k, v := range resultMap {
-				targetObjMap[k] = v
+			repKey := meta.orderedRepKeys[i]
+			refIndices := meta.repToRefIndices[repKey]
+
+			for _, refIdx := range refIndices {
+				ref := refs[refIdx]
+				targetObj := getObjectFromPath(ref.Path, data)
+
+				if targetObj != nil {
+					targetObjMap, ok := targetObj.(map[string]any)
+					if !ok {
+						continue
+					}
+
+					for k, v := range resultMap {
+						targetObjMap[k] = v
+					}
+				}
 			}
 		}
+		return nil
 	}
 
-	return nil
+	// Simple case: no deduplication or we match 1-to-1
+	if len(refs) == len(entitiesData) {
+		for i, entityResult := range entitiesData {
+			if entityResult == nil {
+				continue
+			}
+
+			ref := refs[i]
+			resultMap, ok := entityResult.(map[string]any)
+			if !ok {
+				continue
+			}
+			targetObj := getObjectFromPath(ref.Path, data)
+
+			if targetObj != nil {
+				targetObjMap, ok := targetObj.(map[string]any)
+				if !ok {
+					continue
+				}
+
+				for k, v := range resultMap {
+					targetObjMap[k] = v
+				}
+			}
+		}
+		return nil
+	}
+
+	return fmt.Errorf("mismatched number of entity refs (%d) and entities data (%d)", len(refs), len(entitiesData))
 }
 
 func (e *executor) pruneResponse(resp map[string]any, rootSelections []*planner.Selection) map[string]any {
@@ -346,55 +463,10 @@ func (p Path) Merge() Path {
 	return merged
 }
 
-func (p Path) isKeySegment(keys []string) bool {
-	return slices.Contains(keys, p[len(p)-1].FieldName)
-}
-
-func BuildPaths(v any) []Path {
-	var paths Paths
-
-	var walk func(value any, path Path)
-
-	walk = func(value any, path Path) {
-		switch vv := value.(type) {
-		case map[string]any:
-			for field, child := range vv {
-				next := appendPath(path, &PathSegment{FieldName: field})
-				walk(child, next)
-			}
-
-		case []any:
-			for i, elem := range vv {
-				idx := i
-				next := appendPath(path, &PathSegment{Index: &idx})
-				walk(elem, next)
-			}
-
-		default:
-			paths = append(paths, path)
-		}
-	}
-
-	walk(v, Path{})
-	return paths.Merge()
-}
-
 func appendPath(p Path, seg *PathSegment) Path {
 	next := make(Path, len(p), len(p)+1)
 	copy(next, p)
 	return append(next, seg)
-}
-
-type Paths []Path
-
-func (p Paths) Merge() Paths {
-	length := len(p)
-	merged := make(Paths, 0, length)
-	for _, path := range p {
-		merged = append(merged, path.Merge())
-	}
-
-	return merged
 }
 
 type entityRef struct {
@@ -404,16 +476,14 @@ type entityRef struct {
 	ExtraFields map[string]any
 }
 
+// 【Fix: toRepresentation should only include Key and __typename】
 func (e entityRef) toRepresentation() map[string]any {
 	ret := make(map[string]any)
 	for k, v := range e.Key.(map[string]any) {
 		ret[k] = v
 	}
-
-	for k, v := range e.ExtraFields {
-		ret[k] = v
-	}
-
+	// DO NOT include ExtraFields here unless specifically required by @requires.
+	// For standard Federation, only Keys are allowed.
 	ret["__typename"] = e.Typename
 	return ret
 }
@@ -520,104 +590,93 @@ func getObjectFromPath(path Path, obj any) any {
 	return getObjectFromPath(path[1:], currentObj)
 }
 
-func pathToString(path Path) string {
-	var sb strings.Builder
-	for _, seg := range path {
-		sb.WriteString(seg.FieldName)
-		if seg.Index != nil {
-			sb.WriteString(fmt.Sprintf("[%d]", *seg.Index))
-		}
-		sb.WriteString("/")
-	}
-	return sb.String()
+func (e *executor) getTD(typeName string) *ast.ObjectTypeDefinition {
+	return e.typeDefinitions[typeName]
 }
 
-func getTypeDefinitionFromPath(path Path, doc *ast.Document) *ast.ObjectTypeDefinition {
-	if len(path) == 0 {
-		return nil
-	}
-
-	var rootTypeName string
-	for _, def := range doc.Definitions {
-		if sd, ok := def.(*ast.SchemaDefinition); ok {
-			for _, ot := range sd.OperationTypes {
-				if ot.Operation.String() == "query" {
-					rootTypeName = ot.Type.Name.String()
-				}
-			}
-		}
-	}
-	if rootTypeName == "" {
-		rootTypeName = "Query"
-	}
-
-	var currentTD *ast.ObjectTypeDefinition
-	for _, def := range doc.Definitions {
-		var fields []*ast.FieldDefinition
-		switch td := def.(type) {
-		case *ast.ObjectTypeDefinition:
-			if td.Name.String() == rootTypeName {
-				fields = td.Fields
-			}
-		case *ast.ObjectTypeExtension:
-			if td.Name.String() == rootTypeName {
-				fields = td.Fields
-			}
-		}
-
-		for _, f := range fields {
-			if f.Name.String() == path[0].FieldName {
-				currentTD = getTD(doc, getNamedType(f.Type))
-				break
-			}
-		}
-		if currentTD != nil {
-			break
-		}
-	}
-
-	if currentTD == nil {
-		return nil
-	}
-
-	for _, seg := range path[1:] {
-		if seg.FieldName == "" {
-			continue
-		}
-
-		var nextType *ast.ObjectTypeDefinition
-		for _, def := range doc.Definitions {
-			var fields []*ast.FieldDefinition
-			switch td := def.(type) {
-			case *ast.ObjectTypeDefinition:
-				if td.Name.String() == currentTD.Name.String() {
-					fields = td.Fields
-				}
-			case *ast.ObjectTypeExtension:
-				if td.Name.String() == currentTD.Name.String() {
-					fields = td.Fields
-				}
-			}
-
-			for _, f := range fields {
-				if f.Name.String() == seg.FieldName {
-					nextType = getTD(doc, getNamedType(f.Type))
+func (e *executor) CollectEntityRefs(obj map[string]any, selections []*planner.Selection, parentTypeName string, currentPath Path) ([]entityRef, error) {
+	refs := make([]entityRef, 0)
+	td := e.getTD(parentTypeName)
+	if td != nil {
+		keys := getKey(td.Directives)
+		if len(keys) > 0 {
+			keyMap := make(map[string]any)
+			missingKey := false
+			for _, k := range keys {
+				if val, ok := obj[k]; ok {
+					keyMap[k] = val
+				} else {
+					missingKey = true
 					break
 				}
 			}
-			if nextType != nil {
-				break
+
+			if !missingKey {
+				refs = append(refs, entityRef{
+					Typename:    parentTypeName,
+					Key:         keyMap,
+					Path:        currentPath,
+					ExtraFields: obj,
+				})
 			}
 		}
-
-		if nextType == nil {
-			return nil
-		}
-
-		currentTD = nextType
 	}
 
-	return currentTD
+	for _, sel := range selections {
+		lookupKey := sel.Field
+		if sel.Alias != "" {
+			lookupKey = sel.Alias
+		}
+
+		val, exists := obj[lookupKey]
+		if !exists || val == nil {
+			continue
+		}
+
+		nextTypeName := e.getFieldTypeName(parentTypeName, sel.Field)
+		if nextTypeName == "" {
+			continue
+		}
+
+		nextPath := appendPath(currentPath, &PathSegment{FieldName: lookupKey})
+
+		switch v := val.(type) {
+		case map[string]any:
+			childRefs, err := e.CollectEntityRefs(v, sel.SubSelections, nextTypeName, nextPath)
+			if err != nil {
+				return nil, err
+			}
+			refs = append(refs, childRefs...)
+		case []any:
+			for i, item := range v {
+				if itemMap, ok := item.(map[string]any); ok {
+					idx := i
+					itemPath := appendPath(currentPath, &PathSegment{FieldName: lookupKey, Index: &idx})
+					childRefs, err := e.CollectEntityRefs(itemMap, sel.SubSelections, nextTypeName, itemPath)
+					if err != nil {
+						return nil, err
+					}
+					refs = append(refs, childRefs...)
+				}
+			}
+		}
+	}
+
+	return refs, nil
+}
+
+func (e *executor) getFieldTypeName(parentTypeName string, fieldName string) string {
+	td := e.getTD(parentTypeName)
+	if td == nil {
+		return ""
+	}
+
+	for _, f := range td.Fields {
+		if f.Name.String() == fieldName {
+			return getNamedType(f.Type)
+		}
+	}
+	return ""
 }
 
 func getNamedType(t ast.Type) string {
@@ -631,98 +690,6 @@ func getNamedType(t ast.Type) string {
 	default:
 		return ""
 	}
-}
-
-func getTD(doc *ast.Document, typeName string) *ast.ObjectTypeDefinition {
-	for _, def := range doc.Definitions {
-		switch td := def.(type) {
-		case *ast.ObjectTypeDefinition:
-			if td.Name.String() == typeName {
-				return td
-			}
-		case *ast.ObjectTypeExtension:
-			if td.Name.String() == typeName {
-				// While ObjectTypeExtension is not ObjectTypeDefinition,
-				// we return the definition for the type if it exists.
-				// For the purposes of field lookup, we might need a combined view.
-				// But here we need a starting point TD.
-				// Let's look for ObjectTypeDefinition first.
-			}
-		}
-	}
-	return nil
-}
-
-func CollectEntityRefs(paths Paths, obj map[string]any, doc *ast.Document) ([]entityRef, error) {
-	refs := make([]entityRef, 0)
-	seenPaths := make(map[string]struct{})
-
-	for _, path := range paths {
-		if len(path) == 0 {
-			continue
-		}
-
-		parentPath := path[:len(path)-1]
-		if len(parentPath) == 0 {
-			continue
-		}
-
-		td := getTypeDefinitionFromPath(parentPath, doc)
-		if td == nil {
-			slog.Debug("type not found", "path", pathToString(parentPath))
-			continue
-		}
-
-		keys := getKey(td.Directives)
-		if len(keys) == 0 {
-			continue
-		}
-
-		leafSegment := path[len(path)-1]
-		if !slices.Contains(keys, leafSegment.FieldName) {
-			continue
-		}
-
-		pathKey := pathToString(parentPath)
-		if _, exists := seenPaths[pathKey]; exists {
-			continue
-		}
-		seenPaths[pathKey] = struct{}{}
-
-		parentObj := getObjectFromPath(parentPath, obj)
-		parentMap, ok := parentObj.(map[string]any)
-		if !ok {
-			continue
-		}
-
-		keyMap := make(map[string]any)
-		missingKey := false
-		for _, k := range keys {
-			if val, ok := parentMap[k]; ok {
-				keyMap[k] = val
-			} else {
-				missingKey = true
-				break
-			}
-		}
-		if missingKey {
-			continue
-		}
-
-		extraFields := make(map[string]any)
-		for k, v := range parentMap {
-			extraFields[k] = v
-		}
-
-		refs = append(refs, entityRef{
-			Typename:    td.Name.String(),
-			Key:         keyMap,
-			Path:        parentPath,
-			ExtraFields: extraFields,
-		})
-	}
-
-	return refs, nil
 }
 
 type requestHeaderContextKey struct{}

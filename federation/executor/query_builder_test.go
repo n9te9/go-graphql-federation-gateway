@@ -19,7 +19,12 @@ func TestQueryBuilder_Build(t *testing.T) {
 		{
 			name: "Happy case: Build base simple query",
 			step: &planner.Step{
-				RootFields: []string{"products"},
+				RootFields: []*planner.Selection{
+					{
+						ParentType: "Query",
+						Field:      "products",
+					},
+				},
 				SubGraph: func() *graph.SubGraph {
 					sdl := `type Query {
 					products: [Product]
