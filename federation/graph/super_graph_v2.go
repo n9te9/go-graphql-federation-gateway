@@ -393,3 +393,20 @@ func (sg *SuperGraphV2) GetSubGraphsForField(typeName, fieldName string) []*SubG
 	key := fmt.Sprintf("%s.%s", typeName, fieldName)
 	return sg.Ownership[key]
 }
+
+// GetEntityOwnerSubGraph returns the subgraph that owns the entity (has @key directive).
+// If multiple subgraphs have @key for this entity, it returns the first one.
+// Returns nil if the type is not an entity.
+func (sg *SuperGraphV2) GetEntityOwnerSubGraph(typeName string) *SubGraphV2 {
+	for _, subGraph := range sg.SubGraphs {
+		if _, exists := subGraph.GetEntity(typeName); exists {
+			return subGraph
+		}
+	}
+	return nil
+}
+
+// IsEntityType checks if a type is an entity (has @key directive in any subgraph).
+func (sg *SuperGraphV2) IsEntityType(typeName string) bool {
+	return sg.GetEntityOwnerSubGraph(typeName) != nil
+}
