@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
@@ -339,36 +340,9 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 					continue
 				}
 
-				// Navigate through remaining path in this element
-				var elemCurrent interface{} = elemMap
-				for _, segment := range remainingPath {
-					if elemMapCur, ok := elemCurrent.(map[string]interface{}); ok {
-						if nextElem, exists := elemMapCur[segment]; exists {
-							elemCurrent = nextElem
-						} else {
-							elemCurrent = nil
-							break
-						}
-					} else {
-						elemCurrent = nil
-						break
-					}
-				}
-
-				// Now elemCurrent should be the entity to extract
-				if elemCurrent != nil {
-					// Extract representation from this element
-					if ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType); ownerSubGraph != nil {
-						if entity, exists := ownerSubGraph.GetEntity(step.ParentType); exists && len(entity.Keys) > 0 {
-							keyField := entity.Keys[0].FieldSet
-							if entityMap, ok := elemCurrent.(map[string]interface{}); ok {
-								if rep := e.buildRepresentation(entityMap, step.ParentType, keyField); rep != nil {
-									representations = append(representations, rep)
-								}
-							}
-						}
-					}
-				}
+				// Navigate through remaining path in this element, handling nested arrays
+				elemResults := e.navigatePathWithArrays(elemMap, remainingPath, step)
+				representations = append(representations, elemResults...)
 			}
 
 			return representations
@@ -413,17 +387,66 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 	return representations
 }
 
+// navigatePathWithArrays navigates through a path that may contain nested arrays
+func (e *ExecutorV2) navigatePathWithArrays(current map[string]interface{}, path []string, step *planner.StepV2) []map[string]interface{} {
+	representations := make([]map[string]interface{}, 0)
+
+	if len(path) == 0 {
+		// Reached the end - extract representation from current
+		if ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType); ownerSubGraph != nil {
+			if entity, exists := ownerSubGraph.GetEntity(step.ParentType); exists && len(entity.Keys) > 0 {
+				keyField := entity.Keys[0].FieldSet
+				if rep := e.buildRepresentation(current, step.ParentType, keyField); rep != nil {
+					representations = append(representations, rep)
+				}
+			}
+		}
+		return representations
+	}
+
+	segment := path[0]
+	remainingPath := path[1:]
+
+	next, exists := current[segment]
+	if !exists {
+		return representations
+	}
+
+	// Check if next is an array
+	if arr, isArray := next.([]interface{}); isArray {
+		// Process each array element with remaining path
+		for _, elem := range arr {
+			if elemMap, ok := elem.(map[string]interface{}); ok {
+				elemResults := e.navigatePathWithArrays(elemMap, remainingPath, step)
+				representations = append(representations, elemResults...)
+			}
+		}
+	} else if nextMap, ok := next.(map[string]interface{}); ok {
+		// Continue navigating
+		representations = e.navigatePathWithArrays(nextMap, remainingPath, step)
+	}
+
+	return representations
+}
+
 // buildRepresentation builds a representation for an entity.
+// keyField can be a single field or composite keys separated by space (e.g., "number departureDate")
 func (e *ExecutorV2) buildRepresentation(entity map[string]interface{}, typeName string, keyField string) map[string]interface{} {
 	representation := map[string]interface{}{
 		"__typename": typeName,
 	}
 
-	// Extract key field value
-	if keyValue, exists := entity[keyField]; exists {
-		representation[keyField] = keyValue
-	} else {
-		return nil
+	// Handle composite keys by splitting on whitespace
+	keyFieldNames := strings.Fields(keyField)
+
+	// Extract all key field values
+	for _, fieldName := range keyFieldNames {
+		if keyValue, exists := entity[fieldName]; exists {
+			representation[fieldName] = keyValue
+		} else {
+			// Missing required key field
+			return nil
+		}
 	}
 
 	return representation
@@ -489,22 +512,23 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 	}
 
 	// Navigate to the target field to check if it's an array or object
+	// Also collect all array positions in the path for nested array handling
 	var current interface{} = rootData
-	var arraySegmentIndex = -1 // Index where we hit an array
-	var remainingPath []string // Path after the array
+	var firstArrayIndex = -1 // Index of the first array in the path
 
 	for i, segment := range mergePath {
-		// Check if current is an array
-		if _, isArray := current.([]interface{}); isArray {
-			// We hit an array - the remaining path should be merged into each array element
-			arraySegmentIndex = i
-			remainingPath = mergePath[i:]
-			break
-		}
-
 		if currentMap, ok := current.(map[string]interface{}); ok {
 			if next, exists := currentMap[segment]; exists {
 				current = next
+
+				// Check if the value we just navigated to is an array
+				if _, isArray := current.([]interface{}); isArray {
+					// We hit an array - mark it
+					if firstArrayIndex < 0 {
+						firstArrayIndex = i
+					}
+					break
+				}
 			} else {
 				// Path doesn't exist yet
 				current = nil
@@ -518,12 +542,16 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 	}
 
 	// Handle different merge scenarios
-	if arraySegmentIndex >= 0 {
-		// We encountered an array during navigation - need to merge into array elements
+	if firstArrayIndex >= 0 {
+		// We encountered an array - need to handle nested array merging
+		entities, ok := entitiesData.([]interface{})
+		if !ok {
+			return fmt.Errorf("entities data is not an array")
+		}
 
-		// Navigate to the array
+		// Navigate to the first array
 		var arrayContainer interface{} = rootData
-		arrayPath := mergePath[:arraySegmentIndex]
+		arrayPath := mergePath[:firstArrayIndex+1] // Include the array field itself
 		for _, segment := range arrayPath {
 			if containerMap, ok := arrayContainer.(map[string]interface{}); ok {
 				arrayContainer = containerMap[segment]
@@ -532,35 +560,22 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 
 		arrayData, ok := arrayContainer.([]interface{})
 		if !ok {
-			return fmt.Errorf("expected array at path %v", arrayPath)
+			return fmt.Errorf("expected array at merge path %v", arrayPath)
 		}
 
-		entities, ok := entitiesData.([]interface{})
-		if !ok {
-			return fmt.Errorf("entities data is not an array")
-		}
+		// The remaining path after the array
+		remainingPath := mergePath[firstArrayIndex+1:]
 
-		// Merge each entity into corresponding array element
-		// The remaining path tells us where within each array element to merge
-		for i, elem := range arrayData {
-			if i >= len(entities) {
-				break
-			}
-
+		// Merge entities into the nested structure
+		entityIndex := 0
+		for _, elem := range arrayData {
 			elemMap, ok := elem.(map[string]interface{})
 			if !ok {
 				continue
 			}
 
-			entityMap, ok := entities[i].(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			// Merge entity into this array element at remainingPath
-			if err := Merge(elemMap, entityMap, remainingPath); err != nil {
-				return fmt.Errorf("failed to merge entity into array element %d: %w", i, err)
-			}
+			// Recursively merge entities into potentially nested arrays
+			entityIndex = e.mergeIntoNestedArrays(elemMap, entities, remainingPath, entityIndex, step)
 		}
 
 	} else if current == nil {
@@ -605,6 +620,52 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 	execCtx.results[rootStepID] = rootResultMap
 
 	return nil
+}
+
+// mergeIntoNestedArrays recursively merges entities into potentially nested array structures
+// Returns the next entity index to use
+func (e *ExecutorV2) mergeIntoNestedArrays(
+	current map[string]interface{},
+	entities []interface{},
+	path []string,
+	entityIndex int,
+	step *planner.StepV2,
+) int {
+	if len(path) == 0 {
+		// Reached the target - merge the entity here
+		if entityIndex < len(entities) {
+			if entityMap, ok := entities[entityIndex].(map[string]interface{}); ok {
+				// Deep merge entity fields into current
+				// Use the Merge function to properly handle nested structures
+				Merge(current, entityMap, []string{})
+			}
+			return entityIndex + 1
+		}
+		return entityIndex
+	}
+
+	segment := path[0]
+	remainingPath := path[1:]
+
+	next, exists := current[segment]
+	if !exists {
+		return entityIndex
+	}
+
+	// Check if next is an array
+	if arr, isArray := next.([]interface{}); isArray {
+		// Process each array element
+		for _, elem := range arr {
+			if elemMap, ok := elem.(map[string]interface{}); ok {
+				entityIndex = e.mergeIntoNestedArrays(elemMap, entities, remainingPath, entityIndex, step)
+			}
+		}
+	} else if nextMap, ok := next.(map[string]interface{}); ok {
+		// Continue navigating
+		entityIndex = e.mergeIntoNestedArrays(nextMap, entities, remainingPath, entityIndex, step)
+	}
+
+	return entityIndex
 }
 
 // sendRequest sends a GraphQL request to a subgraph.
@@ -750,13 +811,4 @@ func getOperationFromDocument(doc *ast.Document) *ast.OperationDefinition {
 	}
 
 	return nil
-}
-
-// getKeys returns the keys of a map for debugging.
-func getKeys(m map[string]interface{}) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	return keys
 }

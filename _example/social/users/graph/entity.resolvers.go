@@ -13,6 +13,12 @@ import (
 
 // FindUserByID is the resolver for the findUserByID field.
 func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.User, error) {
+	if id == "user1" {
+		return &model.User{ID: id, Name: "Alice"}, nil
+	}
+	if id == "user2" {
+		return &model.User{ID: id, Name: "Bob"}, nil
+	}
 	return &model.User{ID: id, Name: "User " + id}, nil
 }
 

@@ -13,6 +13,12 @@ import (
 
 // User is the resolver for the user field.
 func (r *queryResolver) User(ctx context.Context, id string) (*model.User, error) {
+	if id == "user1" {
+		return &model.User{ID: id, Name: "Alice"}, nil
+	}
+	if id == "user2" {
+		return &model.User{ID: id, Name: "Bob"}, nil
+	}
 	return &model.User{ID: id, Name: "User " + id}, nil
 }
 

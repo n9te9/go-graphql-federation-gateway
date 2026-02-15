@@ -13,6 +13,9 @@ import (
 
 // FindOrganizationByID is the resolver for the findOrganizationByID field.
 func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
+	if id == "org1" {
+		return &model.Organization{ID: id, Name: "Acme Corp"}, nil
+	}
 	return &model.Organization{ID: id, Name: "Org " + id}, nil
 }
 

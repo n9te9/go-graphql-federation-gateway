@@ -11,13 +11,8 @@ import (
 	"github.com/n9te9/go-graphql-federation-gateway/_example/saas/projects/graph/model"
 )
 
-// FindOrganizationByID is the resolver for the findOrganizationByID field.
-func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
-	return &model.Organization{ID: id}, nil
-}
-
-// FindProjectByID is the resolver for the findProjectByID field.
-func (r *entityResolver) FindProjectByID(ctx context.Context, id string) (*model.Project, error) {
+// Project is the resolver for the project field.
+func (r *queryResolver) Project(ctx context.Context, id string) (*model.Project, error) {
 	if id == "proj1" {
 		return &model.Project{
 			ID:           id,
@@ -32,7 +27,7 @@ func (r *entityResolver) FindProjectByID(ctx context.Context, id string) (*model
 	}, nil
 }
 
-// Entity returns EntityResolver implementation.
-func (r *Resolver) Entity() EntityResolver { return &entityResolver{r} }
+// Query returns QueryResolver implementation.
+func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
-type entityResolver struct{ *Resolver }
+type queryResolver struct{ *Resolver }

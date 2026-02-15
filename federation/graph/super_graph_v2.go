@@ -394,15 +394,24 @@ func (sg *SuperGraphV2) GetSubGraphsForField(typeName, fieldName string) []*SubG
 	return sg.Ownership[key]
 }
 
-// GetEntityOwnerSubGraph returns the subgraph that owns the entity (has @key directive).
-// If multiple subgraphs have @key for this entity, it returns the first one.
+// GetEntityOwnerSubGraph returns the subgraph that owns the entity (defines it with @key directive, not extends it).
+// For entities defined in multiple subgraphs (not common in Federation v2), it returns the first non-extension.
 // Returns nil if the type is not an entity.
 func (sg *SuperGraphV2) GetEntityOwnerSubGraph(typeName string) *SubGraphV2 {
+	// First pass: look for non-extension definitions
+	for _, subGraph := range sg.SubGraphs {
+		if entity, exists := subGraph.GetEntity(typeName); exists && !entity.IsExtension() {
+			return subGraph
+		}
+	}
+
+	// Second pass: if only extensions exist, return the first one
 	for _, subGraph := range sg.SubGraphs {
 		if _, exists := subGraph.GetEntity(typeName); exists {
 			return subGraph
 		}
 	}
+
 	return nil
 }
 

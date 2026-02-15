@@ -13,12 +13,34 @@ import (
 
 // FindPostByID is the resolver for the findPostByID field.
 func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Post, error) {
-	return &model.Post{ID: id, Title: "Post " + id, Content: "Content " + id, Author: &model.User{ID: "1"}}, nil
+	if id == "post1" {
+		return &model.Post{
+			ID:      id,
+			Title:   "My First Post",
+			Content: "This is my first post",
+			Author:  &model.User{ID: "user1"},
+		}, nil
+	}
+	return &model.Post{ID: id, Title: "Post " + id, Content: "Content " + id, Author: &model.User{ID: "unknown"}}, nil
 }
 
 // FindUserByID is the resolver for the findUserByID field.
 func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.User, error) {
-	return &model.User{ID: id}, nil
+	// Return User with posts
+	if id == "user1" {
+		return &model.User{
+			ID: id,
+			Posts: []*model.Post{
+				{
+					ID:      "post1",
+					Title:   "My First Post",
+					Content: "This is my first post",
+					Author:  &model.User{ID: "user1"},
+				},
+			},
+		}, nil
+	}
+	return &model.User{ID: id, Posts: []*model.Post{}}, nil
 }
 
 // Entity returns EntityResolver implementation.

@@ -394,9 +394,19 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 				}
 
 				p.injectKeyFieldsIntoParentStep(parentStep, entityTypeToResolve, targetSubGraph, relativePathForParent)
+
 				// Recursively find nested boundary fields within this entity step's selections
+				// Important: Use the ORIGINAL field.SelectionSet, not the filtered entitySelections
+				// This ensures we can detect boundary fields that belong to other subgraphs
 				if len(field.SelectionSet) > 0 {
-					p.findAndBuildEntitySteps(field.SelectionSet, newStep, plan, nextStepID, fieldType, fieldPath)
+					// For entity extensions: the nested selections are relative to the parent type
+					// For entity references: the nested selections are relative to the entity type
+					nestedParentType := entityTypeToResolve
+					if entityTypeToResolve == parentType {
+						// Extension case: fieldType is the type of the extension field
+						nestedParentType = fieldType
+					}
+					p.findAndBuildEntitySteps(field.SelectionSet, newStep, plan, nextStepID, nestedParentType, fieldPath)
 				}
 			}
 		}
@@ -464,9 +474,18 @@ func (p *PlannerV2) buildEntityStepSelections(
 		if len(field.SelectionSet) > 0 {
 			filteredChildren := p.buildStepSelections(field.SelectionSet, subGraph, fieldType)
 			newField.SelectionSet = filteredChildren
-		}
 
-		result = append(result, newField)
+			// Only include this field if it has children or if it's a leaf field
+			if len(filteredChildren) > 0 {
+				result = append(result, newField)
+			}
+		} else {
+			// Leaf field - check if it's owned by this subgraph
+			fieldSubGraphs := p.SuperGraph.GetSubGraphsForField(entityType, fieldName)
+			if len(fieldSubGraphs) > 0 && fieldSubGraphs[0].Name == subGraph.Name {
+				result = append(result, newField)
+			}
+		}
 	}
 
 	return result
@@ -489,9 +508,15 @@ func (p *PlannerV2) getKeyFields(typeName string, subGraph *graph.SubGraphV2) []
 	// Use the first key
 	keyFieldSet := entity.Keys[0].FieldSet
 
-	// For now, assume simple key (single field)
-	// TODO: Handle composite keys like "id accountId"
-	return []string{"__typename", keyFieldSet}
+	// Handle composite keys by splitting on whitespace
+	// Example: "number departureDate" -> ["number", "departureDate"]
+	keyFieldNames := strings.Fields(keyFieldSet)
+
+	// Always include __typename first
+	result := []string{"__typename"}
+	result = append(result, keyFieldNames...)
+
+	return result
 }
 
 // injectKeyFieldsIntoParentStep injects @key fields into the parent step's selections
@@ -598,24 +623,6 @@ func (p *PlannerV2) updateFieldSelectionSet(selections []ast.Selection, path []s
 			}
 		}
 	}
-}
-
-// DebugPlan prints debug information about the plan.
-func DebugPlan(plan *PlanV2) {
-	fmt.Println("=== Query Plan Debug ===")
-	for i, step := range plan.Steps {
-		fmt.Printf("Step %d: ID=%d, Type=%d, SubGraph=%s, ParentType=%s\n", i, step.ID, step.StepType, step.SubGraph.Name, step.ParentType)
-		fmt.Printf("  Path: %v\n", step.Path)
-		fmt.Printf("  InsertionPath: %v\n", step.InsertionPath)
-		fmt.Printf("  DependsOn: %v\n", step.DependsOn)
-		fmt.Printf("  SelectionSet:\n")
-		for _, sel := range step.SelectionSet {
-			if field, ok := sel.(*ast.Field); ok {
-				fmt.Printf("    - %s\n", field.Name.String())
-			}
-		}
-	}
-	fmt.Println("======================")
 }
 
 // getOperation returns the operation from a document.
