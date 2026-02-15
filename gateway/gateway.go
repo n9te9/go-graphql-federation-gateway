@@ -140,7 +140,7 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Debug: print plan
-	planner.DebugPlan(plan)
+	// planner.DebugPlan(plan)
 
 	resp, err := g.executor.Execute(ctx, plan, req.Variables)
 	if err != nil {

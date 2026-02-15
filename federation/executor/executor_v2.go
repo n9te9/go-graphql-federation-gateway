@@ -249,7 +249,6 @@ func (e *ExecutorV2) processStep(
 	if err != nil {
 		return fmt.Errorf("failed to send request to %s: %w", step.SubGraph.Host, err)
 	}
-	fmt.Println(query)
 
 	// Store result or merge into parent
 	if step.StepType == planner.StepTypeQuery {
