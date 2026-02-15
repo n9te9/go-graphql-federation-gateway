@@ -84,7 +84,6 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		}
 	}
 
-
 	return &gateway{
 		graphQLEndpoint:             settings.Endpoint,
 		serviceName:                 settings.ServiceName,
@@ -138,9 +137,6 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		})
 		return
 	}
-
-	// Debug: print plan
-	// planner.DebugPlan(plan)
 
 	resp, err := g.executor.Execute(ctx, plan, req.Variables)
 	if err != nil {

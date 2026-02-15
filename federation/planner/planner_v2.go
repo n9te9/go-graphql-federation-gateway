@@ -34,10 +34,10 @@ type StepV2 struct {
 
 // PlanV2 represents a query execution plan.
 type PlanV2 struct {
-	Steps            []*StepV2       // List of execution steps
-	RootStepIndexes  []int           // Indexes of root steps
-	OriginalDocument *ast.Document   // Original query document
-	OperationType    string          // Operation type (query, mutation, subscription)
+	Steps            []*StepV2     // List of execution steps
+	RootStepIndexes  []int         // Indexes of root steps
+	OriginalDocument *ast.Document // Original query document
+	OperationType    string        // Operation type (query, mutation, subscription)
 }
 
 // PlannerV2 generates query execution plans.
@@ -133,7 +133,7 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 	// Key fields will be injected during entity step creation in findAndBuildEntitySteps()
 	for _, rootStepIdx := range plan.RootStepIndexes {
 		rootStep := plan.Steps[rootStepIdx]
-		
+
 		// Find boundary fields in the original selections (not filtered)
 		originalSelections := rootFieldsBySubGraph[rootStep.SubGraph]
 		p.findAndBuildEntitySteps(originalSelections, rootStep, plan, &nextStepID, rootStep.ParentType, rootStep.Path)
@@ -185,16 +185,16 @@ func (p *PlannerV2) buildStepSelections(selections []ast.Selection, subGraph *gr
 
 		// Build new field with filtered child selections
 		newField := &ast.Field{
-			Alias:     field.Alias,
-			Name:      field.Name,
-			Arguments: field.Arguments,
+			Alias:      field.Alias,
+			Name:       field.Name,
+			Arguments:  field.Arguments,
 			Directives: field.Directives,
 		}
 
 		// Recursively process child selections
 		if len(field.SelectionSet) > 0 && fieldType != "" {
 			childSelections := p.buildStepSelections(field.SelectionSet, subGraph, fieldType)
-			
+
 			// If no child selections were included but original had children, add __typename
 			if len(childSelections) == 0 {
 				childSelections = append(childSelections, &ast.Field{
@@ -204,7 +204,7 @@ func (p *PlannerV2) buildStepSelections(selections []ast.Selection, subGraph *gr
 					},
 				})
 			}
-			
+
 			newField.SelectionSet = childSelections
 		}
 
@@ -276,13 +276,13 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 		// Check if the field returns an entity type
 		// If so, we need to check which subgraph owns that entity (has @key)
 		entityOwnerSubGraph := p.SuperGraph.GetEntityOwnerSubGraph(fieldType)
-		
+
 		// Determine if this is a boundary field:
 		// 1. Field is owned by a different subgraph, OR
 		// 2. Field returns an entity type owned by a different subgraph
 		isBoundaryField := false
 		targetSubGraph := fieldSubGraph
-		
+
 		if fieldSubGraph.Name != parentStep.SubGraph.Name {
 			// Case 1: Field is owned by a different subgraph
 			isBoundaryField = true
@@ -301,18 +301,21 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 		} else {
 			// Different subgraph - this is a boundary field, create entity step
 			// Determine the entity type to resolve:
-			// - Case 1: Field returns entity type owned by different subgraph → resolve that entity
-			// - Case 2: Field owned by different subgraph → extend parent entity
-			isNestedEntity := (entityOwnerSubGraph != nil && entityOwnerSubGraph.Name == targetSubGraph.Name)
+			// Check if parent type is extended in the target subgraph
 			var entityTypeToResolve string
-			if isNestedEntity {
-				// Case 1: Resolving nested entity (e.g., Review.product returning Product entity)
-				entityTypeToResolve = fieldType
-			} else {
-				// Case 2: Extending parent entity with fields from another subgraph (e.g., Product.reviews)
+			_, parentIsExtendedInTarget := targetSubGraph.GetEntity(parentType)
+			if parentIsExtendedInTarget {
+				// Parent type is extended in target subgraph (e.g., Customer extended in accounts service)
+				// Resolve the parent entity
 				entityTypeToResolve = parentType
+			} else {
+				// Field returns an entity that's defined in target subgraph (e.g., Review.product → Product)
+				// Resolve the field type entity
+				entityTypeToResolve = fieldType
 			}
 
+			// Check if this is a nested entity (field type owned by same subgraph as target)
+			isNestedEntity := (entityOwnerSubGraph != nil && entityOwnerSubGraph.Name == targetSubGraph.Name)
 			// The stepKey should identify a unique entity resolution step, based on:
 			// - Target subgraph
 			// - Entity type
@@ -330,19 +333,22 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 				// Build selections for this entity step
 				var entitySelections []ast.Selection
 				var insertionPath []string
-				
-				if isNestedEntity {
-					// For nested entities (e.g., Review.product → Product entity),
-					// use the child selections of the boundary field
-					entitySelections = p.buildEntityStepSelections(field.SelectionSet, targetSubGraph, fieldType, parentStep, entityTypeToResolve)
-					// InsertionPath should include the boundary field name to allow proper merging
-					insertionPath = fieldPath
-				} else {
-					// For regular entity resolution (e.g., Product.reviews extending Product),
-					// use the boundary field itself
+
+				// Two cases:
+				// 1. Entity extension (Customer.accounts): include boundary field
+				//    _entities([{__typename: "Customer", id: "1"}]) { ... on Customer { accounts { ... } } }
+				// 2. Entity reference (Review.product): include only children of boundary field
+				//    _entities([{__typename: "Product", id: "..."}]) { ... on Product { name, price } }
+				if entityTypeToResolve == parentType {
+					// Extension: include the full boundary field
 					entitySelections = p.buildEntityStepSelections([]ast.Selection{selection}, targetSubGraph, parentType, parentStep, entityTypeToResolve)
-					// Path to the parent entity, not including the boundary field
+					// InsertionPath points to the parent entity (e.g., [Query, customer])
 					insertionPath = currentPath
+				} else {
+					// Reference: include only the children of the boundary field
+					entitySelections = p.buildEntityStepSelections(field.SelectionSet, targetSubGraph, entityTypeToResolve, parentStep, entityTypeToResolve)
+					// InsertionPath includes the boundary field (e.g., [Query, product, reviews, product])
+					insertionPath = append(currentPath, fieldName)
 				}
 
 				// Create new entity step
@@ -350,13 +356,12 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 					ID:            *nextStepID,
 					SubGraph:      targetSubGraph,
 					StepType:      StepTypeEntity,
-					ParentType:    entityTypeToResolve, // Entity type to resolve in _entities query
+					ParentType:    entityTypeToResolve, // Type from which to extract representation
 					SelectionSet:  entitySelections,
 					Path:          fieldPath,
 					DependsOn:     []int{parentStep.ID},
 					InsertionPath: insertionPath,
 				}
-
 				plan.Steps = append(plan.Steps, newStep)
 				entityStepsByKey[stepKey] = newStep
 				*nextStepID++
@@ -380,17 +385,15 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 					// Non-root step: calculate relative path by removing parent's InsertionPath prefix
 					relativePathForParent = currentPath[len(parentStep.InsertionPath):]
 				}
-				
-				// For nested entities, include the boundary field name in the path
-				// Example: Review.product (nested entity) → path should be [reviews, product]
-				// But currentPath is [Query, product, reviews], relativePathForParent is [reviews]
-				// We need to add the field name "product" to get [reviews, product]
-				if isNestedEntity {
+
+				// For nested entity references (not extensions), include the boundary field in the path
+				// Example: Review.product (reference) → inject into [reviews, product]
+				// But for Customer.accounts (extension) → inject into [customer], not [customer, accounts]
+				if isNestedEntity && entityTypeToResolve != parentType {
 					relativePathForParent = append(relativePathForParent, fieldName)
 				}
-				
-				p.injectKeyFieldsIntoParentStep(parentStep, entityTypeToResolve, targetSubGraph, relativePathForParent)
 
+				p.injectKeyFieldsIntoParentStep(parentStep, entityTypeToResolve, targetSubGraph, relativePathForParent)
 				// Recursively find nested boundary fields within this entity step's selections
 				if len(field.SelectionSet) > 0 {
 					p.findAndBuildEntitySteps(field.SelectionSet, newStep, plan, nextStepID, fieldType, fieldPath)
@@ -485,7 +488,7 @@ func (p *PlannerV2) getKeyFields(typeName string, subGraph *graph.SubGraphV2) []
 
 	// Use the first key
 	keyFieldSet := entity.Keys[0].FieldSet
-	
+
 	// For now, assume simple key (single field)
 	// TODO: Handle composite keys like "id accountId"
 	return []string{"__typename", keyFieldSet}
@@ -496,65 +499,81 @@ func (p *PlannerV2) getKeyFields(typeName string, subGraph *graph.SubGraphV2) []
 func (p *PlannerV2) injectKeyFieldsIntoParentStep(parentStep *StepV2, entityType string, childSubGraph *graph.SubGraphV2, insertionPath []string) {
 	// Get key fields
 	keyFields := p.getKeyFields(entityType, childSubGraph)
-	
+
 	// insertionPath is relative to parentStep's SelectionSet
 	// Example: [reviews, product] means navigate to reviews field, then product field
-	
+
 	if len(insertionPath) == 0 {
 		return // No path to navigate
 	}
 
-	// Recursively inject key fields
-	p.injectKeyFieldsRecursive(parentStep.SelectionSet, insertionPath, keyFields)
+	// Use ensureAndInjectKeyFields to both create missing fields and inject key fields
+	parentStep.SelectionSet = p.ensureAndInjectKeyFields(parentStep.SelectionSet, insertionPath, keyFields)
 }
 
-// injectKeyFieldsRecursive recursively navigates to the target field and injects key fields.
-func (p *PlannerV2) injectKeyFieldsRecursive(selections []ast.Selection, path []string, keyFields []string) {
+// ensureAndInjectKeyFields recursively ensures fields in the path exist and injects key fields.
+// This function both creates missing boundary fields and injects key fields into them.
+func (p *PlannerV2) ensureAndInjectKeyFields(selections []ast.Selection, path []string, keyFields []string) []ast.Selection {
 	if len(path) == 0 {
-		return
+		return selections
 	}
 
 	targetField := path[0]
+	var targetFieldNode *ast.Field
+
+	// Find the target field
 	for _, sel := range selections {
 		if field, ok := sel.(*ast.Field); ok {
-			// Match by field identifier (alias if present, otherwise field name)
 			fieldIdentifier := field.Name.String()
 			if field.Alias != nil && field.Alias.String() != "" {
 				fieldIdentifier = field.Alias.String()
 			}
-			
+
 			if fieldIdentifier == targetField {
-				if len(path) == 1 {
-					// This is the target field, inject key fields into its SelectionSet
-					existingFields := make(map[string]bool)
-					for _, childSel := range field.SelectionSet {
-						if childField, ok := childSel.(*ast.Field); ok {
-							existingFields[childField.Name.String()] = true
-						}
-					}
-
-
-					// Add missing key fields
-					for _, keyField := range keyFields {
-						if !existingFields[keyField] {
-							field.SelectionSet = append(field.SelectionSet, &ast.Field{
-								Name: &ast.Name{
-									Token: token.Token{Type: token.IDENT, Literal: keyField},
-									Value: keyField,
-								},
-							})
-
-						}
-					}
-					return
-				} else {
-					// Continue navigating
-					p.injectKeyFieldsRecursive(field.SelectionSet, path[1:], keyFields)
-					return
-				}
+				targetFieldNode = field
+				break
 			}
 		}
 	}
+
+	// If the field doesn't exist, create it
+	if targetFieldNode == nil {
+		targetFieldNode = &ast.Field{
+			Name: &ast.Name{
+				Token: token.Token{Type: token.IDENT, Literal: targetField},
+				Value: targetField,
+			},
+			SelectionSet: make([]ast.Selection, 0),
+		}
+		selections = append(selections, targetFieldNode)
+	}
+
+	if len(path) == 1 {
+		// We've reached the boundary field, inject key fields into it
+		existingFields := make(map[string]bool)
+		for _, childSel := range targetFieldNode.SelectionSet {
+			if childField, ok := childSel.(*ast.Field); ok {
+				existingFields[childField.Name.String()] = true
+			}
+		}
+
+		// Add missing key fields
+		for _, keyField := range keyFields {
+			if !existingFields[keyField] {
+				targetFieldNode.SelectionSet = append(targetFieldNode.SelectionSet, &ast.Field{
+					Name: &ast.Name{
+						Token: token.Token{Type: token.IDENT, Literal: keyField},
+						Value: keyField,
+					},
+				})
+			}
+		}
+	} else {
+		// Continue navigating
+		targetFieldNode.SelectionSet = p.ensureAndInjectKeyFields(targetFieldNode.SelectionSet, path[1:], keyFields)
+	}
+
+	return selections
 }
 
 // updateFieldSelectionSet recursively updates a field's SelectionSet.

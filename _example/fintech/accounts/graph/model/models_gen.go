@@ -3,6 +3,7 @@
 package model
 
 type Account struct {
+	Iban     string    `json:"iban"`
 	ID       string    `json:"id"`
 	Balance  int       `json:"balance"`
 	Customer *Customer `json:"customer"`

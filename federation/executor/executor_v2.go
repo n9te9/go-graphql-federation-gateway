@@ -83,7 +83,7 @@ func (e *ExecutorV2) Execute(
 	}
 
 	response["data"] = data
-	
+
 	// Prune response to remove fields not requested in original query
 	return e.pruneResponse(response, plan), nil
 }
@@ -225,7 +225,6 @@ func (e *ExecutorV2) processStep(
 		if err != nil {
 			return fmt.Errorf("failed to build root query: %w", err)
 		}
-		fmt.Printf("=== Step %d (Root Query to %s) ===\n%s\n=== Variables ===\n%+v\n\n", step.ID, step.SubGraph.Name, query, queryVars)
 	} else {
 		// Entity query - need to extract representations from parent results
 		representations := e.extractRepresentations(execCtx, step)
@@ -241,7 +240,6 @@ func (e *ExecutorV2) processStep(
 		if err != nil {
 			return fmt.Errorf("failed to build entity query: %w", err)
 		}
-		fmt.Printf("=== Step %d (Entity Query to %s) ===\n%s\n=== Representations ===\n%+v\n\n", step.ID, step.SubGraph.Name, query, representations)
 	}
 
 	// Send request to subgraph
@@ -300,7 +298,7 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 
 	// Navigate to the insertion path
 	var current interface{} = rootResult
-	
+
 	// Extract data field
 	if resultMap, ok := current.(map[string]interface{}); ok {
 		if data, ok := resultMap["data"].(map[string]interface{}); ok {
@@ -327,20 +325,20 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 		if !exists {
 			return representations
 		}
-		
+
 		// IMPORTANT: Check if next is an array BEFORE moving to it
 		// If it's an array, we need to process array elements with the REMAINING path (not including this segment)
 		if arr, isArray := next.([]interface{}); isArray {
 			// Remaining path segments AFTER this array segment
 			remainingPath := step.InsertionPath[i+1:]
-			
+
 			// For each array element, navigate the remaining path
 			for _, elem := range arr {
 				elemMap, ok := elem.(map[string]interface{})
 				if !ok {
 					continue
 				}
-				
+
 				// Navigate through remaining path in this element
 				var elemCurrent interface{} = elemMap
 				for _, segment := range remainingPath {
@@ -356,7 +354,7 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 						break
 					}
 				}
-				
+
 				// Now elemCurrent should be the entity to extract
 				if elemCurrent != nil {
 					// Extract representation from this element
@@ -372,10 +370,10 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 					}
 				}
 			}
-			
+
 			return representations
 		}
-		
+
 		current = next
 	}
 
@@ -493,8 +491,8 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 	// Navigate to the target field to check if it's an array or object
 	var current interface{} = rootData
 	var arraySegmentIndex = -1 // Index where we hit an array
-	var remainingPath []string  // Path after the array
-	
+	var remainingPath []string // Path after the array
+
 	for i, segment := range mergePath {
 		// Check if current is an array
 		if _, isArray := current.([]interface{}); isArray {
@@ -503,7 +501,7 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 			remainingPath = mergePath[i:]
 			break
 		}
-		
+
 		if currentMap, ok := current.(map[string]interface{}); ok {
 			if next, exists := currentMap[segment]; exists {
 				current = next
@@ -522,7 +520,7 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 	// Handle different merge scenarios
 	if arraySegmentIndex >= 0 {
 		// We encountered an array during navigation - need to merge into array elements
-		
+
 		// Navigate to the array
 		var arrayContainer interface{} = rootData
 		arrayPath := mergePath[:arraySegmentIndex]
@@ -531,52 +529,52 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 				arrayContainer = containerMap[segment]
 			}
 		}
-		
+
 		arrayData, ok := arrayContainer.([]interface{})
 		if !ok {
 			return fmt.Errorf("expected array at path %v", arrayPath)
 		}
-		
+
 		entities, ok := entitiesData.([]interface{})
 		if !ok {
 			return fmt.Errorf("entities data is not an array")
 		}
-		
+
 		// Merge each entity into corresponding array element
 		// The remaining path tells us where within each array element to merge
 		for i, elem := range arrayData {
 			if i >= len(entities) {
 				break
 			}
-			
+
 			elemMap, ok := elem.(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			entityMap, ok := entities[i].(map[string]interface{})
 			if !ok {
 				continue
 			}
-			
+
 			// Merge entity into this array element at remainingPath
 			if err := Merge(elemMap, entityMap, remainingPath); err != nil {
 				return fmt.Errorf("failed to merge entity into array element %d: %w", i, err)
 			}
 		}
-		
+
 	} else if current == nil {
 		// Path doesn't exist yet, treat as single object and let Merge handle it
 		entities, ok := entitiesData.([]interface{})
 		if !ok || len(entities) == 0 {
 			return nil
 		}
-		
+
 		firstEntity, ok := entities[0].(map[string]interface{})
 		if !ok {
 			return fmt.Errorf("first entity is not a map")
 		}
-		
+
 		if err := Merge(rootData, firstEntity, mergePath); err != nil {
 			return fmt.Errorf("failed to merge entity object: %w", err)
 		}
@@ -591,13 +589,13 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 		if !ok || len(entities) == 0 {
 			return nil
 		}
-		
+
 		// For single object, merge the first entity's fields
 		firstEntity, ok := entities[0].(map[string]interface{})
 		if !ok {
 			return fmt.Errorf("first entity is not a map")
 		}
-		
+
 		if err := Merge(rootData, firstEntity, mergePath); err != nil {
 			return fmt.Errorf("failed to merge entity object: %w", err)
 		}

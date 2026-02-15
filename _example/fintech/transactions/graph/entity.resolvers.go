@@ -11,13 +11,12 @@ import (
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/transactions/graph/model"
 )
 
-// FindAccountByID is the resolver for the findAccountByID field.
-func (r *entityResolver) FindAccountByID(ctx context.Context, id string) (*model.Account, error) {
+// FindAccountByIban is the resolver for the findAccountByIban field.
+func (r *entityResolver) FindAccountByIban(ctx context.Context, iban string) (*model.Account, error) {
 	return &model.Account{
-		ID: id,
+		Iban: iban,
 		Transactions: []*model.Transaction{
-			{ID: "tx_101", Amount: 500},
-			{ID: "tx_102", Amount: -200},
+			{ID: "tx_1", Amount: 100},
 		},
 	}, nil
 }
@@ -34,3 +33,21 @@ func (r *entityResolver) FindTransactionByID(ctx context.Context, id string) (*m
 func (r *Resolver) Entity() EntityResolver { return &entityResolver{r} }
 
 type entityResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	func (r *entityResolver) FindAccountByID(ctx context.Context, id string) (*model.Account, error) {
+	return &model.Account{
+		ID: id,
+		Transactions: []*model.Transaction{
+			{ID: "tx_101", Amount: 500},
+			{ID: "tx_102", Amount: -200},
+		},
+	}, nil
+}
+*/

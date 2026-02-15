@@ -41,6 +41,7 @@ type Config struct {
 
 type ResolverRoot interface {
 	Entity() EntityResolver
+	Query() QueryResolver
 }
 
 type DirectiveRoot struct {
@@ -51,6 +52,7 @@ type ComplexityRoot struct {
 		Balance  func(childComplexity int) int
 		Customer func(childComplexity int) int
 		ID       func(childComplexity int) int
+		Iban     func(childComplexity int) int
 	}
 
 	Customer struct {
@@ -59,11 +61,12 @@ type ComplexityRoot struct {
 	}
 
 	Entity struct {
-		FindAccountByID  func(childComplexity int, id string) int
-		FindCustomerByID func(childComplexity int, id string) int
+		FindAccountByIban func(childComplexity int, iban string) int
+		FindCustomerByID  func(childComplexity int, id string) int
 	}
 
 	Query struct {
+		Account            func(childComplexity int, iban string) int
 		__resolve__service func(childComplexity int) int
 		__resolve_entities func(childComplexity int, representations []map[string]any) int
 	}
@@ -74,8 +77,11 @@ type ComplexityRoot struct {
 }
 
 type EntityResolver interface {
-	FindAccountByID(ctx context.Context, id string) (*model.Account, error)
+	FindAccountByIban(ctx context.Context, iban string) (*model.Account, error)
 	FindCustomerByID(ctx context.Context, id string) (*model.Customer, error)
+}
+type QueryResolver interface {
+	Account(ctx context.Context, iban string) (*model.Account, error)
 }
 
 type executableSchema struct {
@@ -115,6 +121,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Account.ID(childComplexity), true
+	case "Account.iban":
+		if e.complexity.Account.Iban == nil {
+			break
+		}
+
+		return e.complexity.Account.Iban(childComplexity), true
 
 	case "Customer.accounts":
 		if e.complexity.Customer.Accounts == nil {
@@ -129,17 +141,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Customer.ID(childComplexity), true
 
-	case "Entity.findAccountByID":
-		if e.complexity.Entity.FindAccountByID == nil {
+	case "Entity.findAccountByIban":
+		if e.complexity.Entity.FindAccountByIban == nil {
 			break
 		}
 
-		args, err := ec.field_Entity_findAccountByID_args(ctx, rawArgs)
+		args, err := ec.field_Entity_findAccountByIban_args(ctx, rawArgs)
 		if err != nil {
 			return 0, false
 		}
 
-		return e.complexity.Entity.FindAccountByID(childComplexity, args["id"].(string)), true
+		return e.complexity.Entity.FindAccountByIban(childComplexity, args["iban"].(string)), true
 	case "Entity.findCustomerByID":
 		if e.complexity.Entity.FindCustomerByID == nil {
 			break
@@ -152,6 +164,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Entity.FindCustomerByID(childComplexity, args["id"].(string)), true
 
+	case "Query.account":
+		if e.complexity.Query.Account == nil {
+			break
+		}
+
+		args, err := ec.field_Query_account_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Query.Account(childComplexity, args["iban"].(string)), true
 	case "Query._service":
 		if e.complexity.Query.__resolve__service == nil {
 			break
@@ -335,7 +358,7 @@ union _Entity = Account | Customer
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
-	findAccountByID(id: ID!,): Account!
+	findAccountByIban(iban: ID!,): Account!
 	findCustomerByID(id: ID!,): Customer!
 }
 
@@ -355,14 +378,14 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
 // region    ***************************** args.gotpl *****************************
 
-func (ec *executionContext) field_Entity_findAccountByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+func (ec *executionContext) field_Entity_findAccountByIban_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
-	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "iban", ec.unmarshalNID2string)
 	if err != nil {
 		return nil, err
 	}
-	args["id"] = arg0
+	args["iban"] = arg0
 	return args, nil
 }
 
@@ -396,6 +419,17 @@ func (ec *executionContext) field_Query__entities_args(ctx context.Context, rawA
 		return nil, err
 	}
 	args["representations"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Query_account_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "iban", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["iban"] = arg0
 	return args, nil
 }
 
@@ -450,6 +484,35 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 // endregion ************************** directives.gotpl **************************
 
 // region    **************************** field.gotpl *****************************
+
+func (ec *executionContext) _Account_iban(ctx context.Context, field graphql.CollectedField, obj *model.Account) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Account_iban,
+		func(ctx context.Context) (any, error) {
+			return obj.Iban, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Account_iban(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Account",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
 
 func (ec *executionContext) _Account_id(ctx context.Context, field graphql.CollectedField, obj *model.Account) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
@@ -597,6 +660,8 @@ func (ec *executionContext) fieldContext_Customer_accounts(_ context.Context, fi
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "iban":
+				return ec.fieldContext_Account_iban(ctx, field)
 			case "id":
 				return ec.fieldContext_Account_id(ctx, field)
 			case "balance":
@@ -610,15 +675,15 @@ func (ec *executionContext) fieldContext_Customer_accounts(_ context.Context, fi
 	return fc, nil
 }
 
-func (ec *executionContext) _Entity_findAccountByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+func (ec *executionContext) _Entity_findAccountByIban(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
 		ec.OperationContext,
 		field,
-		ec.fieldContext_Entity_findAccountByID,
+		ec.fieldContext_Entity_findAccountByIban,
 		func(ctx context.Context) (any, error) {
 			fc := graphql.GetFieldContext(ctx)
-			return ec.resolvers.Entity().FindAccountByID(ctx, fc.Args["id"].(string))
+			return ec.resolvers.Entity().FindAccountByIban(ctx, fc.Args["iban"].(string))
 		},
 		nil,
 		ec.marshalNAccount2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAccount,
@@ -627,7 +692,7 @@ func (ec *executionContext) _Entity_findAccountByID(ctx context.Context, field g
 	)
 }
 
-func (ec *executionContext) fieldContext_Entity_findAccountByID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+func (ec *executionContext) fieldContext_Entity_findAccountByIban(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
 	fc = &graphql.FieldContext{
 		Object:     "Entity",
 		Field:      field,
@@ -635,6 +700,8 @@ func (ec *executionContext) fieldContext_Entity_findAccountByID(ctx context.Cont
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "iban":
+				return ec.fieldContext_Account_iban(ctx, field)
 			case "id":
 				return ec.fieldContext_Account_id(ctx, field)
 			case "balance":
@@ -652,7 +719,7 @@ func (ec *executionContext) fieldContext_Entity_findAccountByID(ctx context.Cont
 		}
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
-	if fc.Args, err = ec.field_Entity_findAccountByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+	if fc.Args, err = ec.field_Entity_findAccountByIban_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -700,6 +767,57 @@ func (ec *executionContext) fieldContext_Entity_findCustomerByID(ctx context.Con
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Entity_findCustomerByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Query_account(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Query_account,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Query().Account(ctx, fc.Args["iban"].(string))
+		},
+		nil,
+		ec.marshalOAccount2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAccount,
+		true,
+		false,
+	)
+}
+
+func (ec *executionContext) fieldContext_Query_account(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Query",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "iban":
+				return ec.fieldContext_Account_iban(ctx, field)
+			case "id":
+				return ec.fieldContext_Account_id(ctx, field)
+			case "balance":
+				return ec.fieldContext_Account_balance(ctx, field)
+			case "customer":
+				return ec.fieldContext_Account_customer(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Account", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Query_account_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -2409,6 +2527,11 @@ func (ec *executionContext) _Account(ctx context.Context, sel ast.SelectionSet, 
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Account")
+		case "iban":
+			out.Values[i] = ec._Account_iban(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "id":
 			out.Values[i] = ec._Account_id(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -2510,7 +2633,7 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Entity")
-		case "findAccountByID":
+		case "findAccountByIban":
 			field := field
 
 			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
@@ -2519,7 +2642,7 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 						ec.Error(ctx, ec.Recover(ctx, r))
 					}
 				}()
-				res = ec._Entity_findAccountByID(ctx, field)
+				res = ec._Entity_findAccountByIban(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -2596,6 +2719,25 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Query")
+		case "account":
+			field := field
+
+			innerFunc := func(ctx context.Context, _ *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Query_account(ctx, field)
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "_entities":
 			field := field
 
@@ -3691,6 +3833,13 @@ func (ec *executionContext) marshalNfederation__Scope2ᚕᚕstringᚄ(ctx contex
 	}
 
 	return ret
+}
+
+func (ec *executionContext) marshalOAccount2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAccount(ctx context.Context, sel ast.SelectionSet, v *model.Account) graphql.Marshaler {
+	if v == nil {
+		return graphql.Null
+	}
+	return ec._Account(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalOBoolean2bool(ctx context.Context, v any) (bool, error) {
