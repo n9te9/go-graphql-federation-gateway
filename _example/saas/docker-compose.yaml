@@ -1,10 +1,4 @@
 services:
-  gateway:
-    build: 
-      context: . 
-      dockerfile: ../Dockerfile
-    ports:
-      - "9004:9000"
   organizations:
     build: { context: ./organizations, dockerfile: Dockerfile }
     ports: ["8501:8080"]

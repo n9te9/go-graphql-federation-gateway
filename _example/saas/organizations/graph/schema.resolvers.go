@@ -13,6 +13,10 @@ import (
 
 // Organization is the resolver for the organization field.
 func (r *queryResolver) Organization(ctx context.Context, id string) (*model.Organization, error) {
+	// Return test data for org1
+	if id == "org1" {
+		return &model.Organization{ID: id, Name: "Acme Corp"}, nil
+	}
 	return &model.Organization{ID: id, Name: "Org " + id}, nil
 }
 

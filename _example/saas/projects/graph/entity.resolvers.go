@@ -18,7 +18,18 @@ func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*
 
 // FindProjectByID is the resolver for the findProjectByID field.
 func (r *entityResolver) FindProjectByID(ctx context.Context, id string) (*model.Project, error) {
-	return &model.Project{ID: id, Name: "Project " + id}, nil
+	if id == "proj1" {
+		return &model.Project{
+			ID:           id,
+			Name:         "Project Alpha",
+			Organization: &model.Organization{ID: "org1"},
+		}, nil
+	}
+	return &model.Project{
+		ID:           id,
+		Name:         "Project " + id,
+		Organization: &model.Organization{ID: "unknown"},
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

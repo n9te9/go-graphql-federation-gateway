@@ -13,12 +13,37 @@ import (
 
 // FindBookingByID is the resolver for the findBookingByID field.
 func (r *entityResolver) FindBookingByID(ctx context.Context, id string) (*model.Booking, error) {
+	if id == "booking1" {
+		return &model.Booking{
+			ID: id,
+			Flight: &model.Flight{
+				Number:        "AA100",
+				DepartureDate: "2026-03-01",
+			},
+		}, nil
+	}
 	return &model.Booking{ID: id, Flight: &model.Flight{Number: "NH101", DepartureDate: "2026-02-10"}}, nil
 }
 
 // FindFlightByNumberAndDepartureDate is the resolver for the findFlightByNumberAndDepartureDate field.
 func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
-	return &model.Flight{Number: number, DepartureDate: departureDate}, nil
+	// Return Flight with bookings
+	if number == "AA100" && departureDate == "2026-03-01" {
+		return &model.Flight{
+			Number:        number,
+			DepartureDate: departureDate,
+			Bookings: []*model.Booking{
+				{
+					ID: "booking1",
+					Flight: &model.Flight{
+						Number:        "AA100",
+						DepartureDate: "2026-03-01",
+					},
+				},
+			},
+		}, nil
+	}
+	return &model.Flight{Number: number, DepartureDate: departureDate, Bookings: []*model.Booking{}}, nil
 }
 
 // Entity returns EntityResolver implementation.

@@ -1,0 +1,99 @@
+[
+  {
+    "name": "Basic User (Single Service)",
+    "query": "query GetUser($id: ID!) { user(id: $id) { id name } }",
+    "variables": { "id": "user1" },
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice"
+      }
+    }
+  },
+  {
+    "name": "User with Posts (Federation Extension)",
+    "query": "query UserWithPosts($id: ID!) { user(id: $id) { id name posts { id title } } }",
+    "variables": { "id": "user1" },
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice",
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Post with Author Reference",
+    "query": "query GetPost($id: ID!) { user(id: $id) { posts { id title author { id name } } } }",
+    "variables": { "id": "user1" },
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post",
+            "author": {
+              "id": "user1",
+              "name": "Alice"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Post with Comments (Multi-Service Chain)",
+    "query": "query PostWithComments($userId: ID!) { user(id: $userId) { posts { id title comments { id body author { id name } } } } }",
+    "variables": { "userId": "user1" },
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post",
+            "comments": [
+              {
+                "id": "comment1",
+                "body": "Great post!",
+                "author": {
+                  "id": "user2",
+                  "name": "Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Typename Check (Cross-Service Metadata)",
+    "query": "query TypenameCheck($id: ID!) { user(id: $id) { __typename id name posts { __typename id title comments { __typename body } } } }",
+    "variables": { "id": "user1" },
+    "expected": {
+      "user": {
+        "__typename": "User",
+        "id": "user1",
+        "name": "Alice",
+        "posts": [
+          {
+            "__typename": "Post",
+            "id": "post1",
+            "title": "My First Post",
+            "comments": [
+              {
+                "__typename": "Comment",
+                "body": "Great post!"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  }
+]

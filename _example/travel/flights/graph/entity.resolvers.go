@@ -13,7 +13,15 @@ import (
 
 // FindFlightByNumberAndDepartureDate is the resolver for the findFlightByNumberAndDepartureDate field.
 func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
-	return &model.Flight{Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "JFK"}, nil
+	if number == "AA100" && departureDate == "2026-03-01" {
+		return &model.Flight{
+			Number:        number,
+			DepartureDate: departureDate,
+			Origin:        "SFO",
+			Destination:   "JFK",
+		}, nil
+	}
+	return &model.Flight{Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "NRT"}, nil
 }
 
 // Entity returns EntityResolver implementation.

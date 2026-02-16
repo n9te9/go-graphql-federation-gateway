@@ -1,0 +1,78 @@
+[
+  {
+    "name": "Basic Organization (Single Service)",
+    "query": "query GetOrganization($id: ID!) { organization(id: $id) { id name } }",
+    "variables": { "id": "org1" },
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp"
+      }
+    }
+  },
+  {
+    "name": "Organization with Billing (Federation Extension)",
+    "query": "query OrgWithBilling($id: ID!) { organization(id: $id) { id name billing { id plan } } }",
+    "variables": { "id": "org1" },
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "billing": {
+          "id": "bill1",
+          "plan": "Enterprise"
+        }
+      }
+    }
+  },
+  {
+    "name": "Project with Organization Reference",
+    "query": "query GetProject($id: ID!) { project(id: $id) { id name organization { id name } } }",
+    "variables": { "id": "proj1" },
+    "expected": {
+      "project": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "organization": {
+          "id": "org1",
+          "name": "Acme Corp"
+        }
+      }
+    }
+  },
+  {
+    "name": "Project with Organization and Billing (Multi-Service)",
+    "query": "query ProjectWithOrgBilling($id: ID!) { project(id: $id) { id name organization { id name billing { plan } } } }",
+    "variables": { "id": "proj1" },
+    "expected": {
+      "project": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "organization": {
+          "id": "org1",
+          "name": "Acme Corp",
+          "billing": {
+            "plan": "Enterprise"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "Typename Check (Cross-Service Metadata)",
+    "query": "query TypenameCheck($id: ID!) { organization(id: $id) { __typename id name billing { __typename id plan } } }",
+    "variables": { "id": "org1" },
+    "expected": {
+      "organization": {
+        "__typename": "Organization",
+        "id": "org1",
+        "name": "Acme Corp",
+        "billing": {
+          "__typename": "BillingInfo",
+          "id": "bill1",
+          "plan": "Enterprise"
+        }
+      }
+    }
+  }
+]

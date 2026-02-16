@@ -11,12 +11,13 @@ import (
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/accounts/graph/model"
 )
 
-// FindAccountByID is the resolver for the findAccountByID field.
-func (r *entityResolver) FindAccountByID(ctx context.Context, id string) (*model.Account, error) {
+// FindAccountByIban is the resolver for the findAccountByIban field.
+func (r *entityResolver) FindAccountByIban(ctx context.Context, iban string) (*model.Account, error) {
 	return &model.Account{
-		ID:       id,
+		Iban:     iban,
+		ID:       "acc_" + iban,
 		Balance:  1000,
-		Customer: &model.Customer{ID: "customer_of_" + id},
+		Customer: &model.Customer{ID: "1"},
 	}, nil
 }
 
@@ -25,7 +26,7 @@ func (r *entityResolver) FindCustomerByID(ctx context.Context, id string) (*mode
 	return &model.Customer{
 		ID: id,
 		Accounts: []*model.Account{
-			{ID: "account_1", Balance: 1000, Customer: &model.Customer{ID: id}},
+			{Iban: "IBAN 1", ID: "acc_IBAN 1", Balance: 1000, Customer: &model.Customer{ID: id}},
 		},
 	}, nil
 }
@@ -34,3 +35,19 @@ func (r *entityResolver) FindCustomerByID(ctx context.Context, id string) (*mode
 func (r *Resolver) Entity() EntityResolver { return &entityResolver{r} }
 
 type entityResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	func (r *entityResolver) FindAccountByID(ctx context.Context, id string) (*model.Account, error) {
+	return &model.Account{
+		ID:       id,
+		Balance:  1000,
+		Customer: &model.Customer{ID: "customer_of_" + id},
+	}, nil
+}
+*/

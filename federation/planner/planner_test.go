@@ -41,6 +41,7 @@ func TestPlanner_Plan(t *testing.T) {
 				}
 				return doc
 			}(),
+
 			superGraph: func() *graph.SuperGraph {
 				sdl := `type Query { products: [Product] } type Product { upc: String! name: String price: Int }`
 				sg1, _ := graph.NewSubGraph("aaaaaaaaa", []byte(sdl), "")
@@ -64,6 +65,7 @@ func TestPlanner_Plan(t *testing.T) {
 						},
 					},
 				},
+				OperationType: "query",
 				Steps: []*planner.Step{
 					{
 						ID:       0,

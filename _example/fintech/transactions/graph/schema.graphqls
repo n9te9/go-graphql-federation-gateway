@@ -7,7 +7,7 @@ type Transaction @key(fields: "id") {
   amount: Int!
 }
 
-extend type Account @key(fields: "id") {
-  id: ID! @external
+extend type Account @key(fields: "iban") {
+  iban: ID! @external
   transactions: [Transaction!]!
 }

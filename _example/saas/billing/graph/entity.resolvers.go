@@ -7,19 +7,27 @@ package graph
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/saas/billing/graph/model"
 )
 
 // FindBillingInfoByID is the resolver for the findBillingInfoByID field.
 func (r *entityResolver) FindBillingInfoByID(ctx context.Context, id string) (*model.BillingInfo, error) {
-	panic(fmt.Errorf("not implemented: FindBillingInfoByID - findBillingInfoByID"))
+	// Return test data
+	if id == "bill1" {
+		return &model.BillingInfo{ID: id, Plan: "Enterprise"}, nil
+	}
+	return &model.BillingInfo{ID: id, Plan: "Free"}, nil
 }
 
 // FindOrganizationByID is the resolver for the findOrganizationByID field.
 func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
-	return &model.Organization{ID: id}, nil
+	// Return Organization with billing info
+	billingInfo := &model.BillingInfo{ID: "bill1", Plan: "Enterprise"}
+	if id == "org1" {
+		return &model.Organization{ID: id, Billing: billingInfo}, nil
+	}
+	return &model.Organization{ID: id, Billing: nil}, nil
 }
 
 // Entity returns EntityResolver implementation.

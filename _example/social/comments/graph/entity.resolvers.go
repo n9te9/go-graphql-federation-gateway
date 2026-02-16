@@ -13,12 +13,32 @@ import (
 
 // FindCommentByID is the resolver for the findCommentByID field.
 func (r *entityResolver) FindCommentByID(ctx context.Context, id string) (*model.Comment, error) {
-	return &model.Comment{ID: id, Body: "Comment " + id, Author: &model.User{ID: "1"}}, nil
+	if id == "comment1" {
+		return &model.Comment{
+			ID:     id,
+			Body:   "Great post!",
+			Author: &model.User{ID: "user2"},
+		}, nil
+	}
+	return &model.Comment{ID: id, Body: "Comment " + id, Author: &model.User{ID: "unknown"}}, nil
 }
 
 // FindPostByID is the resolver for the findPostByID field.
 func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Post, error) {
-	return &model.Post{ID: id}, nil
+	// Return Post with comments
+	if id == "post1" {
+		return &model.Post{
+			ID: id,
+			Comments: []*model.Comment{
+				{
+					ID:     "comment1",
+					Body:   "Great post!",
+					Author: &model.User{ID: "user2"},
+				},
+			},
+		}, nil
+	}
+	return &model.Post{ID: id, Comments: []*model.Comment{}}, nil
 }
 
 // Entity returns EntityResolver implementation.

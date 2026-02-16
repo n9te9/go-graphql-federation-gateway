@@ -1,10 +1,4 @@
 services:
-  gateway:
-    build: 
-      context: . 
-      dockerfile: ../Dockerfile
-    ports:
-      - "9002:9000"
   users:
     build: { context: ./users, dockerfile: Dockerfile }
     ports: ["8301:8080"]

@@ -160,12 +160,12 @@ func (ec *executionContext) resolveEntity(
 		}
 		switch resolverName {
 
-		case "findAccountByID":
-			id0, err := ec.unmarshalNID2string(ctx, rep["id"])
+		case "findAccountByIban":
+			id0, err := ec.unmarshalNID2string(ctx, rep["iban"])
 			if err != nil {
-				return nil, fmt.Errorf(`unmarshalling param 0 for findAccountByID(): %w`, err)
+				return nil, fmt.Errorf(`unmarshalling param 0 for findAccountByIban(): %w`, err)
 			}
-			entity, err := ec.resolvers.Entity().FindAccountByID(ctx, id0)
+			entity, err := ec.resolvers.Entity().FindAccountByIban(ctx, id0)
 			if err != nil {
 				return nil, fmt.Errorf(`resolving Entity "Account": %w`, err)
 			}
@@ -232,10 +232,10 @@ func entityResolverNameForAccount(ctx context.Context, rep EntityRepresentation)
 		// we shouldn't use use it
 		allNull := true
 		m = rep
-		val, ok = m["id"]
+		val, ok = m["iban"]
 		if !ok {
 			entityResolverErrs = append(entityResolverErrs,
-				fmt.Errorf("%w due to missing Key Field \"id\" for Account", ErrTypeNotFound))
+				fmt.Errorf("%w due to missing Key Field \"iban\" for Account", ErrTypeNotFound))
 			break
 		}
 		if allNull {
@@ -246,7 +246,7 @@ func entityResolverNameForAccount(ctx context.Context, rep EntityRepresentation)
 				fmt.Errorf("%w due to all null value KeyFields for Account", ErrTypeNotFound))
 			break
 		}
-		return "findAccountByID", nil
+		return "findAccountByIban", nil
 	}
 	return "", fmt.Errorf("%w for Account due to %v", ErrTypeNotFound,
 		errors.Join(entityResolverErrs...).Error())

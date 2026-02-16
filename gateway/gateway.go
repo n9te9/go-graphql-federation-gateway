@@ -1,13 +1,11 @@
 package gateway
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 
-	"github.com/google/uuid"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
@@ -43,9 +41,9 @@ type OpentelemetryTracingSetting struct {
 type gateway struct {
 	graphQLEndpoint string
 	serviceName     string
-	planner         planner.Planner
-	executor        executor.Executor
-	superGraph      *graph.SuperGraph
+	planner         *planner.PlannerV2
+	executor        *executor.ExecutorV2
+	superGraph      *graph.SuperGraphV2
 
 	enableComplementRequestId   bool
 	enableHangOverRequestHeader bool
@@ -55,7 +53,7 @@ type gateway struct {
 var _ http.Handler = (*gateway)(nil)
 
 func NewGateway(settings GatewayOption) (*gateway, error) {
-	var subGraphs []*graph.SubGraph
+	var subGraphs []*graph.SubGraphV2
 	for _, s := range settings.Services {
 		var schema []byte
 		for _, f := range s.SchemaFiles {
@@ -66,7 +64,7 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 			schema = append(schema, src...)
 		}
 
-		subGraph, err := graph.NewSubGraph(s.Name, schema, s.Host)
+		subGraph, err := graph.NewSubGraphV2(s.Name, schema, s.Host)
 		if err != nil {
 			return nil, err
 		}
@@ -74,13 +72,9 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		subGraphs = append(subGraphs, subGraph)
 	}
 
-	superGraph, err := graph.NewSuperGraph(subGraphs)
+	superGraph, err := graph.NewSuperGraphV2(subGraphs)
 	if err != nil {
 		return nil, err
-	}
-
-	executorOption := executor.ExecutorOption{
-		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
 	}
 
 	httpClient := http.DefaultClient
@@ -90,15 +84,11 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		}
 	}
 
-	plannerOption := planner.PlannerOption{
-		EnableOpentelemetryTracing: settings.Opentelemetry.TracingSetting.Enable,
-	}
-
 	return &gateway{
 		graphQLEndpoint:             settings.Endpoint,
 		serviceName:                 settings.ServiceName,
-		planner:                     planner.NewPlanner(superGraph, plannerOption),
-		executor:                    executor.NewExecutor(httpClient, superGraph, executorOption),
+		planner:                     planner.NewPlannerV2(superGraph),
+		executor:                    executor.NewExecutorV2(httpClient, superGraph),
 		superGraph:                  superGraph,
 		enableComplementRequestId:   true,
 		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
@@ -124,10 +114,6 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
-	if g.enableComplementRequestId {
-		ctx = context.WithValue(ctx, "request_id", uuid.New().String())
-	}
-
 	if g.enableHangOverRequestHeader {
 		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
 	}
@@ -152,7 +138,14 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := g.executor.Execute(ctx, plan, req.Variables)
+	resp, err := g.executor.Execute(ctx, plan, req.Variables)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{
+			"errors": []string{err.Error()},
+		})
+		return
+	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)

@@ -16,7 +16,7 @@ echo "Starting subgraphs for ${DOMAIN}..."
 cd "${DOMAIN}" && docker compose up -d
 cd ..
 
-sleep 15
+sleep 30
 
 # Function to cleanup
 cleanup() {

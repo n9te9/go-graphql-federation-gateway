@@ -1,0 +1,73 @@
+[
+  {
+    "name": "Basic Flight (Single Service)",
+    "query": "query GetFlight($number: String!, $date: String!) { flight(number: $number, departureDate: $date) { number departureDate origin destination } }",
+    "variables": { "number": "AA100", "date": "2026-03-01" },
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "departureDate": "2026-03-01",
+        "origin": "SFO",
+        "destination": "JFK"
+      }
+    }
+  },
+  {
+    "name": "Flight with Bookings (Federation Extension)",
+    "query": "query FlightWithBookings($number: String!, $date: String!) { flight(number: $number, departureDate: $date) { number origin destination bookings { id } } }",
+    "variables": { "number": "AA100", "date": "2026-03-01" },
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "origin": "SFO",
+        "destination": "JFK",
+        "bookings": [
+          {
+            "id": "booking1"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Booking with Flight Reference",
+    "query": "query FlightBookings($number: String!, $date: String!) { flight(number: $number, departureDate: $date) { bookings { id flight { number origin destination } } } }",
+    "variables": { "number": "AA100", "date": "2026-03-01" },
+    "expected": {
+      "flight": {
+        "bookings": [
+          {
+            "id": "booking1",
+            "flight": {
+              "number": "AA100",
+              "origin": "SFO",
+              "destination": "JFK"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Typename Check (Composite Key)",
+    "query": "query TypenameCheck($number: String!, $date: String!) { flight(number: $number, departureDate: $date) { __typename number departureDate bookings { __typename id flight { __typename number } } } }",
+    "variables": { "number": "AA100", "date": "2026-03-01" },
+    "expected": {
+      "flight": {
+        "__typename": "Flight",
+        "number": "AA100",
+        "departureDate": "2026-03-01",
+        "bookings": [
+          {
+            "__typename": "Booking",
+            "id": "booking1",
+            "flight": {
+              "__typename": "Flight",
+              "number": "AA100"
+            }
+          }
+        ]
+      }
+    }
+  }
+]
