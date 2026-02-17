@@ -9,7 +9,12 @@ on:
 jobs:
   integration-test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        domain: [ec, fintech, saas, social, travel]
 
     steps:
       - name: Checkout code
@@ -26,44 +31,12 @@ jobs:
           go build -o gateway .
           chmod +x gateway
 
-      - name: Run success tests - EC
-        run: make test-ec
+      - name: Run success tests - ${{ matrix.domain }}
+        run: make test-${{ matrix.domain }}
         working-directory: ./_example
 
-      - name: Run success tests - Fintech
-        run: make test-fintech
-        working-directory: ./_example
-
-      - name: Run success tests - SaaS
-        run: make test-saas
-        working-directory: ./_example
-
-      - name: Run success tests - Social
-        run: make test-social
-        working-directory: ./_example
-
-      - name: Run success tests - Travel
-        run: make test-travel
-        working-directory: ./_example
-
-      - name: Run partial-response tests - EC
-        run: make partial-test-ec
-        working-directory: ./_example
-
-      - name: Run partial-response tests - Fintech
-        run: make partial-test-fintech
-        working-directory: ./_example
-
-      - name: Run partial-response tests - SaaS
-        run: make partial-test-saas
-        working-directory: ./_example
-
-      - name: Run partial-response tests - Social
-        run: make partial-test-social
-        working-directory: ./_example
-
-      - name: Run partial-response tests - Travel
-        run: make partial-test-travel
+      - name: Run partial-response tests - ${{ matrix.domain }}
+        run: make partial-test-${{ matrix.domain }}
         working-directory: ./_example
 
       - name: Cleanup Docker containers
