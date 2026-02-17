@@ -1,0 +1,47 @@
+[
+  {
+    "name": "Partial Response - Customer with Accounts Service Failure",
+    "description": "When accounts service fails, customer data should still be returned",
+    "query": "query { customer(id: \"1\") { name accounts { iban balance } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "accounts",
+      "failOnEntity": true
+    },
+    "expected": {
+      "customer": {
+        "name": "Customer 1",
+        "accounts": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["customer", "accounts"]
+      }
+    ]
+  },
+  {
+    "name": "Partial Response - Account with Transactions Service Failure",
+    "description": "When transactions service fails, account data should still be returned",
+    "query": "query { account(iban: \"IBAN 1\") { iban transactions { amount } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "transactions",
+      "failOnEntity": true
+    },
+    "expected": {
+      "account": {
+        "iban": null,
+        "transactions": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["account", "iban"]
+      },
+      {
+        "path": ["account", "transactions"]
+      }
+    ]
+  }
+]

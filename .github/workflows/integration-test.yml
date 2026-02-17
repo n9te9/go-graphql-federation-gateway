@@ -1,0 +1,46 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        domain: [ec, fintech, saas, social, travel]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build gateway
+        run: |
+          cd cmd/go-graphql-federation-gateway
+          go build -o gateway .
+          chmod +x gateway
+
+      - name: Run success tests - ${{ matrix.domain }}
+        run: make test-${{ matrix.domain }}
+        working-directory: ./_example
+
+      - name: Run partial-response tests - ${{ matrix.domain }}
+        run: make partial-test-${{ matrix.domain }}
+        working-directory: ./_example
+
+      - name: Cleanup Docker containers
+        if: always()
+        run: |
+          docker ps -a -q | xargs -r docker stop
+          docker ps -a -q | xargs -r docker rm

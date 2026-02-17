@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
@@ -77,11 +78,13 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		return nil, err
 	}
 
-	httpClient := http.DefaultClient
+	// Create HTTP client with timeout for subgraph requests
+	httpClient := &http.Client{
+		Timeout: 3 * time.Second, // 3 second timeout for subgraph requests
+	}
+
 	if settings.Opentelemetry.TracingSetting.Enable {
-		httpClient = &http.Client{
-			Transport: otelhttp.NewTransport(http.DefaultTransport),
-		}
+		httpClient.Transport = otelhttp.NewTransport(http.DefaultTransport)
 	}
 
 	return &gateway{

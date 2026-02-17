@@ -1,0 +1,48 @@
+[
+  {
+    "name": "Partial Response - One Service Fails",
+    "description": "When reviews service fails, product data should still be returned with errors",
+    "query": "query { product(id: \"p1\") { id name price reviews { body } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "reviews",
+      "failOnEntity": true
+    },
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000,
+        "reviews": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["product", "reviews"]
+      }
+    ]
+  },
+  {
+    "name": "Partial Response - Multiple Fields, One Fails",
+    "description": "When inventory service fails, other product fields should still be returned",
+    "query": "query { product(id: \"p1\") { id name price inStock } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "inventory",
+      "failOnEntity": true
+    },
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000,
+        "inStock": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["product", "inStock"]
+      }
+    ]
+  }
+]

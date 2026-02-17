@@ -1,0 +1,32 @@
+[
+  {
+    "name": "Partial Response - Flight with Bookings Service Failure",
+    "description": "When bookings service fails, flight data should still be returned",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number departureDate origin destination bookings { id } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "bookings",
+      "failOnEntity": true
+    },
+    "expected": {
+      "flight": {
+        "number": null,
+        "departureDate": null,
+        "origin": "SFO",
+        "destination": "JFK",
+        "bookings": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["flight", "number"]
+      },
+      {
+        "path": ["flight", "departureDate"]
+      },
+      {
+        "path": ["flight", "bookings"]
+      }
+    ]
+  }
+]
