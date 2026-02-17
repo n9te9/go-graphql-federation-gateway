@@ -31,7 +31,12 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
 * **Partial Response Support:** Returns partial data when some subgraphs fail, improving resilience and user experience.
   * Failed fields are set to `null` with detailed error information.
   * Errors include path information and service name for easy debugging.
+  * Graceful degradation with continued execution when possible.
   * See [Partial Response Documentation](docs/partial-response.md) for details.
+* **Comprehensive Testing:** 
+  * 23+ integration tests covering all core Federation v2 features across 5 example domains (EC, Fintech, SaaS, Social, Travel).
+  * 9+ partial response tests validating graceful degradation scenarios.
+  * Tests validate @key (simple & composite), @external, @requires, @provides, @shareable directives.
 * **Observability:**
   * Full **OpenTelemetry** support.
   * Traces propagate context to subgraphs (`traceparent` injection), allowing for end-to-end visualization of distributed requests.
@@ -78,11 +83,22 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 
 | Directive | Status | Description |
 | :--- | :---: | :--- |
-| `@key` | ✅ | Entity resolution via `_entities`. |
+| `@key` | ✅ | Entity resolution via `_entities`. Supports both simple and composite keys. |
 | `@external` | ✅ | Used to identify fields owned by other subgraphs. |
 | `@requires` | ✅ | Solves computed fields by injecting dependencies. |
-| `@provides` | 🚧 | (Planned) Optimization for pre-fetching fields. |
-| `@shareable`| 🚧 | (Planned) Officially unsupported (works in simple cases). |
+| `@provides` | ✅ | Optimization for pre-fetching fields from entities. |
+| `@shareable`| ✅ | Allows same field/type definition across multiple subgraphs. |
+
+**Tested Features:**
+- ✅ Simple keys (`@key(fields: "id")`)
+- ✅ Composite keys (`@key(fields: "number departureDate")`)
+- ✅ Entity extensions with `@external` fields
+- ✅ Computed fields with `@requires` directive
+- ✅ Field optimization with `@provides` directive  
+- ✅ Shareable fields and types across services
+- ✅ Nested entity resolution chains
+- ✅ Circular/loopback references
+- ✅ Partial responses with graceful degradation
 
 ## 🛠️ Getting Started
 

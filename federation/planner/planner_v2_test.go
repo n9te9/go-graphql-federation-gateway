@@ -11,7 +11,7 @@ import (
 )
 
 func TestPlannerV2_SimpleQuery(t *testing.T) {
-	// Product サービスのスキーマ
+	// Product service schema
 	productSchema := `
 		type Product @key(fields: "id") {
 			id: ID!
@@ -80,7 +80,7 @@ func TestPlannerV2_SimpleQuery(t *testing.T) {
 }
 
 func TestPlannerV2_FederatedQuery(t *testing.T) {
-	// Product サービスのスキーマ
+	// Product service schema
 	productSchema := `
 		type Product @key(fields: "id") {
 			id: ID!
@@ -125,7 +125,7 @@ func TestPlannerV2_FederatedQuery(t *testing.T) {
 	// Planner を作成
 	p := planner.NewPlannerV2(superGraph)
 
-	// クエリをパース（Product と Reviews を取得）
+	// Parse query (fetch Product and Reviews)
 	query := `
 		query {
 			product(id: "1") {
@@ -152,10 +152,10 @@ func TestPlannerV2_FederatedQuery(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// 検証
-	// 期待: 2つのステップ
-	// 1. Product サービスで product を取得
-	// 2. Review サービスで reviews を取得
+	// Verify
+	// Expected: 2 steps
+	// 1. Fetch product from Product service
+	// 2. Fetch reviews from Review service
 	if len(plan.Steps) != 2 {
 		t.Errorf("expected 2 steps, got %d", len(plan.Steps))
 	}
@@ -164,7 +164,7 @@ func TestPlannerV2_FederatedQuery(t *testing.T) {
 		t.Errorf("expected 1 root step, got %d", len(plan.RootStepIndexes))
 	}
 
-	// ステップ 0: Product サービス
+	// Step 0: Product service
 	if plan.Steps[0].SubGraph.Name != "product" {
 		t.Errorf("step 0: expected subgraph 'product', got '%s'", plan.Steps[0].SubGraph.Name)
 	}
@@ -173,7 +173,7 @@ func TestPlannerV2_FederatedQuery(t *testing.T) {
 		t.Errorf("step 0: expected StepTypeQuery, got %v", plan.Steps[0].StepType)
 	}
 
-	// ステップ 1: Review サービス
+	// Step 1: Review service
 	if plan.Steps[1].SubGraph.Name != "review" {
 		t.Errorf("step 1: expected subgraph 'review', got '%s'", plan.Steps[1].SubGraph.Name)
 	}
@@ -182,7 +182,7 @@ func TestPlannerV2_FederatedQuery(t *testing.T) {
 		t.Errorf("step 1: expected StepTypeEntity, got %v", plan.Steps[1].StepType)
 	}
 
-	// ステップ 1 は ステップ 0 に依存
+	// Step 1 depends on step 0
 	if len(plan.Steps[1].DependsOn) != 1 || plan.Steps[1].DependsOn[0] != 0 {
 		t.Errorf("step 1: expected to depend on step 0, got %v", plan.Steps[1].DependsOn)
 	}
@@ -212,10 +212,10 @@ func TestPlannerV2_MultipleRootFields(t *testing.T) {
 		t.Fatalf("NewSuperGraphV2 failed: %v", err)
 	}
 
-	// Planner を作成
+	// Create planner
 	p := planner.NewPlannerV2(superGraph)
 
-	// クエリをパース（複数のルートフィールド）
+	// Parse query (multiple root fields)
 	query := `
 		query {
 			user(id: "1") {
@@ -242,8 +242,8 @@ func TestPlannerV2_MultipleRootFields(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// 検証
-	// 同じサブグラフなので1つのステップにまとまる
+	// Verify
+	// Same subgraph, so combined into single step
 	if len(plan.Steps) != 1 {
 		t.Errorf("expected 1 step, got %d", len(plan.Steps))
 	}
@@ -252,7 +252,7 @@ func TestPlannerV2_MultipleRootFields(t *testing.T) {
 		t.Errorf("expected 1 root step, got %d", len(plan.RootStepIndexes))
 	}
 
-	// SelectionSet に2つのフィールドが含まれている
+	// SelectionSet contains 2 fields
 	if len(plan.Steps[0].SelectionSet) != 2 {
 		t.Errorf("expected 2 selections in step 0, got %d", len(plan.Steps[0].SelectionSet))
 	}
@@ -321,7 +321,7 @@ func TestPlannerV2_NestedFederation(t *testing.T) {
 	// Planner を作成
 	p := planner.NewPlannerV2(superGraph)
 
-	// クエリをパース（3階層のネスト）
+	// Parse query (3-level nesting)
 	query := `
 		query {
 			user(id: "1") {
@@ -352,11 +352,11 @@ func TestPlannerV2_NestedFederation(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// 検証
-	// 期待: 3つのステップ
-	// 1. User サービスで user を取得
-	// 2. Post サービスで posts を取得
-	// 3. Comment サービスで comments を取得
+	// Verify
+	// Expected: 3 steps
+	// 1. Fetch user from User service
+	// 2. Fetch posts from Post service
+	// 3. Fetch comments from Comment service
 	if len(plan.Steps) != 3 {
 		t.Errorf("expected 3 steps, got %d", len(plan.Steps))
 	}
@@ -365,12 +365,12 @@ func TestPlannerV2_NestedFederation(t *testing.T) {
 		t.Errorf("expected 1 root step, got %d", len(plan.RootStepIndexes))
 	}
 
-	// ステップ 0: User サービス
+	// Step 0: User service
 	if plan.Steps[0].SubGraph.Name != "user" {
 		t.Errorf("step 0: expected subgraph 'user', got '%s'", plan.Steps[0].SubGraph.Name)
 	}
 
-	// ステップ 1: Post サービス
+	// Step 1: Post service
 	if plan.Steps[1].SubGraph.Name != "post" {
 		t.Errorf("step 1: expected subgraph 'post', got '%s'", plan.Steps[1].SubGraph.Name)
 	}
@@ -379,7 +379,7 @@ func TestPlannerV2_NestedFederation(t *testing.T) {
 		t.Errorf("step 1: expected to depend on step 0, got %v", plan.Steps[1].DependsOn)
 	}
 
-	// ステップ 2: Comment サービス
+	// Step 2: Comment service
 	if plan.Steps[2].SubGraph.Name != "comment" {
 		t.Errorf("step 2: expected subgraph 'comment', got '%s'", plan.Steps[2].SubGraph.Name)
 	}
@@ -467,10 +467,10 @@ func TestPlannerV2_Loopback(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// 検証: 3つのステップが期待される
-	// Step 0: Product サービスで product を取得
-	// Step 1: Review サービスで reviews を取得（Product のキーフィールドが注入される）
-	// Step 2: Product サービスで reviews.product を取得（ネストされたエンティティ）
+	// Verify: 3 steps expected
+	// Step 0: Fetch product from Product service
+	// Step 1: Fetch reviews from Review service (Product key fields injected)
+	// Step 2: Fetch reviews.product from Product service (nested entity)
 	if len(plan.Steps) != 3 {
 		t.Errorf("expected 3 steps, got %d", len(plan.Steps))
 	}
@@ -606,7 +606,7 @@ func TestPlannerV2_TypenameCheck(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// 検証: __typename が含まれていても正しくプランニングされる
+	// Verify: __typename is correctly handled in planning
 	if len(plan.Steps) != 3 {
 		t.Errorf("expected 3 steps, got %d", len(plan.Steps))
 	}
@@ -626,8 +626,8 @@ func TestPlannerV2_TypenameCheck(t *testing.T) {
 		}
 	}
 	if !hasTypename {
-		// Note: __typename は特殊フィールドなので、SelectionSet に含まれない場合もある
-		// ここではプランが正常に生成されることを確認
+		// Note: __typename is a special field, may not be included in SelectionSet
+		// Verify plan is generated correctly
 		t.Logf("__typename field handling may vary")
 	}
 }
@@ -678,7 +678,7 @@ func TestPlannerV2_MultiProductsWithAliases(t *testing.T) {
 	// Planner を作成
 	p := planner.NewPlannerV2(superGraph)
 
-	// エイリアスを使った複数の product クエリ
+	// Query with aliases for multiple products
 	query := `
 		query {
 			p1: product(id: "p1") {
@@ -709,9 +709,9 @@ func TestPlannerV2_MultiProductsWithAliases(t *testing.T) {
 		t.Fatalf("Plan failed: %v", err)
 	}
 
-	// 検証: エイリアスがあっても正しくプランニングされる
-	// Step 0: Product サービスで p1 と p2 を取得（並列）
-	// Step 1: Review サービスで p1.reviews と p2.reviews を取得
+	// Verify: Aliases are correctly handled in planning
+	// Step 0: Fetch p1 and p2 from Product service (parallel)
+	// Step 1: Fetch p1.reviews and p2.reviews from Review service
 	if len(plan.Steps) < 2 {
 		t.Errorf("expected at least 2 steps, got %d", len(plan.Steps))
 	}
