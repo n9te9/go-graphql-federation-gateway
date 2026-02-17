@@ -123,5 +123,61 @@
         "username": "me"
       }
     }
+  },
+  {
+    "name": "Federation Feature: Query Fragments",
+    "description": "Verify fragment support in federated queries",
+    "query": "query { product(id: \"p1\") { ...ProductFields reviews { body } } } fragment ProductFields on Product { id name price }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000,
+        "reviews": [
+          { "body": "Great product!" },
+          { "body": "Not bad" }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Inline Fragments",
+    "description": "Verify inline fragment support",
+    "query": "query { product(id: \"p1\") { id ... on Product { name price } } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Fragment Spread",
+    "description": "Verify fragment spread support with named fragments",
+    "query": "query { product(id: \"p1\") { ...ProductFields } } fragment ProductFields on Product { id name price }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Nested Fragments",
+    "description": "Verify nested fragment expansion (fragments referencing other fragments)",
+    "query": "query { product(id: \"p1\") { ...ProductWithPrice } } fragment ProductWithPrice on Product { ...BasicProduct price } fragment BasicProduct on Product { id name }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000
+      }
+    }
   }
 ]

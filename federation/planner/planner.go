@@ -106,6 +106,9 @@ func (p *planner) Plan(doc *ast.Document, variables map[string]any) (*Plan, erro
 		return nil, errors.New("empty selection")
 	}
 
+	// Collect fragment definitions from the document
+	fragmentDefs := p.collectFragmentDefinitions(doc)
+
 	schemaTypeDefinitions, queryFields, err := p.findOperationField(op)
 	if err != nil {
 		return nil, err
@@ -136,7 +139,7 @@ func (p *planner) Plan(doc *ast.Document, variables map[string]any) (*Plan, erro
 
 	var rootSelections []*Selection
 	for i, f := range queryFields {
-		selections, err := p.extractSelections(f.SelectionSet, schemaTypeDefinitions[i].Name.String(), variables)
+		selections, err := p.extractSelections(f.SelectionSet, schemaTypeDefinitions[i].Name.String(), variables, fragmentDefs)
 		if err != nil {
 			return nil, err
 		}
@@ -206,7 +209,18 @@ func (p *planner) resolveValue(v ast.Value, variables map[string]any) any {
 	}
 }
 
-func (p *planner) extractSelections(selectionSet []ast.Selection, parentType string, variables map[string]any) ([]*Selection, error) {
+// collectFragmentDefinitions extracts all fragment definitions from the document
+func (p *planner) collectFragmentDefinitions(doc *ast.Document) map[string]*ast.FragmentDefinition {
+	fragments := make(map[string]*ast.FragmentDefinition)
+	for _, def := range doc.Definitions {
+		if fragDef, ok := def.(*ast.FragmentDefinition); ok {
+			fragments[fragDef.Name.String()] = fragDef
+		}
+	}
+	return fragments
+}
+
+func (p *planner) extractSelections(selectionSet []ast.Selection, parentType string, variables map[string]any, fragmentDefs map[string]*ast.FragmentDefinition) ([]*Selection, error) {
 	ret := make([]*Selection, 0)
 	for _, sel := range selectionSet {
 		switch f := sel.(type) {
@@ -234,7 +248,7 @@ func (p *planner) extractSelections(selectionSet []ast.Selection, parentType str
 			}
 
 			if len(f.SelectionSet) > 0 {
-				subs, err := p.extractSelections(f.SelectionSet, fieldTypeName, variables)
+				subs, err := p.extractSelections(f.SelectionSet, fieldTypeName, variables, fragmentDefs)
 				if err != nil {
 					return nil, err
 				}
@@ -243,7 +257,23 @@ func (p *planner) extractSelections(selectionSet []ast.Selection, parentType str
 			ret = append(ret, selection)
 		case *ast.InlineFragment:
 			typeCondition := f.TypeCondition.Name.String()
-			subs, err := p.extractSelections(f.SelectionSet, typeCondition, variables)
+			subs, err := p.extractSelections(f.SelectionSet, typeCondition, variables, fragmentDefs)
+			if err != nil {
+				return nil, err
+			}
+
+			ret = append(ret, subs...)
+		case *ast.FragmentSpread:
+			// Expand fragment spread by looking up the fragment definition
+			fragName := f.Name.String()
+			fragDef, ok := fragmentDefs[fragName]
+			if !ok {
+				return nil, fmt.Errorf("fragment %s not found", fragName)
+			}
+
+			// Extract selections from the fragment definition
+			typeCondition := fragDef.TypeCondition.Name.String()
+			subs, err := p.extractSelections(fragDef.SelectionSet, typeCondition, variables, fragmentDefs)
 			if err != nil {
 				return nil, err
 			}

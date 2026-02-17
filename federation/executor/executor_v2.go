@@ -1000,8 +1000,14 @@ func (e *ExecutorV2) pruneResponse(resp map[string]interface{}, plan *planner.Pl
 		return resp
 	}
 
-	// Prune the data based on the original selection set
-	prunedData := e.pruneObject(data, op.SelectionSet)
+	// Collect fragment definitions from the original document
+	fragmentDefs := collectFragmentDefinitionsFromDocument(plan.OriginalDocument)
+
+	// Expand fragments in the operation's selection set before pruning
+	expandedSelections := expandFragmentsInSelections(op.SelectionSet, fragmentDefs)
+
+	// Prune the data based on the expanded selection set
+	prunedData := e.pruneObject(data, expandedSelections)
 
 	result := make(map[string]interface{})
 	result["data"] = prunedData
@@ -1075,4 +1081,67 @@ func getOperationFromDocument(doc *ast.Document) *ast.OperationDefinition {
 	}
 
 	return nil
+}
+
+// collectFragmentDefinitionsFromDocument extracts all fragment definitions from a document.
+func collectFragmentDefinitionsFromDocument(doc *ast.Document) map[string]*ast.FragmentDefinition {
+	fragments := make(map[string]*ast.FragmentDefinition)
+	if doc == nil {
+		return fragments
+	}
+
+	for _, def := range doc.Definitions {
+		if fragDef, ok := def.(*ast.FragmentDefinition); ok {
+			fragments[fragDef.Name.String()] = fragDef
+		}
+	}
+	return fragments
+}
+
+// expandFragmentsInSelections recursively expands fragment spreads and inline fragments.
+func expandFragmentsInSelections(selections []ast.Selection, fragmentDefs map[string]*ast.FragmentDefinition) []ast.Selection {
+	result := make([]ast.Selection, 0)
+
+	for _, selection := range selections {
+		switch sel := selection.(type) {
+		case *ast.Field:
+			// For fields, recursively expand child selections
+			if len(sel.SelectionSet) > 0 {
+				newField := &ast.Field{
+					Alias:      sel.Alias,
+					Name:       sel.Name,
+					Arguments:  sel.Arguments,
+					Directives: sel.Directives,
+				}
+				newField.SelectionSet = expandFragmentsInSelections(sel.SelectionSet, fragmentDefs)
+				result = append(result, newField)
+			} else {
+				result = append(result, sel)
+			}
+
+		case *ast.InlineFragment:
+			// Expand inline fragment - inline its selections
+			expandedSelections := expandFragmentsInSelections(sel.SelectionSet, fragmentDefs)
+			result = append(result, expandedSelections...)
+
+		case *ast.FragmentSpread:
+			// Expand fragment spread by looking up the fragment definition
+			fragName := sel.Name.String()
+			fragDef, ok := fragmentDefs[fragName]
+			if !ok {
+				// Fragment not found, skip it
+				continue
+			}
+
+			// Recursively expand the fragment's selections
+			expandedSelections := expandFragmentsInSelections(fragDef.SelectionSet, fragmentDefs)
+			result = append(result, expandedSelections...)
+
+		default:
+			// Unknown selection type, include as-is
+			result = append(result, sel)
+		}
+	}
+
+	return result
 }
