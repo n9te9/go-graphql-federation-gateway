@@ -11,12 +11,50 @@ fi
 TEST_CASES_FILE="tests/${DOMAIN}/partial_response_cases.json"
 GATEWAY_URL="http://localhost:9000/graphql"
 
+# Function to wait for service to be ready
+wait_for_service() {
+  local url=$1
+  local service_name=$2
+  local max_retries=30
+  local count=0
+  
+  echo "  Waiting for ${service_name} at ${url}..."
+  while ! curl -s -f -X POST "${url}" \
+    -H "Content-Type: application/json" \
+    -d '{"query":"{ __typename }"}' > /dev/null 2>&1; do
+    sleep 1
+    count=$((count + 1))
+    if [ $count -ge $max_retries ]; then
+      echo "  ${service_name} failed to start"
+      return 1
+    fi
+  done
+  echo "  ${service_name} is ready!"
+  return 0
+}
+
 # 1. Start subgraphs
 echo "Starting subgraphs for ${DOMAIN}..."
 cd "${DOMAIN}" && docker compose up -d
 cd ..
 
-sleep 15
+# 2. Wait for all subgraph services to be ready
+echo "Waiting for subgraph services to be ready..."
+GATEWAY_CONFIG="${DOMAIN}/gateway.yaml"
+
+# Extract service URLs from gateway.yaml and wait for each
+SERVICE_URLS=$(yq eval '.services[].host' "$GATEWAY_CONFIG" 2>/dev/null || \
+               grep 'http://localhost:' "$GATEWAY_CONFIG" | sed -E 's/.*host: (http:\/\/localhost:[0-9]+\/query).*/\1/g')
+
+if [ -z "$SERVICE_URLS" ]; then
+  echo "Warning: Could not extract service URLs, waiting with sleep..."
+  sleep 15
+else
+  for url in $SERVICE_URLS; do
+    service_name=$(echo "$url" | sed -E 's/.*:([0-9]+).*/\1/')
+    wait_for_service "$url" "service-${service_name}" || exit 1
+  done
+fi
 
 # Function to cleanup
 cleanup() {
@@ -28,16 +66,14 @@ cleanup() {
 
 trap cleanup EXIT
 
-# 2. Start Gateway
+# 3. Start Gateway
 echo "Starting Gateway..."
 cd ${DOMAIN}
 go run ../../cmd/go-graphql-federation-gateway/main.go serve &
 GATEWAY_PID=$!
 cd ..
 
-sleep 3
-
-# 3. Wait for Gateway to be ready
+# 4. Wait for Gateway to be ready
 echo "Waiting for Gateway to start..."
 MAX_RETRIES=30
 COUNT=0
@@ -51,7 +87,7 @@ while ! curl -s "${GATEWAY_URL}" > /dev/null; do
 done
 echo "Gateway is up!"
 
-# 4. Run tests
+# 5. Run tests
 if [ ! -f "$TEST_CASES_FILE" ]; then
   echo "Test cases file not found: $TEST_CASES_FILE"
   exit 1
