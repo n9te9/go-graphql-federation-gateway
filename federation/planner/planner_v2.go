@@ -64,6 +64,9 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 		return nil, errors.New("empty selection")
 	}
 
+	// Collect fragment definitions from the document
+	fragmentDefs := p.collectFragmentDefinitions(doc)
+
 	// Determine root type name
 	rootTypeName, err := p.getRootTypeName(op)
 	if err != nil {
@@ -81,13 +84,16 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 	// Step ID counter
 	nextStepID := 0
 
+	// Expand fragments in the root SelectionSet
+	expandedSelections := p.expandFragmentsInSelections(op.SelectionSet, fragmentDefs)
+
 	// Group root fields by responsible subgraph
 	rootFieldsBySubGraph := make(map[*graph.SubGraphV2][]ast.Selection)
 
-	for _, selection := range op.SelectionSet {
+	for _, selection := range expandedSelections {
 		field, ok := selection.(*ast.Field)
 		if !ok {
-			continue // InlineFragment and others will be handled later
+			continue
 		}
 
 		fieldName := field.Name.String()
@@ -111,7 +117,7 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 	// Create root steps with filtered SelectionSets
 	for subGraph, selections := range rootFieldsBySubGraph {
 		// Build SelectionSet containing only fields owned by this subgraph
-		filteredSelections := p.buildStepSelections(selections, subGraph, rootTypeName)
+		filteredSelections := p.buildStepSelections(selections, subGraph, rootTypeName, fragmentDefs)
 
 		step := &StepV2{
 			ID:           nextStepID,
@@ -136,79 +142,156 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 
 		// Find boundary fields in the original selections (not filtered)
 		originalSelections := rootFieldsBySubGraph[rootStep.SubGraph]
-		p.findAndBuildEntitySteps(originalSelections, rootStep, plan, &nextStepID, rootStep.ParentType, rootStep.Path)
+		p.findAndBuildEntitySteps(originalSelections, rootStep, plan, &nextStepID, rootStep.ParentType, rootStep.Path, fragmentDefs)
 	}
 
 	return plan, nil
 }
 
+// collectFragmentDefinitions extracts all fragment definitions from the document
+func (p *PlannerV2) collectFragmentDefinitions(doc *ast.Document) map[string]*ast.FragmentDefinition {
+	fragments := make(map[string]*ast.FragmentDefinition)
+	for _, def := range doc.Definitions {
+		if fragDef, ok := def.(*ast.FragmentDefinition); ok {
+			fragments[fragDef.Name.String()] = fragDef
+		}
+	}
+	return fragments
+}
+
+// expandFragmentsInSelections expands all fragment spreads and inline fragments in selections
+func (p *PlannerV2) expandFragmentsInSelections(selections []ast.Selection, fragmentDefs map[string]*ast.FragmentDefinition) []ast.Selection {
+	result := make([]ast.Selection, 0)
+
+	for _, selection := range selections {
+		switch sel := selection.(type) {
+		case *ast.Field:
+			// For fields, recursively expand child selections
+			if len(sel.SelectionSet) > 0 {
+				newField := &ast.Field{
+					Alias:      sel.Alias,
+					Name:       sel.Name,
+					Arguments:  sel.Arguments,
+					Directives: sel.Directives,
+				}
+				newField.SelectionSet = p.expandFragmentsInSelections(sel.SelectionSet, fragmentDefs)
+				result = append(result, newField)
+			} else {
+				result = append(result, sel)
+			}
+
+		case *ast.InlineFragment:
+			// Expand inline fragment - just inline its selections
+			expandedSelections := p.expandFragmentsInSelections(sel.SelectionSet, fragmentDefs)
+			result = append(result, expandedSelections...)
+
+		case *ast.FragmentSpread:
+			// Expand fragment spread by looking up the fragment definition
+			fragName := sel.Name.String()
+			fragDef, ok := fragmentDefs[fragName]
+			if !ok {
+				// Fragment not found, skip it
+				continue
+			}
+
+			// Recursively expand the fragment's selections
+			expandedSelections := p.expandFragmentsInSelections(fragDef.SelectionSet, fragmentDefs)
+			result = append(result, expandedSelections...)
+
+		default:
+			// Unknown selection type, include as-is
+			result = append(result, sel)
+		}
+	}
+
+	return result
+}
+
 // buildStepSelections builds a new SelectionSet containing only fields owned by the given subgraph.
 // This follows V1's walkRoot pattern: builds new selections instead of modifying existing ones.
-func (p *PlannerV2) buildStepSelections(selections []ast.Selection, subGraph *graph.SubGraphV2, parentType string) []ast.Selection {
+func (p *PlannerV2) buildStepSelections(selections []ast.Selection, subGraph *graph.SubGraphV2, parentType string, fragmentDefs map[string]*ast.FragmentDefinition) []ast.Selection {
 	result := make([]ast.Selection, 0)
 	hasTypename := false
 
 	for _, selection := range selections {
-		field, ok := selection.(*ast.Field)
-		if !ok {
-			continue
-		}
+		switch sel := selection.(type) {
+		case *ast.Field:
+			fieldName := sel.Name.String()
 
-		fieldName := field.Name.String()
-
-		// Track if __typename is explicitly requested
-		if fieldName == "__typename" {
-			hasTypename = true
-			newField := &ast.Field{
-				Name: &ast.Name{
-					Token: token.Token{Type: token.IDENT, Literal: "__typename"},
-					Value: "__typename",
-				},
-			}
-			result = append(result, newField)
-			continue
-		}
-
-		// Check if this field is owned by the current subgraph
-		subGraphs := p.SuperGraph.GetSubGraphsForField(parentType, fieldName)
-		if len(subGraphs) == 0 || subGraphs[0].Name != subGraph.Name {
-			// Not owned by this subgraph, skip it
-			continue
-		}
-
-		// Get field type to process child selections
-		fieldType, err := p.getFieldTypeName(parentType, fieldName)
-		if err != nil {
-			// If we can't determine the type, include the field without processing children
-			fieldType = ""
-		}
-
-		// Build new field with filtered child selections
-		newField := &ast.Field{
-			Alias:      field.Alias,
-			Name:       field.Name,
-			Arguments:  field.Arguments,
-			Directives: field.Directives,
-		}
-
-		// Recursively process child selections
-		if len(field.SelectionSet) > 0 && fieldType != "" {
-			childSelections := p.buildStepSelections(field.SelectionSet, subGraph, fieldType)
-
-			// If no child selections were included but original had children, add __typename
-			if len(childSelections) == 0 {
-				childSelections = append(childSelections, &ast.Field{
+			// Track if __typename is explicitly requested
+			if fieldName == "__typename" {
+				hasTypename = true
+				newField := &ast.Field{
 					Name: &ast.Name{
 						Token: token.Token{Type: token.IDENT, Literal: "__typename"},
 						Value: "__typename",
 					},
-				})
+				}
+				result = append(result, newField)
+				continue
 			}
 
-			newField.SelectionSet = childSelections
-		}
+			// Check if this field is owned by the current subgraph
+			subGraphs := p.SuperGraph.GetSubGraphsForField(parentType, fieldName)
+			if len(subGraphs) == 0 || subGraphs[0].Name != subGraph.Name {
+				// Not owned by this subgraph, skip it
+				continue
+			}
 
-		result = append(result, newField)
+			// Get field type to process child selections
+			fieldType, err := p.getFieldTypeName(parentType, fieldName)
+			if err != nil {
+				// If we can't determine the type, include the field without processing children
+				fieldType = ""
+			}
+
+			// Build new field with filtered child selections
+			newField := &ast.Field{
+				Alias:      sel.Alias,
+				Name:       sel.Name,
+				Arguments:  sel.Arguments,
+				Directives: sel.Directives,
+			}
+
+			// Recursively process child selections
+			if len(sel.SelectionSet) > 0 && fieldType != "" {
+				childSelections := p.buildStepSelections(sel.SelectionSet, subGraph, fieldType, fragmentDefs)
+
+				// If no child selections were included but original had children, add __typename
+				if len(childSelections) == 0 {
+					childSelections = append(childSelections, &ast.Field{
+						Name: &ast.Name{
+							Token: token.Token{Type: token.IDENT, Literal: "__typename"},
+							Value: "__typename",
+						},
+					})
+				}
+
+				newField.SelectionSet = childSelections
+			}
+
+			result = append(result, newField)
+
+		case *ast.InlineFragment:
+			// Expand inline fragment selections
+			typeCondition := sel.TypeCondition.Name.String()
+			expandedSelections := p.buildStepSelections(sel.SelectionSet, subGraph, typeCondition, fragmentDefs)
+			result = append(result, expandedSelections...)
+
+		case *ast.FragmentSpread:
+			// Expand fragment spread by looking up the fragment definition
+			fragName := sel.Name.String()
+			fragDef, ok := fragmentDefs[fragName]
+			if !ok {
+				// Fragment not found, skip it
+				continue
+			}
+
+			// Extract selections from the fragment definition
+			typeCondition := fragDef.TypeCondition.Name.String()
+			expandedSelections := p.buildStepSelections(fragDef.SelectionSet, subGraph, typeCondition, fragmentDefs)
+			result = append(result, expandedSelections...)
+		}
 	}
 
 	// Auto-inject __typename if not explicitly requested
@@ -237,6 +320,7 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 	nextStepID *int,
 	parentType string,
 	currentPath []string,
+	fragmentDefs map[string]*ast.FragmentDefinition,
 ) {
 	entityStepsByKey := make(map[string]*StepV2)
 
@@ -296,7 +380,7 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 		if !isBoundaryField {
 			// Same subgraph - recursively process children to find nested boundary fields
 			if len(field.SelectionSet) > 0 {
-				p.findAndBuildEntitySteps(field.SelectionSet, parentStep, plan, nextStepID, fieldType, fieldPath)
+				p.findAndBuildEntitySteps(field.SelectionSet, parentStep, plan, nextStepID, fieldType, fieldPath, fragmentDefs)
 			}
 		} else {
 			// Different subgraph - this is a boundary field, create entity step
@@ -328,7 +412,7 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			existingStep, exists := entityStepsByKey[stepKey]
 			if exists {
 				// Merge selections into existing step
-				existingStep.SelectionSet = p.mergeSelections(existingStep.SelectionSet, []ast.Selection{selection}, targetSubGraph, entityTypeToResolve)
+				existingStep.SelectionSet = p.mergeSelections(existingStep.SelectionSet, []ast.Selection{selection}, targetSubGraph, entityTypeToResolve, fragmentDefs)
 			} else {
 				// Build selections for this entity step
 				var entitySelections []ast.Selection
@@ -341,12 +425,12 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 				//    _entities([{__typename: "Product", id: "..."}]) { ... on Product { name, price } }
 				if entityTypeToResolve == parentType {
 					// Extension: include the full boundary field
-					entitySelections = p.buildEntityStepSelections([]ast.Selection{selection}, targetSubGraph, parentType, parentStep, entityTypeToResolve)
+					entitySelections = p.buildEntityStepSelections([]ast.Selection{selection}, targetSubGraph, parentType, parentStep, entityTypeToResolve, fragmentDefs)
 					// InsertionPath points to the parent entity (e.g., [Query, customer])
 					insertionPath = currentPath
 				} else {
 					// Reference: include only the children of the boundary field
-					entitySelections = p.buildEntityStepSelections(field.SelectionSet, targetSubGraph, entityTypeToResolve, parentStep, entityTypeToResolve)
+					entitySelections = p.buildEntityStepSelections(field.SelectionSet, targetSubGraph, entityTypeToResolve, parentStep, entityTypeToResolve, fragmentDefs)
 					// InsertionPath includes the boundary field (e.g., [Query, product, reviews, product])
 					insertionPath = append(currentPath, fieldName)
 				}
@@ -406,7 +490,7 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 						// Extension case: fieldType is the type of the extension field
 						nestedParentType = fieldType
 					}
-					p.findAndBuildEntitySteps(field.SelectionSet, newStep, plan, nextStepID, nestedParentType, fieldPath)
+					p.findAndBuildEntitySteps(field.SelectionSet, newStep, plan, nextStepID, nestedParentType, fieldPath, fragmentDefs)
 				}
 			}
 		}
@@ -423,12 +507,14 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 //   - parentType: type that contains the boundary field (e.g., Product for reviews field)
 //   - parentStep: parent step
 //   - entityType: entity type to resolve (e.g., Product when resolving _entities for Product)
+//   - fragmentDefs: fragment definitions from the query
 func (p *PlannerV2) buildEntityStepSelections(
 	selections []ast.Selection,
 	subGraph *graph.SubGraphV2,
 	parentType string,
 	parentStep *StepV2,
 	entityType string,
+	fragmentDefs map[string]*ast.FragmentDefinition,
 ) []ast.Selection {
 	result := make([]ast.Selection, 0)
 
@@ -472,7 +558,7 @@ func (p *PlannerV2) buildEntityStepSelections(
 
 		// Filter child selections by ownership for this subgraph
 		if len(field.SelectionSet) > 0 {
-			filteredChildren := p.buildStepSelections(field.SelectionSet, subGraph, fieldType)
+			filteredChildren := p.buildStepSelections(field.SelectionSet, subGraph, fieldType, fragmentDefs)
 			newField.SelectionSet = filteredChildren
 
 			// Only include this field if it has children or if it's a leaf field
@@ -492,10 +578,10 @@ func (p *PlannerV2) buildEntityStepSelections(
 }
 
 // mergeSelections merges new selections into existing selections.
-func (p *PlannerV2) mergeSelections(existing, newSels []ast.Selection, subGraph *graph.SubGraphV2, parentType string) []ast.Selection {
+func (p *PlannerV2) mergeSelections(existing, newSels []ast.Selection, subGraph *graph.SubGraphV2, parentType string, fragmentDefs map[string]*ast.FragmentDefinition) []ast.Selection {
 	// Simple implementation: just append and let buildStepSelections deduplicate later
 	merged := append(existing, newSels...)
-	return p.buildStepSelections(merged, subGraph, parentType)
+	return p.buildStepSelections(merged, subGraph, parentType, fragmentDefs)
 }
 
 // getKeyFields returns the @key fields for an entity type.

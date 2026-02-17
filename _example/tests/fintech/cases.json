@@ -29,5 +29,56 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation Feature: Fragment Spread",
+    "description": "Verify fragment spread support with named fragments",
+    "query": "query { customer(id: \"1\") { ...CustomerFields } } fragment CustomerFields on Customer { name accounts { iban balance } }",
+    "variables": {},
+    "expected": {
+      "customer": {
+        "name": "Customer 1",
+        "accounts": [
+          {
+            "iban": "IBAN 1",
+            "balance": 1000
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Inline Fragments",
+    "description": "Verify inline fragment support",
+    "query": "query { customer(id: \"1\") { name ... on Customer { accounts { iban balance } } } }",
+    "variables": {},
+    "expected": {
+      "customer": {
+        "name": "Customer 1",
+        "accounts": [
+          {
+            "iban": "IBAN 1",
+            "balance": 1000
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Nested Fragments",
+    "description": "Verify nested fragment expansion (fragments referencing other fragments)",
+    "query": "query { customer(id: \"1\") { ...CustomerWithAccounts } } fragment CustomerWithAccounts on Customer { ...BasicCustomer accounts { ...AccountInfo } } fragment BasicCustomer on Customer { name } fragment AccountInfo on Account { iban balance }",
+    "variables": {},
+    "expected": {
+      "customer": {
+        "name": "Customer 1",
+        "accounts": [
+          {
+            "iban": "IBAN 1",
+            "balance": 1000
+          }
+        ]
+      }
+    }
   }
 ]
