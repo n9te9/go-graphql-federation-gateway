@@ -16,6 +16,12 @@ func (r *queryResolver) Product(ctx context.Context, id string) (*model.Product,
 	return &model.Product{ID: id, Name: "Product " + id, Price: 1000}, nil
 }
 
+// Node is the resolver for the node field.
+func (r *queryResolver) Node(ctx context.Context, id string) (model.Node, error) {
+	// Return a Product as Node interface implementation
+	return &model.Product{ID: id, Name: "Product " + id, Price: 1000}, nil
+}
+
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 

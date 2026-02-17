@@ -2,11 +2,19 @@
 
 package model
 
+type Node interface {
+	IsNode()
+	GetID() string
+}
+
 type Product struct {
 	ID    string `json:"id"`
 	Name  string `json:"name"`
 	Price int    `json:"price"`
 }
+
+func (Product) IsNode()            {}
+func (this Product) GetID() string { return this.ID }
 
 func (Product) IsEntity() {}
 
