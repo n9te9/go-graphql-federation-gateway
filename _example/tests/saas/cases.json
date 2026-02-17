@@ -74,5 +74,24 @@
         }
       }
     }
+  },
+  {
+    "name": "Federation v2: @shareable Type Access",
+    "description": "Verify Organization @shareable type can be queried from different entry points",
+    "query": "query { org1: organization(id: \"org1\") { id name } proj: project(id: \"proj1\") { id name organization { id } } }",
+    "variables": {},
+    "expected": {
+      "org1": {
+        "id": "org1",
+        "name": "Acme Corp"
+      },
+      "proj": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "organization": {
+          "id": "org1"
+        }
+      }
+    }
   }
 ]

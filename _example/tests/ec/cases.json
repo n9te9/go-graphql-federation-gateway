@@ -108,5 +108,20 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @shareable Field (Product.name)",
+    "query": "query { product(id: \"p1\") { id name } me { id username } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1"
+      },
+      "me": {
+        "id": "1",
+        "username": "me"
+      }
+    }
   }
 ]
