@@ -93,5 +93,50 @@
         }
       }
     }
+  },
+  {
+    "name": "Federation Feature: Fragment Spread",
+    "description": "Verify fragment spread support with named fragments",
+    "query": "query { organization(id: \"org1\") { ...OrgFields } } fragment OrgFields on Organization { id name billing { plan } }",
+    "variables": {},
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "billing": {
+          "plan": "Enterprise"
+        }
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Inline Fragments",
+    "description": "Verify inline fragment support",
+    "query": "query { organization(id: \"org1\") { id ... on Organization { name billing { plan } } } }",
+    "variables": {},
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "billing": {
+          "plan": "Enterprise"
+        }
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Nested Fragments",
+    "description": "Verify nested fragment expansion (fragments referencing other fragments)",
+    "query": "query { organization(id: \"org1\") { ...OrgWithBilling } } fragment OrgWithBilling on Organization { ...BasicOrg billing { ...BillingInfo } } fragment BasicOrg on Organization { id name } fragment BillingInfo on BillingInfo { plan }",
+    "variables": {},
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "billing": {
+          "plan": "Enterprise"
+        }
+      }
+    }
   }
 ]

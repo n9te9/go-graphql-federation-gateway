@@ -69,5 +69,44 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation Feature: Fragment Spread",
+    "description": "Verify fragment spread support with named fragments",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { ...FlightFields } } fragment FlightFields on Flight { number origin destination }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "origin": "SFO",
+        "destination": "JFK"
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Inline Fragments",
+    "description": "Verify inline fragment support",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number ... on Flight { origin destination } } }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "origin": "SFO",
+        "destination": "JFK"
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Nested Fragments",
+    "description": "Verify nested fragment expansion (fragments referencing other fragments)",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { ...FlightWithRoute } } fragment FlightWithRoute on Flight { ...FlightNumber ...RouteInfo } fragment FlightNumber on Flight { number } fragment RouteInfo on Flight { origin destination }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "origin": "SFO",
+        "destination": "JFK"
+      }
+    }
   }
 ]

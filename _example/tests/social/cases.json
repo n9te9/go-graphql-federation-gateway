@@ -95,5 +95,59 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation Feature: Fragment Spread",
+    "description": "Verify fragment spread support with named fragments",
+    "query": "query { user(id: \"user1\") { ...UserFields } } fragment UserFields on User { id name posts { id title } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice",
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Inline Fragments",
+    "description": "Verify inline fragment support",
+    "query": "query { user(id: \"user1\") { id ... on User { name posts { id title } } } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice",
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Nested Fragments",
+    "description": "Verify nested fragment expansion (fragments referencing other fragments)",
+    "query": "query { user(id: \"user1\") { ...UserWithPosts } } fragment UserWithPosts on User { ...BasicUser posts { ...PostInfo } } fragment BasicUser on User { id name } fragment PostInfo on Post { id title }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice",
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post"
+          }
+        ]
+      }
+    }
   }
 ]

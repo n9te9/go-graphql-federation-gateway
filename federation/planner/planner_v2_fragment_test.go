@@ -66,21 +66,21 @@ func TestPlannerV2_FragmentSpread(t *testing.T) {
 	}
 
 	step := plan.Steps[0]
-	
+
 	// The step should have 1 selection: the product field
 	if len(step.SelectionSet) != 1 {
 		t.Fatalf("expected 1 selection (product field), got %d", len(step.SelectionSet))
 	}
-	
+
 	productField, ok := step.SelectionSet[0].(*ast.Field)
 	if !ok {
 		t.Fatalf("expected product field, got %T", step.SelectionSet[0])
 	}
-	
+
 	if productField.Name.String() != "product" {
 		t.Fatalf("expected 'product' field, got '%s'", productField.Name.String())
 	}
-	
+
 	// The product field should have child selections from the expanded fragment
 	// We expect at least: id, name, price (plus potentially __typename)
 	if len(productField.SelectionSet) < 3 {
@@ -169,21 +169,21 @@ func TestPlannerV2_InlineFragment(t *testing.T) {
 	}
 
 	step := plan.Steps[0]
-	
+
 	// The step should have 1 selection: the product field
 	if len(step.SelectionSet) != 1 {
 		t.Fatalf("expected 1 selection (product field), got %d", len(step.SelectionSet))
 	}
-	
+
 	productField, ok := step.SelectionSet[0].(*ast.Field)
 	if !ok {
 		t.Fatalf("expected product field, got %T", step.SelectionSet[0])
 	}
-	
+
 	if productField.Name.String() != "product" {
 		t.Fatalf("expected 'product' field, got '%s'", productField.Name.String())
 	}
-	
+
 	// The product field should have child selections including expanded inline fragment
 	// We expect: id, name, price (plus potentially __typename)
 	if len(productField.SelectionSet) < 3 {
@@ -278,21 +278,21 @@ func TestPlannerV2_NestedFragments(t *testing.T) {
 	}
 
 	step := plan.Steps[0]
-	
+
 	// The step should have 1 selection: the product field
 	if len(step.SelectionSet) != 1 {
 		t.Fatalf("expected 1 selection (product field), got %d", len(step.SelectionSet))
 	}
-	
+
 	productField, ok := step.SelectionSet[0].(*ast.Field)
 	if !ok {
 		t.Fatalf("expected product field, got %T", step.SelectionSet[0])
 	}
-	
+
 	if productField.Name.String() != "product" {
 		t.Fatalf("expected 'product' field, got '%s'", productField.Name.String())
 	}
-	
+
 	// The product field should have child selections from expanded nested fragments
 	// We expect: id, name, price (plus potentially __typename)
 	if len(productField.SelectionSet) < 3 {
