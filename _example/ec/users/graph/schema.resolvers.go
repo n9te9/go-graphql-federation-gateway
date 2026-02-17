@@ -13,7 +13,29 @@ import (
 
 // Me is the resolver for the me field.
 func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
-	return &model.User{ID: "1", Username: "me"}, nil
+	return &model.User{ID: "1", Username: "me", Email: "me@example.com"}, nil
+}
+
+// UserByID is the resolver for the userById field.
+func (r *queryResolver) UserByID(ctx context.Context, id string) (*model.User, error) {
+	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com"}, nil
+}
+
+// UserByUsername is the resolver for the userByUsername field.
+func (r *queryResolver) UserByUsername(ctx context.Context, username string) (*model.User, error) {
+	return &model.User{ID: "user_id_for_" + username, Username: username, Email: username + "@example.com"}, nil
+}
+
+// UserByEmail is the resolver for the userByEmail field.
+func (r *queryResolver) UserByEmail(ctx context.Context, email string) (*model.User, error) {
+	username := "user_for_" + email
+	return &model.User{ID: "user_id_" + email, Username: username, Email: email}, nil
+}
+
+// Node is the resolver for the node field.
+func (r *queryResolver) Node(ctx context.Context, id string) (model.Node, error) {
+	// Return a User as Node interface implementation
+	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com"}, nil
 }
 
 // Query returns QueryResolver implementation.

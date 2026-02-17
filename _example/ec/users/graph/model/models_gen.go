@@ -2,12 +2,21 @@
 
 package model
 
+type Node interface {
+	IsNode()
+	GetID() string
+}
+
 type Query struct {
 }
 
 type User struct {
 	ID       string `json:"id"`
 	Username string `json:"username"`
+	Email    string `json:"email"`
 }
+
+func (User) IsNode()            {}
+func (this User) GetID() string { return this.ID }
 
 func (User) IsEntity() {}

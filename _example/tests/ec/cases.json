@@ -179,5 +179,44 @@
         "price": 1000
       }
     }
+  },
+  {
+    "name": "Federation v2: Multiple @key Definitions (by ID)",
+    "description": "Verify User entity resolution using the 'id' key",
+    "query": "query { userById(id: \"user123\") { id username email } }",
+    "variables": {},
+    "expected": {
+      "userById": {
+        "id": "user123",
+        "username": "user_user123",
+        "email": "user123@example.com"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Multiple @key Definitions (by Username)",
+    "description": "Verify User entity resolution using the 'username' key",
+    "query": "query { userByUsername(username: \"testuser\") { id username email } }",
+    "variables": {},
+    "expected": {
+      "userByUsername": {
+        "id": "user_id_for_testuser",
+        "username": "testuser",
+        "email": "testuser@example.com"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Multiple @key Definitions (by Email)",
+    "description": "Verify User entity resolution using the 'email' key",
+    "query": "query { userByEmail(email: \"test@example.com\") { id username email } }",
+    "variables": {},
+    "expected": {
+      "userByEmail": {
+        "id": "user_id_test@example.com",
+        "username": "user_for_test@example.com",
+        "email": "test@example.com"
+      }
+    }
   }
 ]
