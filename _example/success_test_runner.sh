@@ -15,19 +15,21 @@ GATEWAY_URL="http://localhost:9000/graphql"
 wait_for_service() {
   local url=$1
   local service_name=$2
-  local max_retries=30
+  local max_retries=5
+  local wait_seconds=30
   local count=0
   
   echo "  Waiting for ${service_name} at ${url}..."
   while ! curl -s -f -X POST "${url}" \
     -H "Content-Type: application/json" \
     -d '{"query":"{ __typename }"}' > /dev/null 2>&1; do
-    sleep 1
     count=$((count + 1))
     if [ $count -ge $max_retries ]; then
-      echo "  ${service_name} failed to start"
+      echo "  ERROR: ${service_name} failed to start after ${max_retries} retries"
       return 1
     fi
+    echo "  Retry ${count}/${max_retries} - waiting ${wait_seconds} seconds..."
+    sleep $wait_seconds
   done
   echo "  ${service_name} is ready!"
   return 0
