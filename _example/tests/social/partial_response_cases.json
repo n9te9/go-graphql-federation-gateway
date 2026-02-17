@@ -1,0 +1,49 @@
+[
+  {
+    "name": "Partial Response - User with Posts Service Failure",
+    "description": "When posts service fails, user data should still be returned",
+    "query": "query { user(id: \"user1\") { id name posts { id title } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "posts",
+      "failOnEntity": true
+    },
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice",
+        "posts": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["user", "posts"]
+      }
+    ]
+  },
+  {
+    "name": "Partial Response - Post with Comments Service Failure",
+    "description": "When comments service fails, post data should still be returned",
+    "query": "query { user(id: \"user1\") { posts { id title comments { id body } } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "comments",
+      "failOnEntity": true
+    },
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post"
+          }
+        ]
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["user", "posts", "comments"]
+      }
+    ]
+  }
+]

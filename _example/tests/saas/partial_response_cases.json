@@ -1,0 +1,49 @@
+[
+  {
+    "name": "Partial Response - Organization with Billing Service Failure",
+    "description": "When billing service fails, organization data should still be returned",
+    "query": "query { organization(id: \"org1\") { id name billing { id plan } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "billing",
+      "failOnEntity": true
+    },
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "billing": null
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["organization", "billing"]
+      }
+    ]
+  },
+  {
+    "name": "Partial Response - Project with Organization Service Failure",
+    "description": "When organizations service fails, project data should still be returned",
+    "query": "query { project(id: \"proj1\") { id name organization { id name } } }",
+    "variables": {},
+    "mockFailure": {
+      "service": "organizations",
+      "failOnEntity": true
+    },
+    "expected": {
+      "project": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "organization": {
+          "id": "org1",
+          "name": null
+        }
+      }
+    },
+    "expectedErrors": [
+      {
+        "path": ["project", "organization", "name"]
+      }
+    ]
+  }
+]

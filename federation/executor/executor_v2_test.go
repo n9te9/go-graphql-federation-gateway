@@ -16,11 +16,11 @@ import (
 
 func TestExecutorV2_Execute(t *testing.T) {
 	tests := []struct {
-		name                string
-		plan                *planner.PlanV2
-		mockResponses       map[string]interface{}
-		expectedData        map[string]interface{}
-		expectError         bool
+		name          string
+		plan          *planner.PlanV2
+		mockResponses map[string]interface{}
+		expectedData  map[string]interface{}
+		expectError   bool
 	}{
 		{
 			name: "Simple root query",
@@ -175,7 +175,7 @@ func TestExecutorV2_Execute(t *testing.T) {
 				t.Fatalf("Expected data to be a map, got: %T", result["data"])
 			}
 
-			if !deepEqual(data, tt.expectedData) {
+			if !jsonEqual(data, tt.expectedData) {
 				t.Errorf("Expected data:\n%+v\nGot:\n%+v", tt.expectedData, data)
 			}
 		})
@@ -273,7 +273,7 @@ func createMockSubgraphWithEntity(name, host, entityType string, keyFields []str
 
 	sg, err := graph.NewSubGraphV2(name, []byte(schemaStr), host)
 	if err != nil {
-		// Fallback to minimal SubGraphV2  
+		// Fallback to minimal SubGraphV2
 		sg = &graph.SubGraphV2{
 			Name:   name,
 			Host:   host,
@@ -298,11 +298,11 @@ func createMockSuperGraphV2() *graph.SuperGraphV2 {
 // TestExecutorV2_EntityResolution tests entity resolution with _entities queries
 func TestExecutorV2_EntityResolution(t *testing.T) {
 	tests := []struct {
-		name          string
-		plan          *planner.PlanV2
-		mockHandlers  map[string]http.HandlerFunc
-		expectedData  map[string]interface{}
-		expectError   bool
+		name         string
+		plan         *planner.PlanV2
+		mockHandlers map[string]http.HandlerFunc
+		expectedData map[string]interface{}
+		expectError  bool
 	}{
 		{
 			name: "Product with Reviews (single entity resolution)",
@@ -329,9 +329,9 @@ func TestExecutorV2_EntityResolution(t *testing.T) {
 						Path:      []string{"Query"},
 					},
 					{
-						ID:       1,
-						StepType: planner.StepTypeEntity,
-						SubGraph: createMockSubgraph("reviews", "http://reviews"),
+						ID:         1,
+						StepType:   planner.StepTypeEntity,
+						SubGraph:   createMockSubgraph("reviews", "http://reviews"),
 						ParentType: "Product",
 						SelectionSet: []ast.Selection{
 							&ast.Field{Name: &ast.Name{Value: "__typename"}},
@@ -457,4 +457,243 @@ func TestExecutorV2_EntityResolution(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestExecutorV2_PartialResponse tests partial response when some subgraphs fail
+func TestExecutorV2_PartialResponse(t *testing.T) {
+	tests := []struct {
+		name           string
+		plan           *planner.PlanV2
+		mockHandlers   map[string]http.HandlerFunc
+		expectedData   map[string]interface{}
+		expectedErrors int
+	}{
+		{
+			name: "Entity service fails - should return partial response",
+			plan: &planner.PlanV2{
+				Steps: []*planner.StepV2{
+					{
+						ID:       0,
+						StepType: planner.StepTypeQuery,
+						SubGraph: createMockSubgraph("products", "http://products"),
+						SelectionSet: []ast.Selection{
+							&ast.Field{
+								Name: &ast.Name{Value: "product"},
+								SelectionSet: []ast.Selection{
+									&ast.Field{Name: &ast.Name{Value: "__typename"}},
+									&ast.Field{Name: &ast.Name{Value: "id"}},
+									&ast.Field{Name: &ast.Name{Value: "name"}},
+								},
+							},
+						},
+						DependsOn: []int{},
+						Path:      []string{"Query", "product"},
+					},
+					{
+						ID:         1,
+						StepType:   planner.StepTypeEntity,
+						SubGraph:   createMockSubgraph("reviews", "http://reviews"),
+						ParentType: "Product",
+						SelectionSet: []ast.Selection{
+							&ast.Field{
+								Name: &ast.Name{Value: "reviews"},
+								SelectionSet: []ast.Selection{
+									&ast.Field{Name: &ast.Name{Value: "body"}},
+								},
+							},
+						},
+						DependsOn:     []int{0},
+						Path:          []string{"Query", "product", "reviews"},
+						InsertionPath: []string{"Query", "product"},
+					},
+				},
+				RootStepIndexes: []int{0},
+			},
+			mockHandlers: map[string]http.HandlerFunc{
+				"http://products": func(w http.ResponseWriter, r *http.Request) {
+					response := map[string]interface{}{
+						"data": map[string]interface{}{
+							"product": map[string]interface{}{
+								"__typename": "Product",
+								"id":         "p1",
+								"name":       "Product p1",
+							},
+						},
+					}
+					json.NewEncoder(w).Encode(response)
+				},
+				"http://reviews": func(w http.ResponseWriter, r *http.Request) {
+					// Simulate service failure
+					w.WriteHeader(http.StatusInternalServerError)
+					w.Write([]byte("Internal Server Error"))
+				},
+			},
+			expectedData: map[string]interface{}{
+				"product": map[string]interface{}{
+					"__typename": "Product",
+					"id":         "p1",
+					"name":       "Product p1",
+					"reviews":    nil,
+				},
+			},
+			expectedErrors: 1,
+		},
+		{
+			name: "Root service fails - should return null with errors",
+			plan: &planner.PlanV2{
+				Steps: []*planner.StepV2{
+					{
+						ID:       0,
+						StepType: planner.StepTypeQuery,
+						SubGraph: createMockSubgraph("products", "http://products"),
+						SelectionSet: []ast.Selection{
+							&ast.Field{
+								Name: &ast.Name{Value: "product"},
+								SelectionSet: []ast.Selection{
+									&ast.Field{Name: &ast.Name{Value: "id"}},
+									&ast.Field{Name: &ast.Name{Value: "name"}},
+								},
+							},
+						},
+						DependsOn: []int{},
+						Path:      []string{"Query", "product"},
+					},
+				},
+				RootStepIndexes: []int{0},
+			},
+			mockHandlers: map[string]http.HandlerFunc{
+				"http://products": func(w http.ResponseWriter, r *http.Request) {
+					// Simulate service failure
+					w.WriteHeader(http.StatusServiceUnavailable)
+					w.Write([]byte("Service Unavailable"))
+				},
+			},
+			expectedData: map[string]interface{}{
+				"product": nil,
+			},
+			expectedErrors: 1,
+		},
+		{
+			name: "Subgraph returns GraphQL errors - should propagate errors",
+			plan: &planner.PlanV2{
+				Steps: []*planner.StepV2{
+					{
+						ID:       0,
+						StepType: planner.StepTypeQuery,
+						SubGraph: createMockSubgraph("products", "http://products"),
+						SelectionSet: []ast.Selection{
+							&ast.Field{
+								Name: &ast.Name{Value: "product"},
+								SelectionSet: []ast.Selection{
+									&ast.Field{Name: &ast.Name{Value: "id"}},
+									&ast.Field{Name: &ast.Name{Value: "name"}},
+								},
+							},
+						},
+						DependsOn: []int{},
+						Path:      []string{"Query", "product"},
+					},
+				},
+				RootStepIndexes: []int{0},
+			},
+			mockHandlers: map[string]http.HandlerFunc{
+				"http://products": func(w http.ResponseWriter, r *http.Request) {
+					response := map[string]interface{}{
+						"data": map[string]interface{}{
+							"product": map[string]interface{}{
+								"id":   "p1",
+								"name": nil,
+							},
+						},
+						"errors": []interface{}{
+							map[string]interface{}{
+								"message": "Field 'name' cannot be resolved",
+								"path":    []interface{}{"product", "name"},
+							},
+						},
+					}
+					json.NewEncoder(w).Encode(response)
+				},
+			},
+			expectedData: map[string]interface{}{
+				"product": map[string]interface{}{
+					"id":   "p1",
+					"name": nil,
+				},
+			},
+			expectedErrors: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Create mock HTTP servers
+			servers := make(map[string]*httptest.Server)
+			for host, handler := range tt.mockHandlers {
+				server := httptest.NewServer(handler)
+				defer server.Close()
+				servers[host] = server
+			}
+
+			// Update plan with actual server URLs
+			for _, step := range tt.plan.Steps {
+				if mockServer, ok := servers[step.SubGraph.Host]; ok {
+					step.SubGraph.Host = mockServer.URL
+				}
+			}
+
+			exec := executor.NewExecutorV2(http.DefaultClient, createMockSuperGraphV2())
+			result, err := exec.Execute(context.Background(), tt.plan, nil)
+
+			// Partial response should NOT return error from Execute
+			if err != nil {
+				t.Errorf("Execute should not return error for partial response: %v", err)
+				return
+			}
+
+			// Verify data
+			actualData, ok := result["data"].(map[string]interface{})
+			if !ok {
+				t.Errorf("Result does not contain data field: %+v", result)
+				return
+			}
+
+			expectedJSON, _ := json.MarshalIndent(tt.expectedData, "", "  ")
+			actualJSON, _ := json.MarshalIndent(actualData, "", "  ")
+
+			if string(expectedJSON) != string(actualJSON) {
+				t.Errorf("Expected data:\n%s\n\nGot:\n%s", expectedJSON, actualJSON)
+			}
+
+			// Verify errors
+			if tt.expectedErrors > 0 {
+				errors, hasErrors := result["errors"]
+				if !hasErrors {
+					t.Errorf("Expected errors but none found in response")
+					return
+				}
+
+				errorList, ok := errors.([]executor.GraphQLError)
+				if !ok {
+					t.Errorf("Errors field is not []GraphQLError: %T", errors)
+					return
+				}
+
+				if len(errorList) != tt.expectedErrors {
+					t.Errorf("Expected %d errors, got %d: %+v", tt.expectedErrors, len(errorList), errorList)
+				}
+			} else {
+				if _, hasErrors := result["errors"]; hasErrors {
+					t.Errorf("Expected no errors but found: %+v", result["errors"])
+				}
+			}
+		})
+	}
+}
+
+// Helper function for JSON-based equality check (renamed to avoid conflict)
+func jsonEqual(a, b interface{}) bool {
+	aJSON, _ := json.Marshal(a)
+	bJSON, _ := json.Marshal(b)
+	return string(aJSON) == string(bJSON)
 }

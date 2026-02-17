@@ -28,6 +28,10 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
   * Avoids recursion hell by flattening entity requests.
   * Optimizes `_entities` queries by discarding unnecessary parent paths, ensuring compatibility with all subgraph implementations.
 * **Concurrent Execution:** Fetches independent subgraphs in parallel using Go routines with proper context handling.
+* **Partial Response Support:** Returns partial data when some subgraphs fail, improving resilience and user experience.
+  * Failed fields are set to `null` with detailed error information.
+  * Errors include path information and service name for easy debugging.
+  * See [Partial Response Documentation](docs/partial-response.md) for details.
 * **Observability:**
   * Full **OpenTelemetry** support.
   * Traces propagate context to subgraphs (`traceparent` injection), allowing for end-to-end visualization of distributed requests.

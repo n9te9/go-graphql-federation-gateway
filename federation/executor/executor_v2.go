@@ -16,6 +16,13 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+// GraphQLError represents a GraphQL error with path information.
+type GraphQLError struct {
+	Message    string                 `json:"message"`
+	Path       []interface{}          `json:"path,omitempty"`
+	Extensions map[string]interface{} `json:"extensions,omitempty"`
+}
+
 // ExecutorV2 executes a query plan by orchestrating requests to subgraphs.
 type ExecutorV2 struct {
 	httpClient   *http.Client
@@ -37,6 +44,7 @@ type ExecutionContext struct {
 	ctx     context.Context
 	plan    *planner.PlanV2
 	results map[int]interface{} // Step ID -> Result
+	errors  []GraphQLError      // Accumulated errors
 	mu      sync.RWMutex
 }
 
@@ -57,12 +65,11 @@ func (e *ExecutorV2) Execute(
 		ctx:     ctx,
 		plan:    plan,
 		results: make(map[int]interface{}),
+		errors:  make([]GraphQLError, 0),
 	}
 
-	// Execute root steps
-	if err := e.executeSteps(execCtx, plan.RootStepIndexes, variables); err != nil {
-		return nil, err
-	}
+	// Execute root steps (don't fail on error, collect them)
+	_ = e.executeSteps(execCtx, plan.RootStepIndexes, variables)
 
 	// Build final response from root step results
 	response := make(map[string]interface{})
@@ -84,6 +91,13 @@ func (e *ExecutorV2) Execute(
 	}
 
 	response["data"] = data
+
+	// Add errors if any occurred
+	execCtx.mu.RLock()
+	if len(execCtx.errors) > 0 {
+		response["errors"] = execCtx.errors
+	}
+	execCtx.mu.RUnlock()
 
 	// Prune response to remove fields not requested in original query
 	return e.pruneResponse(response, plan), nil
@@ -213,7 +227,9 @@ func (e *ExecutorV2) processStep(
 ) error {
 	// Guard against nil subgraph
 	if step.SubGraph == nil {
-		return fmt.Errorf("step %d has nil subgraph", step.ID)
+		err := fmt.Errorf("step %d has nil subgraph", step.ID)
+		e.recordError(execCtx, step, err)
+		return err
 	}
 
 	var query string
@@ -224,7 +240,8 @@ func (e *ExecutorV2) processStep(
 		// Root query
 		query, queryVars, err = e.queryBuilder.Build(step, nil, variables)
 		if err != nil {
-			return fmt.Errorf("failed to build root query: %w", err)
+			e.recordError(execCtx, step, fmt.Errorf("failed to build root query: %w", err))
+			return err
 		}
 	} else {
 		// Entity query - need to extract representations from parent results
@@ -239,14 +256,24 @@ func (e *ExecutorV2) processStep(
 
 		query, queryVars, err = e.queryBuilder.Build(step, representations, variables)
 		if err != nil {
-			return fmt.Errorf("failed to build entity query: %w", err)
+			e.recordError(execCtx, step, fmt.Errorf("failed to build entity query: %w", err))
+			return err
 		}
 	}
 
 	// Send request to subgraph
 	result, err := e.sendRequest(ctx, step.SubGraph.Host, query, queryVars)
 	if err != nil {
-		return fmt.Errorf("failed to send request to %s: %w", step.SubGraph.Host, err)
+		// Record error but continue with partial response
+		e.recordError(execCtx, step, err)
+		e.setNullForFailedStep(execCtx, step)
+		return nil // Don't propagate error, allow partial response
+	}
+
+	// Check if result contains errors
+	if errors, hasErrors := result["errors"]; hasErrors && errors != nil {
+		// Record GraphQL errors from subgraph
+		e.recordSubgraphErrors(execCtx, step, errors)
 	}
 
 	// Store result or merge into parent
@@ -258,7 +285,9 @@ func (e *ExecutorV2) processStep(
 	} else {
 		// Merge entity results into parent
 		if err := e.mergeEntityResults(execCtx, step, result); err != nil {
-			return fmt.Errorf("failed to merge entity results: %w", err)
+			e.recordError(execCtx, step, fmt.Errorf("failed to merge entity results: %w", err))
+			e.setNullForFailedStep(execCtx, step)
+			return nil // Don't propagate error
 		}
 		execCtx.mu.Lock()
 		execCtx.results[step.ID] = result
@@ -267,6 +296,241 @@ func (e *ExecutorV2) processStep(
 	}
 
 	return nil
+}
+
+// recordError records an error in the execution context with path information.
+func (e *ExecutorV2) recordError(execCtx *ExecutionContext, step *planner.StepV2, err error) {
+	if step.StepType == planner.StepTypeEntity && len(step.SelectionSet) > 0 {
+		// For entity steps, record errors for each field (excluding key fields)
+		basePath := e.buildErrorPath(step)
+		for _, sel := range step.SelectionSet {
+			if field, ok := sel.(*ast.Field); ok {
+				fieldName := field.Name.String()
+				if field.Alias != nil && field.Alias.String() != "" {
+					fieldName = field.Alias.String()
+				}
+				// Skip __typename and common key fields (id, _id, etc.)
+				if fieldName == "__typename" || fieldName == "id" || fieldName == "_id" {
+					continue
+				}
+				fieldPath := make([]interface{}, len(basePath))
+				copy(fieldPath, basePath)
+				fieldPath = append(fieldPath, fieldName)
+
+				graphqlErr := GraphQLError{
+					Message: err.Error(),
+					Path:    fieldPath,
+					Extensions: map[string]interface{}{
+						"serviceName": step.SubGraph.Name,
+					},
+				}
+
+				execCtx.mu.Lock()
+				execCtx.errors = append(execCtx.errors, graphqlErr)
+				execCtx.mu.Unlock()
+			}
+		}
+	} else {
+		// For root steps, record a single error
+		path := e.buildErrorPath(step)
+
+		graphqlErr := GraphQLError{
+			Message: err.Error(),
+			Path:    path,
+			Extensions: map[string]interface{}{
+				"serviceName": step.SubGraph.Name,
+			},
+		}
+
+		execCtx.mu.Lock()
+		execCtx.errors = append(execCtx.errors, graphqlErr)
+		execCtx.mu.Unlock()
+	}
+}
+
+// recordSubgraphErrors records errors from subgraph response.
+func (e *ExecutorV2) recordSubgraphErrors(execCtx *ExecutionContext, step *planner.StepV2, errors interface{}) {
+	errorList, ok := errors.([]interface{})
+	if !ok {
+		return
+	}
+
+	for _, errItem := range errorList {
+		errMap, ok := errItem.(map[string]interface{})
+		if !ok {
+			continue
+		}
+
+		message, _ := errMap["message"].(string)
+		if message == "" {
+			message = "Unknown error from subgraph"
+		}
+
+		// Build path by combining step path with error path from subgraph
+		path := e.buildErrorPath(step)
+		if errPath, hasPath := errMap["path"].([]interface{}); hasPath {
+			path = append(path, errPath...)
+		}
+
+		graphqlErr := GraphQLError{
+			Message: message,
+			Path:    path,
+			Extensions: map[string]interface{}{
+				"serviceName": step.SubGraph.Name,
+			},
+		}
+
+		if extensions, hasExt := errMap["extensions"].(map[string]interface{}); hasExt {
+			for k, v := range extensions {
+				graphqlErr.Extensions[k] = v
+			}
+		}
+
+		execCtx.mu.Lock()
+		execCtx.errors = append(execCtx.errors, graphqlErr)
+		execCtx.mu.Unlock()
+	}
+}
+
+// buildErrorPath builds the error path from step information.
+func (e *ExecutorV2) buildErrorPath(step *planner.StepV2) []interface{} {
+	path := make([]interface{}, 0)
+
+	// Use InsertionPath for entity steps, Path for root steps
+	var pathSegments []string
+	if step.StepType == planner.StepTypeEntity && len(step.InsertionPath) > 0 {
+		pathSegments = step.InsertionPath
+	} else if len(step.Path) > 0 {
+		pathSegments = step.Path
+	}
+
+	for _, segment := range pathSegments {
+		// Skip root type names (Query, Mutation, Subscription)
+		if segment == "Query" || segment == "Mutation" || segment == "Subscription" {
+			continue
+		}
+		path = append(path, segment)
+	}
+
+	return path
+}
+
+// setNullForFailedStep sets null for the fields that failed to resolve.
+func (e *ExecutorV2) setNullForFailedStep(execCtx *ExecutionContext, step *planner.StepV2) {
+	execCtx.mu.Lock()
+	defer execCtx.mu.Unlock()
+
+	if step.StepType == planner.StepTypeQuery {
+		// For root queries, create a null result
+		nullData := make(map[string]interface{})
+		for _, sel := range step.SelectionSet {
+			if field, ok := sel.(*ast.Field); ok {
+				fieldName := field.Name.String()
+				if field.Alias != nil && field.Alias.String() != "" {
+					fieldName = field.Alias.String()
+				}
+				nullData[fieldName] = nil
+			}
+		}
+		execCtx.results[step.ID] = map[string]interface{}{
+			"data": nullData,
+		}
+	} else {
+		// For entity queries, set null for fields in parent result
+		if len(step.DependsOn) == 0 {
+			execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+			return
+		}
+
+		// Find root step result
+		var rootStepID int
+		var rootResult interface{}
+		for _, s := range execCtx.plan.Steps {
+			if len(s.DependsOn) == 0 {
+				rootStepID = s.ID
+				rootResult = execCtx.results[s.ID]
+				break
+			}
+		}
+
+		if rootResult == nil {
+			execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+			return
+		}
+
+		rootResultMap, ok := rootResult.(map[string]interface{})
+		if !ok {
+			execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+			return
+		}
+
+		rootData, ok := rootResultMap["data"].(map[string]interface{})
+		if !ok {
+			execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+			return
+		}
+
+		// Navigate to target entity using InsertionPath
+		mergePath := make([]string, 0)
+		for i, segment := range step.InsertionPath {
+			if i == 0 && (segment == "Query" || segment == "Mutation" || segment == "Subscription") {
+				continue
+			}
+			mergePath = append(mergePath, segment)
+		}
+
+		// Navigate to the target entity
+		var current interface{} = rootData
+		for _, segment := range mergePath {
+			if currentMap, ok := current.(map[string]interface{}); ok {
+				if next, exists := currentMap[segment]; exists {
+					current = next
+				} else {
+					execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+					return
+				}
+			} else if currentArray, ok := current.([]interface{}); ok {
+				// If it's an array, set null for each item
+				for _, item := range currentArray {
+					if itemMap, ok := item.(map[string]interface{}); ok {
+						e.setNullFieldsInEntity(itemMap, step.SelectionSet)
+					}
+				}
+				execCtx.results[rootStepID] = rootResultMap
+				execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+				return
+			} else {
+				execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+				return
+			}
+		}
+
+		// Set null for each field in the selection set
+		if entityMap, ok := current.(map[string]interface{}); ok {
+			e.setNullFieldsInEntity(entityMap, step.SelectionSet)
+		}
+
+		// Update root result
+		execCtx.results[rootStepID] = rootResultMap
+		execCtx.results[step.ID] = map[string]interface{}{"data": map[string]interface{}{}}
+	}
+}
+
+// setNullFieldsInEntity sets null for fields in an entity map.
+func (e *ExecutorV2) setNullFieldsInEntity(entityMap map[string]interface{}, selectionSet []ast.Selection) {
+	for _, sel := range selectionSet {
+		if field, ok := sel.(*ast.Field); ok {
+			fieldName := field.Name.String()
+			if field.Alias != nil && field.Alias.String() != "" {
+				fieldName = field.Alias.String()
+			}
+			// Skip __typename and key fields
+			if fieldName == "__typename" || fieldName == "id" || fieldName == "_id" {
+				continue
+			}
+			entityMap[fieldName] = nil
+		}
+	}
 }
 
 // extractRepresentations extracts entity representations from parent step results.
