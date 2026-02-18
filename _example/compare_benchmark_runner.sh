@@ -157,7 +157,7 @@ echo -e "${GREEN}✓ Apollo Router ready${NC}"
 
 # Step 3: Start Go Gateway (Docker)
 echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
-docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
+docker compose -f docker-compose.gateway.yaml up --build -d > /dev/null 2>&1
 
 # Wait for Go Gateway
 if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
