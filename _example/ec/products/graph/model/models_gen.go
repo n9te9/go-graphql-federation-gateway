@@ -2,19 +2,15 @@
 
 package model
 
-type Node interface {
-	IsNode()
-	GetID() string
+type Mutation struct {
 }
 
 type Product struct {
-	ID    string `json:"id"`
-	Name  string `json:"name"`
-	Price int    `json:"price"`
+	ID     string  `json:"id"`
+	Name   string  `json:"name"`
+	Price  int     `json:"price"`
+	Weight float64 `json:"weight"`
 }
-
-func (Product) IsNode()            {}
-func (this Product) GetID() string { return this.ID }
 
 func (Product) IsEntity() {}
 

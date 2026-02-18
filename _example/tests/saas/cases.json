@@ -138,5 +138,18 @@
         }
       }
     }
+  },
+  {
+    "name": "Federation v2: @requires - Monthly Cost Computation",
+    "description": "Verify that @requires automatically fetches employeeCount field for monthlyCost calculation",
+    "query": "query { organization(id: \"org1\") { id name monthlyCost } }",
+    "variables": {},
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "monthlyCost": 5000
+      }
+    }
   }
 ]

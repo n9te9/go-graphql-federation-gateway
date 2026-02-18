@@ -11,8 +11,10 @@ type Comment struct {
 func (Comment) IsEntity() {}
 
 type Post struct {
-	ID       string     `json:"id"`
-	Comments []*Comment `json:"comments"`
+	ID              string     `json:"id"`
+	LikeCount       int        `json:"likeCount"`
+	Comments        []*Comment `json:"comments"`
+	EngagementScore float64    `json:"engagementScore"`
 }
 
 func (Post) IsEntity() {}

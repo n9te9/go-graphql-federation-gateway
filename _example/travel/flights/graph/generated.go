@@ -57,6 +57,7 @@ type ComplexityRoot struct {
 		Destination   func(childComplexity int) int
 		Number        func(childComplexity int) int
 		Origin        func(childComplexity int) int
+		Price         func(childComplexity int) int
 	}
 
 	Query struct {
@@ -132,6 +133,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Flight.Origin(childComplexity), true
+	case "Flight.price":
+		if e.complexity.Flight.Price == nil {
+			break
+		}
+
+		return e.complexity.Flight.Price(childComplexity), true
 
 	case "Query.flight":
 		if e.complexity.Query.Flight == nil {
@@ -485,6 +492,8 @@ func (ec *executionContext) fieldContext_Entity_findFlightByNumberAndDepartureDa
 				return ec.fieldContext_Flight_origin(ctx, field)
 			case "destination":
 				return ec.fieldContext_Flight_destination(ctx, field)
+			case "price":
+				return ec.fieldContext_Flight_price(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
 		},
@@ -619,6 +628,35 @@ func (ec *executionContext) fieldContext_Flight_destination(_ context.Context, f
 	return fc, nil
 }
 
+func (ec *executionContext) _Flight_price(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Flight_price,
+		func(ctx context.Context) (any, error) {
+			return obj.Price, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Flight_price(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Flight",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_flight(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -652,6 +690,8 @@ func (ec *executionContext) fieldContext_Query_flight(ctx context.Context, field
 				return ec.fieldContext_Flight_origin(ctx, field)
 			case "destination":
 				return ec.fieldContext_Flight_destination(ctx, field)
+			case "price":
+				return ec.fieldContext_Flight_price(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
 		},
@@ -2450,6 +2490,11 @@ func (ec *executionContext) _Flight(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "price":
+			out.Values[i] = ec._Flight_price(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3001,6 +3046,22 @@ func (ec *executionContext) marshalNFlight2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphq
 		return graphql.Null
 	}
 	return ec._Flight(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

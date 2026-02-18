@@ -10,7 +10,7 @@ import (
 )
 
 // QueryBuilderV2 builds GraphQL queries from steps.
-type QueryBuilderV2 struct{
+type QueryBuilderV2 struct {
 	superGraph *graph.SuperGraphV2
 }
 
@@ -22,31 +22,38 @@ func NewQueryBuilderV2(superGraph *graph.SuperGraphV2) *QueryBuilderV2 {
 }
 
 // Build generates a GraphQL query string and variables from a step.
-// For root queries (StepTypeQuery), it generates a regular query.
+// For root queries (StepTypeQuery), it generates a regular query or mutation.
 // For entity queries (StepTypeEntity), it generates an _entities query with representations.
 func (qb *QueryBuilderV2) Build(
 	step *planner.StepV2,
 	representations []map[string]interface{},
 	variables map[string]interface{},
+	operationType string,
 ) (string, map[string]interface{}, error) {
 	if step.StepType == planner.StepTypeQuery {
-		return qb.buildRootQuery(step, variables)
+		return qb.buildRootQuery(step, variables, operationType)
 	}
 	return qb.buildEntityQuery(step, representations, variables)
 }
 
-// buildRootQuery builds a root query from selections.
+// buildRootQuery builds a root query or mutation from selections.
 func (qb *QueryBuilderV2) buildRootQuery(
 	step *planner.StepV2,
 	variables map[string]interface{},
+	operationType string,
 ) (string, map[string]interface{}, error) {
 	var sb strings.Builder
-	
+
 	// Collect variables used in the selection set
 	varNames := qb.collectVariables(step.SelectionSet)
-	
-	// Build query header with variable definitions
-	sb.WriteString("query")
+
+	// Default to "query" if not specified
+	if operationType == "" {
+		operationType = "query"
+	}
+
+	// Build query/mutation header with variable definitions
+	sb.WriteString(operationType)
 	if len(varNames) > 0 {
 		sb.WriteString(" (")
 		first := true
@@ -81,7 +88,7 @@ func (qb *QueryBuilderV2) buildRootQuery(
 func (qb *QueryBuilderV2) collectVariables(selections []ast.Selection) []string {
 	vars := make(map[string]bool)
 	qb.collectVariablesRecursive(selections, vars)
-	
+
 	// Convert map to sorted slice for consistent output
 	result := make([]string, 0, len(vars))
 	for v := range vars {
@@ -135,7 +142,7 @@ func (qb *QueryBuilderV2) inferVariableType(varName string, variables map[string
 			return varType
 		}
 	}
-	
+
 	// Fallback: infer from value
 	if val, ok := variables[varName]; ok {
 		switch val.(type) {
@@ -149,7 +156,7 @@ func (qb *QueryBuilderV2) inferVariableType(varName string, variables map[string
 			return "Boolean"
 		}
 	}
-	
+
 	// Default to String
 	return "String"
 }
@@ -175,7 +182,7 @@ func (qb *QueryBuilderV2) getArgumentTypeFromSchema(step *planner.StepV2, parent
 	if step.SubGraph == nil || step.SubGraph.Schema == nil {
 		return ""
 	}
-	
+
 	// Find the parent type definition
 	for _, def := range step.SubGraph.Schema.Definitions {
 		if objType, ok := def.(*ast.ObjectTypeDefinition); ok && objType.Name.String() == parentType {
@@ -192,7 +199,7 @@ func (qb *QueryBuilderV2) getArgumentTypeFromSchema(step *planner.StepV2, parent
 			}
 		}
 	}
-	
+
 	return ""
 }
 
@@ -201,7 +208,7 @@ func (qb *QueryBuilderV2) getFieldType(step *planner.StepV2, parentType, fieldNa
 	if step.SubGraph == nil || step.SubGraph.Schema == nil {
 		return ""
 	}
-	
+
 	// Find the parent type definition
 	for _, def := range step.SubGraph.Schema.Definitions {
 		if objType, ok := def.(*ast.ObjectTypeDefinition); ok && objType.Name.String() == parentType {
@@ -214,7 +221,7 @@ func (qb *QueryBuilderV2) getFieldType(step *planner.StepV2, parentType, fieldNa
 			}
 		}
 	}
-	
+
 	return ""
 }
 
@@ -274,19 +281,19 @@ func (qb *QueryBuilderV2) writeSelection(sb *strings.Builder, sel ast.Selection,
 	switch s := sel.(type) {
 	case *ast.Field:
 		fieldName := s.Name.String()
-		
+
 		// Note: We don't skip boundary fields here because the planner has already
 		// divided the query into appropriate steps. Each step only contains selections
 		// that should be executed on that subgraph.
-		
+
 		sb.WriteString(indent)
-		
+
 		// Write alias if present
 		if s.Alias != nil && s.Alias.String() != "" {
 			sb.WriteString(s.Alias.String())
 			sb.WriteString(": ")
 		}
-		
+
 		sb.WriteString(s.Name.String())
 
 		// Write arguments if present
@@ -384,4 +391,3 @@ func (qb *QueryBuilderV2) writeValue(sb *strings.Builder, val ast.Value) {
 		sb.WriteString("null")
 	}
 }
-

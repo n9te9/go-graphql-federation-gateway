@@ -80,5 +80,17 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @requires - Risk Score Computation",
+    "description": "Verify that @requires automatically fetches balance field for riskScore calculation",
+    "query": "query { account(iban: \"IBAN 1\") { iban riskScore } }",
+    "variables": {},
+    "expected": {
+      "account": {
+        "iban": "IBAN 1",
+        "riskScore": 10
+      }
+    }
   }
 ]

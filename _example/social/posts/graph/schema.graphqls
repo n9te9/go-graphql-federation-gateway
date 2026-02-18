@@ -1,11 +1,12 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@external"])
+        import: ["@key", "@external", "@shareable"])
 
 type Post @key(fields: "id") {
   id: ID!
   title: String!
   content: String!
+  likeCount: Int! @shareable
   author: User!
 }
 

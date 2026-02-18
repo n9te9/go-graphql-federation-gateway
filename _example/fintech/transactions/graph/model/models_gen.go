@@ -4,7 +4,9 @@ package model
 
 type Account struct {
 	Iban         string         `json:"iban"`
+	Balance      int            `json:"balance"`
 	Transactions []*Transaction `json:"transactions"`
+	RiskScore    float64        `json:"riskScore"`
 }
 
 func (Account) IsEntity() {}

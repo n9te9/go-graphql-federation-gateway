@@ -2,7 +2,9 @@ extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
         import: ["@key", "@external", "@requires"])
 
-extend type Product @key(fields: "id") {
+extend type Product @key(fields: "id", resolvable: false) {
   id: ID! @external
+  weight: Float! @external
   inStock: Boolean!
+  shippingCost: Float! @requires(fields: "weight")
 }

@@ -18,7 +18,7 @@ func TestBuildQuery(t *testing.T) {
 		variables         map[string]interface{}
 		expectedQueryPart string // Part of the expected query
 		expectError       bool
-		checkVariableDef  bool   // Whether to check for variable definition
+		checkVariableDef  bool // Whether to check for variable definition
 	}{
 		{
 			name: "Simple root query",
@@ -129,8 +129,8 @@ func TestBuildQuery(t *testing.T) {
 		{
 			name: "Entity query with representations",
 			step: &planner.StepV2{
-				ID:       2,
-				StepType: planner.StepTypeEntity,
+				ID:         2,
+				StepType:   planner.StepTypeEntity,
 				ParentType: "Product",
 				SelectionSet: []ast.Selection{
 					&ast.Field{
@@ -163,7 +163,7 @@ func TestBuildQuery(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			query, variables, err := qb.Build(tt.step, tt.representations, tt.variables)
+			query, variables, err := qb.Build(tt.step, tt.representations, tt.variables, "query")
 
 			if tt.expectError {
 				if err == nil {

@@ -19,9 +19,16 @@ func (r *queryResolver) Flight(ctx context.Context, number string, departureDate
 			DepartureDate: departureDate,
 			Origin:        "SFO",
 			Destination:   "JFK",
+			Price:         500.0,
 		}, nil
 	}
-	return &model.Flight{Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "NRT"}, nil
+	return &model.Flight{
+		Number:        number,
+		DepartureDate: departureDate,
+		Origin:        "HND",
+		Destination:   "NRT",
+		Price:         300.0,
+	}, nil
 }
 
 // Query returns QueryResolver implementation.

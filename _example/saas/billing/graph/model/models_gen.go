@@ -10,8 +10,10 @@ type BillingInfo struct {
 func (BillingInfo) IsEntity() {}
 
 type Organization struct {
-	ID      string       `json:"id"`
-	Billing *BillingInfo `json:"billing,omitempty"`
+	ID            string       `json:"id"`
+	EmployeeCount int          `json:"employeeCount"`
+	Billing       *BillingInfo `json:"billing,omitempty"`
+	MonthlyCost   float64      `json:"monthlyCost"`
 }
 
 func (Organization) IsEntity() {}

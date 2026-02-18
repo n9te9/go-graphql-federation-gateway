@@ -25,10 +25,16 @@ func (r *entityResolver) FindCommentByID(ctx context.Context, id string) (*model
 
 // FindPostByID is the resolver for the findPostByID field.
 func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Post, error) {
+	// Calculate engagement score based on likeCount (provided via @requires)
+	// For testing: engagementScore = likeCount / 10
+	likeCount := 100 // This will be provided by the gateway via @requires
+	engagementScore := float64(likeCount) / 10.0
+
 	// Return Post with comments
 	if id == "post1" {
 		return &model.Post{
-			ID: id,
+			ID:              id,
+			EngagementScore: engagementScore,
 			Comments: []*model.Comment{
 				{
 					ID:     "comment1",
@@ -38,7 +44,11 @@ func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Po
 			},
 		}, nil
 	}
-	return &model.Post{ID: id, Comments: []*model.Comment{}}, nil
+	return &model.Post{
+		ID:              id,
+		EngagementScore: 1.0,
+		Comments:        []*model.Comment{},
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

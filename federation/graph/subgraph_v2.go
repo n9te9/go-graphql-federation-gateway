@@ -195,3 +195,14 @@ func (f *Field) IsShareable() bool {
 func (e *Entity) IsExtension() bool {
 	return e.isExtension
 }
+
+// IsResolvable returns whether the Entity has at least one resolvable key.
+// If all keys have resolvable: false, this returns false.
+func (e *Entity) IsResolvable() bool {
+	for _, key := range e.Keys {
+		if key.Resolvable {
+			return true
+		}
+	}
+	return false
+}

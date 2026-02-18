@@ -51,6 +51,7 @@ type ComplexityRoot struct {
 	Customer struct {
 		ID   func(childComplexity int) int
 		Name func(childComplexity int) int
+		Tier func(childComplexity int) int
 	}
 
 	Entity struct {
@@ -106,6 +107,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Customer.Name(childComplexity), true
+	case "Customer.tier":
+		if e.complexity.Customer.Tier == nil {
+			break
+		}
+
+		return e.complexity.Customer.Tier(childComplexity), true
 
 	case "Entity.findCustomerByID":
 		if e.complexity.Entity.FindCustomerByID == nil {
@@ -486,6 +493,35 @@ func (ec *executionContext) fieldContext_Customer_name(_ context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _Customer_tier(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Customer_tier,
+		func(ctx context.Context) (any, error) {
+			return obj.Tier, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Customer_tier(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Customer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Entity_findCustomerByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -515,6 +551,8 @@ func (ec *executionContext) fieldContext_Entity_findCustomerByID(ctx context.Con
 				return ec.fieldContext_Customer_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Customer_name(ctx, field)
+			case "tier":
+				return ec.fieldContext_Customer_tier(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Customer", field.Name)
 		},
@@ -562,6 +600,8 @@ func (ec *executionContext) fieldContext_Query_customer(ctx context.Context, fie
 				return ec.fieldContext_Customer_id(ctx, field)
 			case "name":
 				return ec.fieldContext_Customer_name(ctx, field)
+			case "tier":
+				return ec.fieldContext_Customer_tier(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Customer", field.Name)
 		},
@@ -2283,6 +2323,11 @@ func (ec *executionContext) _Customer(ctx context.Context, sel ast.SelectionSet,
 			}
 		case "name":
 			out.Values[i] = ec._Customer_name(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "tier":
+			out.Values[i] = ec._Customer_tier(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

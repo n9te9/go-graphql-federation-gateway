@@ -237,8 +237,8 @@ func (e *ExecutorV2) processStep(
 	var err error
 
 	if step.StepType == planner.StepTypeQuery {
-		// Root query
-		query, queryVars, err = e.queryBuilder.Build(step, nil, variables)
+		// Root query - pass operation type from plan
+		query, queryVars, err = e.queryBuilder.Build(step, nil, variables, execCtx.plan.OperationType)
 		if err != nil {
 			e.recordError(execCtx, step, fmt.Errorf("failed to build root query: %w", err))
 			return err
@@ -254,7 +254,7 @@ func (e *ExecutorV2) processStep(
 			return nil
 		}
 
-		query, queryVars, err = e.queryBuilder.Build(step, representations, variables)
+		query, queryVars, err = e.queryBuilder.Build(step, representations, variables, execCtx.plan.OperationType)
 		if err != nil {
 			e.recordError(execCtx, step, fmt.Errorf("failed to build entity query: %w", err))
 			return err

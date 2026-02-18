@@ -189,6 +189,10 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`resolving Entity "Organization": %w`, err)
 			}
 
+			entity.EmployeeCount, err = ec.unmarshalNInt2int(ctx, rep["employeeCount"])
+			if err != nil {
+				return nil, err
+			}
 			return entity, nil
 		}
 

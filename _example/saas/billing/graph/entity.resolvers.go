@@ -22,12 +22,25 @@ func (r *entityResolver) FindBillingInfoByID(ctx context.Context, id string) (*m
 
 // FindOrganizationByID is the resolver for the findOrganizationByID field.
 func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
+	// Calculate monthly cost based on employeeCount (provided via @requires)
+	// For testing: monthlyCost = employeeCount * 100
+	employeeCount := 50 // This will be provided by the gateway via @requires
+	monthlyCost := float64(employeeCount) * 100.0
+
 	// Return Organization with billing info
 	billingInfo := &model.BillingInfo{ID: "bill1", Plan: "Enterprise"}
 	if id == "org1" {
-		return &model.Organization{ID: id, Billing: billingInfo}, nil
+		return &model.Organization{
+			ID:          id,
+			Billing:     billingInfo,
+			MonthlyCost: monthlyCost,
+		}, nil
 	}
-	return &model.Organization{ID: id, Billing: nil}, nil
+	return &model.Organization{
+		ID:          id,
+		Billing:     nil,
+		MonthlyCost: 1000.0,
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

@@ -145,6 +145,21 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 		p.findAndBuildEntitySteps(originalSelections, rootStep, plan, &nextStepID, rootStep.ParentType, rootStep.Path, fragmentDefs)
 	}
 
+	// Inject @requires dependencies into parent steps
+	p.injectRequiresDependencies(plan)
+
+	// TODO: Apply @provides optimization
+	// @provides allows a subgraph to declare that it already provides certain fields
+	// that would normally require a separate fetch from another subgraph.
+	// Implementation would involve:
+	// 1. Scanning steps for fields with @provides directives
+	// 2. Checking if provided fields are queried
+	// 3. Overriding ownership for provided fields to avoid unnecessary entity fetches
+	// 4. Removing or merging entity resolution steps that are no longer needed
+	// This optimization can significantly reduce network calls in federated queries.
+	// For now, @provides directives are parsed and available in entity field metadata,
+	// but the optimization logic is deferred to future implementation.
+
 	return plan, nil
 }
 
@@ -785,4 +800,123 @@ func (p *PlannerV2) getNamedType(t ast.Type) string {
 	default:
 		return ""
 	}
+}
+
+// injectRequiresDependencies injects @requires fields into parent steps.
+// This ensures that required fields are fetched before they're needed by child steps.
+func (p *PlannerV2) injectRequiresDependencies(plan *PlanV2) {
+	// For each step, check if any field has @requires
+	for _, step := range plan.Steps {
+		// Only entity steps need dependency injection
+		if step.StepType != StepTypeEntity {
+			continue
+		}
+
+		// Get required fields for this step's selections
+		requiredFields := p.collectRequiredFields(step.SelectionSet, step.ParentType, step.SubGraph)
+
+		if len(requiredFields) == 0 {
+			continue
+		}
+
+		// Inject required fields into parent steps (steps this one depends on)
+		for _, parentStepID := range step.DependsOn {
+			parentStep := plan.Steps[parentStepID]
+
+			// Inject into the entity fields within parent step
+			// We need to find fields that return the entity type (step.ParentType)
+			p.injectFieldsIntoSelections(parentStep.SelectionSet, parentStep.ParentType, step.ParentType, requiredFields)
+		}
+	}
+}
+
+// injectFieldsIntoSelections recursively finds fields that return targetTypeName and injects required fields
+func (p *PlannerV2) injectFieldsIntoSelections(selections []ast.Selection, currentTypeName, targetTypeName string, fieldsToInject map[string]bool) {
+	for _, sel := range selections {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+
+		fieldName := field.Name.String()
+
+		// Skip meta fields
+		if fieldName == "__typename" {
+			continue
+		}
+
+		// Get the field's return type
+		fieldTypeName, err := p.getFieldTypeName(currentTypeName, fieldName)
+		if err != nil {
+			continue
+		}
+
+		// If this field's return type matches the target type, inject required fields here
+		if fieldTypeName == targetTypeName {
+			// Inject required fields into this field's selection set
+			for requiredFieldName := range fieldsToInject {
+				if !p.hasFieldInSelectionSet(field.SelectionSet, requiredFieldName) {
+					newField := &ast.Field{
+						Name: &ast.Name{Value: requiredFieldName},
+					}
+					field.SelectionSet = append(field.SelectionSet, newField)
+				}
+			}
+		}
+
+		// Recursively check nested selections
+		if len(field.SelectionSet) > 0 {
+			p.injectFieldsIntoSelections(field.SelectionSet, fieldTypeName, targetTypeName, fieldsToInject)
+		}
+	}
+}
+
+// collectRequiredFields collects all fields specified in @requires directives
+// for the given selection set.
+func (p *PlannerV2) collectRequiredFields(selections []ast.Selection, parentTypeName string, subGraph *graph.SubGraphV2) map[string]bool {
+	required := make(map[string]bool)
+
+	for _, sel := range selections {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+
+		fieldName := field.Name.String()
+
+		// Get entity metadata from subgraph
+		if entity, exists := subGraph.GetEntity(parentTypeName); exists {
+			if fieldMetadata, ok := entity.Fields[fieldName]; ok {
+				// Add all required fields
+				for _, reqField := range fieldMetadata.Requires {
+					required[reqField] = true
+				}
+			}
+		}
+
+		// Recursively check nested selections
+		if len(field.SelectionSet) > 0 {
+			fieldTypeName, err := p.getFieldTypeName(parentTypeName, fieldName)
+			if err == nil {
+				nestedRequired := p.collectRequiredFields(field.SelectionSet, fieldTypeName, subGraph)
+				for reqField := range nestedRequired {
+					required[reqField] = true
+				}
+			}
+		}
+	}
+
+	return required
+}
+
+// hasFieldInSelectionSet checks if a field with the given name exists in the selection set.
+func (p *PlannerV2) hasFieldInSelectionSet(selections []ast.Selection, fieldName string) bool {
+	for _, sel := range selections {
+		if field, ok := sel.(*ast.Field); ok {
+			if field.Name.String() == fieldName {
+				return true
+			}
+		}
+	}
+	return false
 }

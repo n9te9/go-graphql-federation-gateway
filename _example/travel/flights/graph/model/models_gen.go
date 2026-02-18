@@ -3,10 +3,11 @@
 package model
 
 type Flight struct {
-	Number        string `json:"number"`
-	DepartureDate string `json:"departureDate"`
-	Origin        string `json:"origin"`
-	Destination   string `json:"destination"`
+	Number        string  `json:"number"`
+	DepartureDate string  `json:"departureDate"`
+	Origin        string  `json:"origin"`
+	Destination   string  `json:"destination"`
+	Price         float64 `json:"price"`
 }
 
 func (Flight) IsEntity() {}
