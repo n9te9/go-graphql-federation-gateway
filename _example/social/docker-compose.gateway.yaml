@@ -1,0 +1,14 @@
+services:
+  go-gateway:
+    build:
+      context: ../..
+      dockerfile: _example/Dockerfile.gateway
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./gateway.docker.yaml:/app/gateway.yaml
+      - ./users:/app/users
+      - ./posts:/app/posts
+      - ./comments:/app/comments
+    environment:
+      - PORT=9000

@@ -1,0 +1,13 @@
+cors:
+  allow_any_origin: true
+  
+headers:
+  all:
+    request:
+      - propagate:
+          matching: .*
+
+telemetry:
+  instrumentation:
+    spans:
+      mode: spec_compliant

@@ -1,0 +1,13 @@
+{"time":"2026-02-17T12:31:22.902347+09:00","level":"INFO","msg":"starting gateway server on port 9000"}
+{"time":"2026-02-17T12:31:32.915738+09:00","level":"INFO","msg":"traces export: Post \"https://localhost:4318/v1/traces\": http: server gave HTTP response to HTTPS client"}
+{"time":"2026-02-17T12:31:47.910879+09:00","level":"INFO","msg":"traces export: Post \"https://localhost:4318/v1/traces\": http: server gave HTTP response to HTTPS client"}
+{"time":"2026-02-17T12:31:52.90997+09:00","level":"INFO","msg":"traces export: Post \"https://localhost:4318/v1/traces\": http: server gave HTTP response to HTTPS client"}
+{"time":"2026-02-17T12:32:02.914146+09:00","level":"INFO","msg":"traces export: Post \"https://localhost:4318/v1/traces\": http: server gave HTTP response to HTTPS client"}
+{"time":"2026-02-17T12:32:22.911606+09:00","level":"INFO","msg":"traces export: Post \"https://localhost:4318/v1/traces\": http: server gave HTTP response to HTTPS client"}
+{IDENT UserFields 1 55 65}
+{IDENT UserWithPosts 1 58 71}
+{IDENT BasicUser 1 128 137}
+{IDENT PostInfo 1 167 175}
+{"time":"2026-02-17T12:33:33.977575+09:00","level":"INFO","msg":"shutting down gateway server..."}
+{"time":"2026-02-17T12:33:33.979022+09:00","level":"INFO","msg":"traces export: Post \"https://localhost:4318/v1/traces\": dial tcp [::1]:4318: connect: connection refused"}
+{"time":"2026-02-17T12:33:33.979054+09:00","level":"INFO","msg":"gateway server stopped"}

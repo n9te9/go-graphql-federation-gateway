@@ -1,0 +1,164 @@
+name: Benchmark Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Install hey (HTTP load generator)
+        run: |
+          wget -q https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64
+          chmod +x hey_linux_amd64
+          sudo mv hey_linux_amd64 /usr/local/bin/hey
+          hey -version || echo "✓ hey installed"
+
+      - name: Install Apollo Router
+        run: |
+          curl -sSL https://router.apollo.dev/download/nix/latest | sh
+          sudo mv router /usr/local/bin/
+          router --version
+
+      - name: Build gateway binary
+        run: |
+          go build -o cmd/go-graphql-federation-gateway/gateway cmd/go-graphql-federation-gateway/main.go
+          chmod +x cmd/go-graphql-federation-gateway/gateway
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build gateway Docker image
+        run: |
+          docker build -f _example/Dockerfile.gateway -t federation-gateway:latest .
+
+      - name: Run comprehensive comparative benchmark (All domains)
+        id: benchmark-all
+        run: |
+          cd _example
+          make all-compare-benchmark 2>&1 | tee benchmark_results.txt
+        continue-on-error: true
+
+      - name: Extract benchmark summary
+        if: always()
+        id: extract-summary
+        run: |
+          cd _example
+          
+          # Extract performance comparison
+          if [ -f benchmark_results.txt ]; then
+            echo "## 🚀 Benchmark Results Summary" > benchmark_summary.md
+            echo "" >> benchmark_summary.md
+            
+            # Extract the summary table
+            sed -n '/╔.*Benchmark Results Summary.*╗/,/✓ Benchmark completed/p' benchmark_results.txt >> benchmark_summary.md
+            
+            # Save for artifact
+            cp benchmark_summary.md ../benchmark_summary.md
+            
+            echo "✓ Summary extracted"
+            cat benchmark_summary.md
+          else
+            echo "⚠️ Benchmark results not found"
+          fi
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: |
+            _example/benchmark_results.txt
+            benchmark_summary.md
+          retention-days: 90
+
+      - name: Comment PR with benchmark results
+        if: github.event_name == 'pull_request' && always()
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = '## 🚀 Benchmark Results (Go Gateway vs Apollo Router)\n\n';
+            
+            try {
+              if (fs.existsSync('benchmark_summary.md')) {
+                const summary = fs.readFileSync('benchmark_summary.md', 'utf8');
+                comment += summary;
+              } else {
+                comment += '⚠️ Benchmark completed but summary extraction failed.\n\n';
+              }
+              
+              comment += '\n\n---\n';
+              comment += '📊 Full benchmark results are available in [Actions Artifacts](';
+              comment += `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              
+            } catch (e) {
+              comment += '❌ Failed to extract benchmark results.\n\n';
+              comment += `Error: ${e.message}\n`;
+            }
+            
+            // Post comment
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Check benchmark performance threshold
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          cd _example
+          
+          if [ -f benchmark_results.txt ]; then
+            # Extract Go Gateway average
+            GO_AVG=$(grep "Go Gateway.*avg:" benchmark_results.txt | grep -oP '\d+\.\d+' | head -1)
+            APOLLO_AVG=$(grep "Apollo Router.*avg:" benchmark_results.txt | grep -oP '\d+\.\d+' | head -1)
+            
+            echo "📊 Performance Metrics:"
+            echo "  Go Gateway:     ${GO_AVG:-N/A} req/s"
+            echo "  Apollo Router:  ${APOLLO_AVG:-N/A} req/s"
+            
+            if [ ! -z "$GO_AVG" ] && [ ! -z "$APOLLO_AVG" ]; then
+              # Simple comparison (we expect Go Gateway to be faster)
+              RATIO=$(echo "scale=2; $GO_AVG / $APOLLO_AVG" | bc)
+              echo "  Performance ratio: ${RATIO}x"
+              
+              if (( $(echo "$RATIO >= 1.0" | bc -l) )); then
+                echo "✅ Performance benchmark PASSED (Go Gateway >= Apollo Router)"
+              else
+                echo "⚠️  Performance benchmark WARNING (Go Gateway slower than Apollo Router)"
+              fi
+            fi
+          fi
+          
+          echo ""
+          echo "✅ Benchmark tests completed for main branch"
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps -a -q | xargs -r docker stop || true
+          docker ps -a -q | xargs -r docker rm || true
+          pkill -f gateway || true

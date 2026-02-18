@@ -1,0 +1,7 @@
+{"time":"2026-02-17T12:39:22.921622+09:00","level":"INFO","msg":"starting gateway server on port 9000"}
+{IDENT CustomerFields 1 59 73}
+{IDENT CustomerWithAccounts 1 65 85}
+{IDENT BasicCustomer 1 156 169}
+{IDENT AccountInfo 1 200 211}
+{"time":"2026-02-17T12:40:38.466052+09:00","level":"INFO","msg":"shutting down gateway server..."}
+{"time":"2026-02-17T12:40:38.46653+09:00","level":"INFO","msg":"gateway server stopped"}

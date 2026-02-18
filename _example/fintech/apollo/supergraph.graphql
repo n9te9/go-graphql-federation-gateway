@@ -1,0 +1,79 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+{
+  query: Query
+}
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar join__FieldSet
+
+enum join__Graph {
+  CUSTOMERS @join__graph(name: "customers", url: "http://host.docker.internal:8201/query")
+  ACCOUNTS @join__graph(name: "accounts", url: "http://host.docker.internal:8202/query")
+  TRANSACTIONS @join__graph(name: "transactions", url: "http://host.docker.internal:8203/query")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type Account
+  @join__type(graph: ACCOUNTS, key: "iban")
+  @join__type(graph: TRANSACTIONS, key: "iban", extension: true)
+{
+  iban: ID! @join__field(graph: ACCOUNTS) @join__field(graph: TRANSACTIONS, external: true)
+  id: ID! @join__field(graph: ACCOUNTS)
+  balance: Int! @join__field(graph: ACCOUNTS) @join__field(graph: TRANSACTIONS, external: true)
+  customer: Customer! @join__field(graph: ACCOUNTS)
+  transactions: [Transaction!]! @join__field(graph: TRANSACTIONS)
+  riskScore: Float! @join__field(graph: TRANSACTIONS, requires: "balance")
+}
+
+type Customer
+  @join__type(graph: CUSTOMERS, key: "id")
+  @join__type(graph: ACCOUNTS, key: "id", extension: true)
+{
+  id: ID! @join__field(graph: CUSTOMERS) @join__field(graph: ACCOUNTS, external: true)
+  name: String! @join__field(graph: CUSTOMERS)
+  tier: String! @join__field(graph: CUSTOMERS)
+  accounts: [Account!]! @join__field(graph: ACCOUNTS)
+}
+
+type Query
+  @join__type(graph: CUSTOMERS)
+  @join__type(graph: ACCOUNTS)
+{
+  customer(id: ID!): Customer @join__field(graph: CUSTOMERS)
+  account(iban: ID!): Account @join__field(graph: ACCOUNTS)
+}
+
+type Transaction
+  @join__type(graph: TRANSACTIONS, key: "id")
+{
+  id: ID!
+  amount: Int!
+}

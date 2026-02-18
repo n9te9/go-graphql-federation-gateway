@@ -1,0 +1,13 @@
+endpoint: /graphql
+port: 9000
+service_name: travel-gateway
+timeout_duration: "5s"
+services:
+- name: flights
+  host: http://host.docker.internal:8401/query
+  schema_files:
+  - flights/graph/schema.graphqls
+- name: bookings
+  host: http://host.docker.internal:8402/query
+  schema_files:
+  - bookings/graph/schema.graphqls

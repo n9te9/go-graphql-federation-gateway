@@ -51,6 +51,59 @@ curl -X POST -H "Content-Type: application/json" --data '{"query":"{_service{sdl
 ```
 *(Check docker-compose.yaml for specific ports)*
 
+## Testing
+
+### Run E2E Tests
+
+Test all domains with their designated test cases:
+
+```bash
+make test-all
+```
+
+Or test individual domains:
+```bash
+make test-ec
+make test-fintech
+make test-saas
+make test-social
+make test-travel
+```
+
+### Run Performance Benchmarks
+
+Benchmark all domains and view performance summary:
+
+```bash
+make benchmark
+```
+
+This will:
+- Run load tests (5000 requests, 50 concurrent) on each domain
+- Display throughput (req/s), latency (avg, P95, P99)
+- Validate gateway health across all domains
+
+See [BENCHMARK.md](BENCHMARK.md) for detailed documentation.
+
+### Compare with Apollo Router
+
+Compare Go Gateway performance against Apollo Router on EC domain:
+
+```bash
+make compare-benchmark
+```
+
+This will:
+- Start EC domain subgraphs
+- Run both Go Gateway and Apollo Router
+- Execute comparative benchmarks (10000 requests, 50 concurrent)
+- Display side-by-side performance comparison
+
+Tests include:
+- Simple Query (single subgraph)
+- Cross-Service Query (federation joins)
+- @requires Query (Federation v2 features)
+
 ## Implementation Notes
 - All subgraphs use **Apollo Federation 2.0**.
 - **Subscription** is excluded as per requirements.

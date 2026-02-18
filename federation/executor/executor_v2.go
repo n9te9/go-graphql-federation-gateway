@@ -26,6 +26,7 @@ type GraphQLError struct {
 // ExecutorV2 executes a query plan by orchestrating requests to subgraphs.
 type ExecutorV2 struct {
 	httpClient   *http.Client
+	pool         sync.Pool
 	queryBuilder *QueryBuilderV2
 	superGraph   *graph.SuperGraphV2
 }
@@ -33,7 +34,12 @@ type ExecutorV2 struct {
 // NewExecutorV2 creates a new ExecutorV2 instance.
 func NewExecutorV2(httpClient *http.Client, superGraph *graph.SuperGraphV2) *ExecutorV2 {
 	return &ExecutorV2{
-		httpClient:   httpClient,
+		httpClient: httpClient,
+		pool: sync.Pool{
+			New: func() interface{} {
+				return &ExecutionContext{}
+			},
+		},
 		queryBuilder: NewQueryBuilderV2(superGraph),
 		superGraph:   superGraph,
 	}
@@ -61,12 +67,14 @@ func (e *ExecutorV2) Execute(
 	}
 
 	// Initialize execution context
-	execCtx := &ExecutionContext{
-		ctx:     ctx,
-		plan:    plan,
-		results: make(map[int]interface{}),
-		errors:  make([]GraphQLError, 0),
-	}
+	execCtx := e.pool.Get().(*ExecutionContext)
+	defer func() {
+		e.pool.Put(execCtx)
+	}()
+	execCtx.ctx = ctx
+	execCtx.plan = plan
+	execCtx.results = make(map[int]interface{})
+	execCtx.errors = make([]GraphQLError, 0)
 
 	// Execute root steps (don't fail on error, collect them)
 	_ = e.executeSteps(execCtx, plan.RootStepIndexes, variables)
