@@ -60,10 +60,10 @@ echo -e "${GREEN}✓ Cleanup complete${NC}"
 echo ""
 
 # Function to wait for service to be ready
-# Wait for service to be ready (same logic as test_runner.sh)
+# Wait for service to be ready (extended for slow app startup)
 wait_for_service() {
     local url=$1
-    local max_retries=5
+    local max_retries=30
     local count=0
     
     while ! curl -s -f -X POST "${url}" \
@@ -71,11 +71,11 @@ wait_for_service() {
         -d '{"query":"{ __typename }"}' > /dev/null 2>&1; do
         count=$((count + 1))
         if [ $count -ge $max_retries ]; then
-            echo -e "${RED}Service at ${url} failed to respond after ${max_retries} attempts${NC}"
+            echo -e "${RED}Service at ${url} failed to respond after ${max_retries} attempts (${max_retries}s)${NC}"
             echo -e "${YELLOW}Checking container status...${NC}"
             docker compose ps
-            echo -e "${YELLOW}Recent logs (last 30 lines):${NC}"
-            docker compose logs --tail=30
+            echo -e "${YELLOW}Recent logs (last 50 lines):${NC}"
+            docker compose logs --tail=50
             return 1
         fi
         sleep 1

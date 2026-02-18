@@ -49,10 +49,10 @@ echo "  Concurrency: $CONCURRENCY"
 echo "  Timeout: ${TIMEOUT}s"
 echo ""
 
-# Function to wait for service to be ready (same logic as test_runner.sh)
+# Function to wait for service to be ready (extended for slow app startup)
 wait_for_service() {
     local url=$1
-    local max_retries=5
+    local max_retries=30
     local count=0
     
     while ! curl -s -f -X POST "${url}" \
@@ -60,6 +60,7 @@ wait_for_service() {
         -d '{"query":"{ __typename }"}' > /dev/null 2>&1; do
         count=$((count + 1))
         if [ $count -ge $max_retries ]; then
+            echo -e "${RED}Service failed after ${max_retries} attempts${NC}"
             return 1
         fi
         sleep 1
