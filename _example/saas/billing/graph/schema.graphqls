@@ -1,6 +1,6 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@shareable"])
+        import: ["@key", "@shareable", "@external", "@requires"])
 
 type BillingInfo @key(fields: "id") {
   id: ID!
@@ -9,5 +9,7 @@ type BillingInfo @key(fields: "id") {
 
 extend type Organization @key(fields: "id") @shareable {
   id: ID!
+  employeeCount: Int! @external
   billing: BillingInfo
+  monthlyCost: Float! @requires(fields: "employeeCount")
 }

@@ -15,9 +15,17 @@ import (
 func (r *queryResolver) Organization(ctx context.Context, id string) (*model.Organization, error) {
 	// Return test data for org1
 	if id == "org1" {
-		return &model.Organization{ID: id, Name: "Acme Corp"}, nil
+		return &model.Organization{
+			ID:            id,
+			Name:          "Acme Corp",
+			EmployeeCount: 50,
+		}, nil
 	}
-	return &model.Organization{ID: id, Name: "Org " + id}, nil
+	return &model.Organization{
+		ID:            id,
+		Name:          "Org " + id,
+		EmployeeCount: 10,
+	}, nil
 }
 
 // Query returns QueryResolver implementation.

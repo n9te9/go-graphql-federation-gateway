@@ -3,8 +3,10 @@
 package model
 
 type Product struct {
-	ID      string `json:"id"`
-	InStock bool   `json:"inStock"`
+	ID           string  `json:"id"`
+	Weight       float64 `json:"weight"`
+	InStock      bool    `json:"inStock"`
+	ShippingCost float64 `json:"shippingCost"`
 }
 
 func (Product) IsEntity() {}

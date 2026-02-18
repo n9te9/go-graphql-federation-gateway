@@ -61,6 +61,8 @@ type ComplexityRoot struct {
 		Bookings      func(childComplexity int) int
 		DepartureDate func(childComplexity int) int
 		Number        func(childComplexity int) int
+		Price         func(childComplexity int) int
+		TotalCost     func(childComplexity int) int
 	}
 
 	Query struct {
@@ -151,6 +153,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Flight.Number(childComplexity), true
+	case "Flight.price":
+		if e.complexity.Flight.Price == nil {
+			break
+		}
+
+		return e.complexity.Flight.Price(childComplexity), true
+	case "Flight.totalCost":
+		if e.complexity.Flight.TotalCost == nil {
+			break
+		}
+
+		return e.complexity.Flight.TotalCost(childComplexity), true
 
 	case "Query._service":
 		if e.complexity.Query.__resolve__service == nil {
@@ -513,8 +527,12 @@ func (ec *executionContext) fieldContext_Booking_flight(_ context.Context, field
 				return ec.fieldContext_Flight_number(ctx, field)
 			case "departureDate":
 				return ec.fieldContext_Flight_departureDate(ctx, field)
+			case "price":
+				return ec.fieldContext_Flight_price(ctx, field)
 			case "bookings":
 				return ec.fieldContext_Flight_bookings(ctx, field)
+			case "totalCost":
+				return ec.fieldContext_Flight_totalCost(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
 		},
@@ -598,8 +616,12 @@ func (ec *executionContext) fieldContext_Entity_findFlightByNumberAndDepartureDa
 				return ec.fieldContext_Flight_number(ctx, field)
 			case "departureDate":
 				return ec.fieldContext_Flight_departureDate(ctx, field)
+			case "price":
+				return ec.fieldContext_Flight_price(ctx, field)
 			case "bookings":
 				return ec.fieldContext_Flight_bookings(ctx, field)
+			case "totalCost":
+				return ec.fieldContext_Flight_totalCost(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
 		},
@@ -676,6 +698,35 @@ func (ec *executionContext) fieldContext_Flight_departureDate(_ context.Context,
 	return fc, nil
 }
 
+func (ec *executionContext) _Flight_price(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Flight_price,
+		func(ctx context.Context) (any, error) {
+			return obj.Price, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Flight_price(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Flight",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Flight_bookings(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -706,6 +757,35 @@ func (ec *executionContext) fieldContext_Flight_bookings(_ context.Context, fiel
 				return ec.fieldContext_Booking_flight(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Booking", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Flight_totalCost(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Flight_totalCost,
+		func(ctx context.Context) (any, error) {
+			return obj.TotalCost, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Flight_totalCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Flight",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
 		},
 	}
 	return fc, nil
@@ -2554,8 +2634,18 @@ func (ec *executionContext) _Flight(ctx context.Context, sel ast.SelectionSet, o
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "price":
+			out.Values[i] = ec._Flight_price(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "bookings":
 			out.Values[i] = ec._Flight_bookings(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "totalCost":
+			out.Values[i] = ec._Flight_totalCost(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -3149,6 +3239,22 @@ func (ec *executionContext) marshalNFlight2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphq
 		return graphql.Null
 	}
 	return ec._Flight(ctx, sel, v)
+}
+
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
 }
 
 func (ec *executionContext) unmarshalNID2string(ctx context.Context, v any) (string, error) {

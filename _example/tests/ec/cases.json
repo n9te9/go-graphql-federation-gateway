@@ -218,5 +218,45 @@
         "email": "test@example.com"
       }
     }
+  },
+  {
+    "name": "Federation v2: Mutation Operation Type",
+    "description": "Verify mutation queries use 'mutation' operation type instead of 'query'",
+    "query": "mutation CreateProductTest { createProduct(name: \"Widget\", price: 100) { id name price } }",
+    "variables": {},
+    "expected": {
+      "createProduct": {
+        "id": "106",
+        "name": "Widget",
+        "price": 100
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @key(resolvable: false) - Inventory Extension",
+    "description": "Verify that inventory service with resolvable: false doesn't become entity owner",
+    "query": "query ProductWithInventory { product(id: \"p1\") { id name price inStock } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000,
+        "inStock": false
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @requires - ShippingCost Computation",
+    "description": "Verify that @requires automatically fetches weight field for shippingCost calculation",
+    "query": "query ProductWithShipping { product(id: \"p1\") { id name shippingCost } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "shippingCost": 5
+      }
+    }
   }
 ]

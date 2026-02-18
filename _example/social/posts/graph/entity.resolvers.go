@@ -15,13 +15,20 @@ import (
 func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Post, error) {
 	if id == "post1" {
 		return &model.Post{
-			ID:      id,
-			Title:   "My First Post",
-			Content: "This is my first post",
-			Author:  &model.User{ID: "user1"},
+			ID:        id,
+			Title:     "My First Post",
+			Content:   "This is my first post",
+			LikeCount: 100,
+			Author:    &model.User{ID: "user1"},
 		}, nil
 	}
-	return &model.Post{ID: id, Title: "Post " + id, Content: "Content " + id, Author: &model.User{ID: "unknown"}}, nil
+	return &model.Post{
+		ID:        id,
+		Title:     "Post " + id,
+		Content:   "Content " + id,
+		LikeCount: 10,
+		Author:    &model.User{ID: "unknown"},
+	}, nil
 }
 
 // FindUserByID is the resolver for the findUserByID field.
@@ -32,10 +39,11 @@ func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.Us
 			ID: id,
 			Posts: []*model.Post{
 				{
-					ID:      "post1",
-					Title:   "My First Post",
-					Content: "This is my first post",
-					Author:  &model.User{ID: "user1"},
+					ID:        "post1",
+					Title:     "My First Post",
+					Content:   "This is my first post",
+					LikeCount: 100,
+					Author:    &model.User{ID: "user1"},
 				},
 			},
 		}, nil

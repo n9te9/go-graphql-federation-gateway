@@ -108,5 +108,17 @@
         "destination": "JFK"
       }
     }
+  },
+  {
+    "name": "Federation v2: @requires - Total Cost Computation",
+    "description": "Verify that @requires automatically fetches price field for totalCost calculation",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number totalCost } }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "totalCost": 550
+      }
+    }
   }
 ]

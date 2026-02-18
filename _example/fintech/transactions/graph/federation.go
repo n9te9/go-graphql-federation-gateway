@@ -170,6 +170,10 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`resolving Entity "Account": %w`, err)
 			}
 
+			entity.Balance, err = ec.unmarshalNInt2int(ctx, rep["balance"])
+			if err != nil {
+				return nil, err
+			}
 			return entity, nil
 		}
 	case "Transaction":

@@ -189,6 +189,10 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`resolving Entity "Post": %w`, err)
 			}
 
+			entity.LikeCount, err = ec.unmarshalNInt2int(ctx, rep["likeCount"])
+			if err != nil {
+				return nil, err
+			}
 			return entity, nil
 		}
 

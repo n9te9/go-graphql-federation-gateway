@@ -13,6 +13,7 @@ func (Account) IsEntity() {}
 
 type Customer struct {
 	ID       string     `json:"id"`
+	Tier     string     `json:"tier"`
 	Accounts []*Account `json:"accounts"`
 }
 

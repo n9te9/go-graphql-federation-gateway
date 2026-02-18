@@ -170,6 +170,10 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`resolving Entity "Product": %w`, err)
 			}
 
+			entity.Weight, err = ec.unmarshalNFloat2float64(ctx, rep["weight"])
+			if err != nil {
+				return nil, err
+			}
 			return entity, nil
 		}
 

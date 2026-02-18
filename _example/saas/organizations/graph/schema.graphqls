@@ -5,6 +5,7 @@ extend schema
 type Organization @key(fields: "id") @shareable {
   id: ID!
   name: String!
+  employeeCount: Int! @shareable
 }
 
 type Query {

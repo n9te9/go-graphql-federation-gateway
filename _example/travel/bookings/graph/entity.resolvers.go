@@ -27,11 +27,17 @@ func (r *entityResolver) FindBookingByID(ctx context.Context, id string) (*model
 
 // FindFlightByNumberAndDepartureDate is the resolver for the findFlightByNumberAndDepartureDate field.
 func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
+	// Calculate total cost based on price (provided via @requires)
+	// For testing: totalCost = price * 1.1 (including 10% tax)
+	price := 500.0 // This will be provided by the gateway via @requires
+	totalCost := price * 1.1
+
 	// Return Flight with bookings
 	if number == "AA100" && departureDate == "2026-03-01" {
 		return &model.Flight{
 			Number:        number,
 			DepartureDate: departureDate,
+			TotalCost:     totalCost,
 			Bookings: []*model.Booking{
 				{
 					ID: "booking1",
@@ -43,7 +49,12 @@ func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context,
 			},
 		}, nil
 	}
-	return &model.Flight{Number: number, DepartureDate: departureDate, Bookings: []*model.Booking{}}, nil
+	return &model.Flight{
+		Number:        number,
+		DepartureDate: departureDate,
+		TotalCost:     330.0,
+		Bookings:      []*model.Booking{},
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

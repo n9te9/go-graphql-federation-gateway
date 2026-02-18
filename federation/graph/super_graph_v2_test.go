@@ -220,3 +220,178 @@ func TestNewSuperGraphV2_MultipleOwners(t *testing.T) {
 		t.Errorf("expected Product.description to be owned by 'product2', got '%s'", productDescOwners[0].Name)
 	}
 }
+
+// TestNewSuperGraphV2_MutationTypeComposition tests that Mutation types are properly composed
+func TestNewSuperGraphV2_MutationTypeComposition(t *testing.T) {
+	// Products サービスのスキーマ (Mutation type included with extend schema directive)
+	productsSchema := `
+		extend schema
+		  @link(url: "https://specs.apollo.dev/federation/v2.0",
+		        import: ["@key", "@shareable"])
+
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			price: Int!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+
+		type Mutation {
+			createProduct(name: String!, price: Int!): Product
+		}
+	`
+
+	// Users サービスのスキーマ (extend Mutation)
+	usersSchema := `
+		type User @key(fields: "id") {
+			id: ID!
+			username: String!
+		}
+
+		extend type Query {
+			user(id: ID!): User
+		}
+
+		extend type Mutation {
+			createUser(username: String!): User
+		}
+	`
+
+	productsSG, err := graph.NewSubGraphV2("products", []byte(productsSchema), "http://products.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+	}
+
+	usersSG, err := graph.NewSubGraphV2("users", []byte(usersSchema), "http://users.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for users: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productsSG, usersSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Verify Mutation type exists in composed schema
+	var mutationType *ast.ObjectTypeDefinition
+	for _, def := range superGraph.Schema.Definitions {
+		if objDef, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if objDef.Name.String() == "Mutation" {
+				mutationType = objDef
+				break
+			}
+		}
+	}
+
+	if mutationType == nil {
+		t.Fatal("expected Mutation type to be in composed schema")
+	}
+
+	// Verify both createProduct and createUser fields exist
+	hasCreateProduct := false
+	hasCreateUser := false
+	for _, field := range mutationType.Fields {
+		if field.Name.String() == "createProduct" {
+			hasCreateProduct = true
+		}
+		if field.Name.String() == "createUser" {
+			hasCreateUser = true
+		}
+	}
+
+	if !hasCreateProduct {
+		t.Error("expected Mutation.createProduct field in composed schema")
+	}
+	if !hasCreateUser {
+		t.Error("expected Mutation.createUser field in composed schema")
+	}
+
+	// Verify ownership
+	createProductOwners := superGraph.GetSubGraphsForField("Mutation", "createProduct")
+	if len(createProductOwners) != 1 {
+		t.Errorf("expected 1 owner for Mutation.createProduct, got %d", len(createProductOwners))
+	}
+	if len(createProductOwners) > 0 && createProductOwners[0].Name != "products" {
+		t.Errorf("expected Mutation.createProduct to be owned by 'products', got '%s'", createProductOwners[0].Name)
+	}
+
+	createUserOwners := superGraph.GetSubGraphsForField("Mutation", "createUser")
+	if len(createUserOwners) != 1 {
+		t.Errorf("expected 1 owner for Mutation.createUser, got %d", len(createUserOwners))
+	}
+	if len(createUserOwners) > 0 && createUserOwners[0].Name != "users" {
+		t.Errorf("expected Mutation.createUser to be owned by 'users', got '%s'", createUserOwners[0].Name)
+	}
+}
+
+// TestNewSuperGraphV2_ResolvableFalse tests that @key(resolvable: false) entities are excluded from ownership
+func TestNewSuperGraphV2_ResolvableFalse(t *testing.T) {
+	// Inventory service - defines Product stub (resolvable: false)
+	// This service can extend Product but cannot resolve Product entities
+	inventorySchema := `
+		type Product @key(fields: "id", resolvable: false) {
+			id: ID!
+			inStock: Boolean!
+		}
+
+		type Query {
+			checkInventory(productId: ID!): Boolean
+		}
+	`
+
+	// Products service - defines Product entity (resolvable: true, default)
+	productsSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			price: Int!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	// Create subgraphs: inventory first, products second
+	// If resolvable: false is not handled, inventory would be chosen
+	inventorySG, err := graph.NewSubGraphV2("inventory", []byte(inventorySchema), "http://inventory.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for inventory: %v", err)
+	}
+
+	productsSG, err := graph.NewSubGraphV2("products", []byte(productsSchema), "http://products.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{inventorySG, productsSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Verify that Product entity owner is products service, not inventory
+	entityOwner := superGraph.GetEntityOwnerSubGraph("Product")
+	if entityOwner == nil {
+		t.Fatal("expected Product to have an entity owner")
+	}
+	if entityOwner.Name != "products" {
+		t.Errorf("expected Product entity owner to be 'products', got '%s'", entityOwner.Name)
+	}
+
+	// Verify Product.inStock is owned by inventory service
+	inStockOwners := superGraph.GetSubGraphsForField("Product", "inStock")
+	if len(inStockOwners) != 1 {
+		t.Errorf("expected 1 owner for Product.inStock, got %d", len(inStockOwners))
+	}
+	if len(inStockOwners) > 0 && inStockOwners[0].Name != "inventory" {
+		t.Errorf("expected Product.inStock to be owned by 'inventory', got '%s'", inStockOwners[0].Name)
+	}
+
+	// Verify Product entity is recognized as entity type
+	if !superGraph.IsEntityType("Product") {
+		t.Error("expected Product to be recognized as entity type")
+	}
+}

@@ -193,6 +193,10 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`resolving Entity "Flight": %w`, err)
 			}
 
+			entity.Price, err = ec.unmarshalNFloat2float64(ctx, rep["price"])
+			if err != nil {
+				return nil, err
+			}
 			return entity, nil
 		}
 

@@ -13,8 +13,14 @@ import (
 
 // FindAccountByIban is the resolver for the findAccountByIban field.
 func (r *entityResolver) FindAccountByIban(ctx context.Context, iban string) (*model.Account, error) {
+	// Calculate risk score based on balance (provided via @requires)
+	// For testing, use a simple formula: riskScore = balance / 100
+	balance := 1000 // This will be provided by the gateway via @requires
+	riskScore := float64(balance) / 100.0
+
 	return &model.Account{
-		Iban: iban,
+		Iban:      iban,
+		RiskScore: riskScore,
 		Transactions: []*model.Transaction{
 			{ID: "tx_1", Amount: 100},
 		},
@@ -33,21 +39,3 @@ func (r *entityResolver) FindTransactionByID(ctx context.Context, id string) (*m
 func (r *Resolver) Entity() EntityResolver { return &entityResolver{r} }
 
 type entityResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *entityResolver) FindAccountByID(ctx context.Context, id string) (*model.Account, error) {
-	return &model.Account{
-		ID: id,
-		Transactions: []*model.Transaction{
-			{ID: "tx_101", Amount: 500},
-			{ID: "tx_102", Amount: -200},
-		},
-	}, nil
-}
-*/

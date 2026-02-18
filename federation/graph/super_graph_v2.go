@@ -395,19 +395,20 @@ func (sg *SuperGraphV2) GetSubGraphsForField(typeName, fieldName string) []*SubG
 }
 
 // GetEntityOwnerSubGraph returns the subgraph that owns the entity (defines it with @key directive, not extends it).
-// For entities defined in multiple subgraphs (not common in Federation v2), it returns the first non-extension.
-// Returns nil if the type is not an entity.
+// Filters out subgraphs with @key(resolvable: false) - these are stubs that cannot resolve entities.
+// For entities defined in multiple resolvable subgraphs, it returns the first non-extension.
+// Returns nil if the type is not an entity or has no resolvable owners.
 func (sg *SuperGraphV2) GetEntityOwnerSubGraph(typeName string) *SubGraphV2 {
-	// First pass: look for non-extension definitions
+	// First pass: look for non-extension definitions with resolvable keys
 	for _, subGraph := range sg.SubGraphs {
-		if entity, exists := subGraph.GetEntity(typeName); exists && !entity.IsExtension() {
+		if entity, exists := subGraph.GetEntity(typeName); exists && !entity.IsExtension() && entity.IsResolvable() {
 			return subGraph
 		}
 	}
 
-	// Second pass: if only extensions exist, return the first one
+	// Second pass: if only extensions exist, return the first resolvable one
 	for _, subGraph := range sg.SubGraphs {
-		if _, exists := subGraph.GetEntity(typeName); exists {
+		if entity, exists := subGraph.GetEntity(typeName); exists && entity.IsResolvable() {
 			return subGraph
 		}
 	}

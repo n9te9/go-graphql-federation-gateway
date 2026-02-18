@@ -1,6 +1,6 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@external"])
+        import: ["@key", "@external", "@requires"])
 
 type Transaction @key(fields: "id") {
   id: ID!
@@ -9,5 +9,7 @@ type Transaction @key(fields: "id") {
 
 extend type Account @key(fields: "iban") {
   iban: ID! @external
+  balance: Int! @external
   transactions: [Transaction!]!
+  riskScore: Float! @requires(fields: "balance")
 }

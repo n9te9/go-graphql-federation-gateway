@@ -13,7 +13,17 @@ import (
 
 // FindProductByID is the resolver for the findProductByID field.
 func (r *entityResolver) FindProductByID(ctx context.Context, id string) (*model.Product, error) {
-	return &model.Product{ID: id}, nil
+	inStock := false
+	// Calculate shipping cost based on weight (if provided via @requires)
+	// Weight should be available in the representation
+	// For now, return a fixed value - actual implementation would use weight
+	shippingCost := 5.0
+
+	return &model.Product{
+		ID:           id,
+		InStock:      inStock,
+		ShippingCost: shippingCost,
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.

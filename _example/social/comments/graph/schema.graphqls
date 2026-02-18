@@ -1,6 +1,6 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@external"])
+        import: ["@key", "@external", "@requires"])
 
 type Comment @key(fields: "id") {
   id: ID!
@@ -10,7 +10,9 @@ type Comment @key(fields: "id") {
 
 extend type Post @key(fields: "id") {
   id: ID! @external
+  likeCount: Int! @external
   comments: [Comment!]!
+  engagementScore: Float! @requires(fields: "likeCount")
 }
 
 extend type User @key(fields: "id") {

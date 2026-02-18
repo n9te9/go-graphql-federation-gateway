@@ -149,5 +149,22 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @requires - Engagement Score Computation",
+    "description": "Verify that @requires automatically fetches likeCount field for engagementScore calculation",
+    "query": "query { user(id: \"user1\") { posts { id title engagementScore } } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post",
+            "engagementScore": 10
+          }
+        ]
+      }
+    }
   }
 ]

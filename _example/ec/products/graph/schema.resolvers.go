@@ -7,22 +7,30 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/products/graph/model"
 )
 
-// Product is the resolver for the product field.
-func (r *queryResolver) Product(ctx context.Context, id string) (*model.Product, error) {
-	return &model.Product{ID: id, Name: "Product " + id, Price: 1000}, nil
+// CreateProduct is the resolver for the createProduct field.
+func (r *mutationResolver) CreateProduct(ctx context.Context, name string, price int) (*model.Product, error) {
+	// Generate a simple ID (in production, use UUID or database auto-increment)
+	id := fmt.Sprintf("%d", len(name)+price)
+	weight := 1.5 // Default weight
+	return &model.Product{ID: id, Name: name, Price: price, Weight: weight}, nil
 }
 
-// Node is the resolver for the node field.
-func (r *queryResolver) Node(ctx context.Context, id string) (model.Node, error) {
-	// Return a Product as Node interface implementation
-	return &model.Product{ID: id, Name: "Product " + id, Price: 1000}, nil
+// Product is the resolver for the product field.
+func (r *queryResolver) Product(ctx context.Context, id string) (*model.Product, error) {
+	weight := 2.5 // Default weight for products
+	return &model.Product{ID: id, Name: "Product " + id, Price: 1000, Weight: weight}, nil
 }
+
+// Mutation returns MutationResolver implementation.
+func (r *Resolver) Mutation() MutationResolver { return &mutationResolver{r} }
 
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
+type mutationResolver struct{ *Resolver }
 type queryResolver struct{ *Resolver }

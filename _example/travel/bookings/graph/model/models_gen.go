@@ -12,7 +12,9 @@ func (Booking) IsEntity() {}
 type Flight struct {
 	Number        string     `json:"number"`
 	DepartureDate string     `json:"departureDate"`
+	Price         float64    `json:"price"`
 	Bookings      []*Booking `json:"bookings"`
+	TotalCost     float64    `json:"totalCost"`
 }
 
 func (Flight) IsEntity() {}

@@ -58,8 +58,10 @@ type ComplexityRoot struct {
 	}
 
 	Organization struct {
-		Billing func(childComplexity int) int
-		ID      func(childComplexity int) int
+		Billing       func(childComplexity int) int
+		EmployeeCount func(childComplexity int) int
+		ID            func(childComplexity int) int
+		MonthlyCost   func(childComplexity int) int
 	}
 
 	Query struct {
@@ -138,12 +140,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Organization.Billing(childComplexity), true
+	case "Organization.employeeCount":
+		if e.complexity.Organization.EmployeeCount == nil {
+			break
+		}
+
+		return e.complexity.Organization.EmployeeCount(childComplexity), true
 	case "Organization.id":
 		if e.complexity.Organization.ID == nil {
 			break
 		}
 
 		return e.complexity.Organization.ID(childComplexity), true
+	case "Organization.monthlyCost":
+		if e.complexity.Organization.MonthlyCost == nil {
+			break
+		}
+
+		return e.complexity.Organization.MonthlyCost(childComplexity), true
 
 	case "Query._service":
 		if e.complexity.Query.__resolve__service == nil {
@@ -576,8 +590,12 @@ func (ec *executionContext) fieldContext_Entity_findOrganizationByID(ctx context
 			switch field.Name {
 			case "id":
 				return ec.fieldContext_Organization_id(ctx, field)
+			case "employeeCount":
+				return ec.fieldContext_Organization_employeeCount(ctx, field)
 			case "billing":
 				return ec.fieldContext_Organization_billing(ctx, field)
+			case "monthlyCost":
+				return ec.fieldContext_Organization_monthlyCost(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Organization", field.Name)
 		},
@@ -625,6 +643,35 @@ func (ec *executionContext) fieldContext_Organization_id(_ context.Context, fiel
 	return fc, nil
 }
 
+func (ec *executionContext) _Organization_employeeCount(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Organization_employeeCount,
+		func(ctx context.Context) (any, error) {
+			return obj.EmployeeCount, nil
+		},
+		nil,
+		ec.marshalNInt2int,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Organization_employeeCount(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Organization",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Organization_billing(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -655,6 +702,35 @@ func (ec *executionContext) fieldContext_Organization_billing(_ context.Context,
 				return ec.fieldContext_BillingInfo_plan(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type BillingInfo", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Organization_monthlyCost(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Organization_monthlyCost,
+		func(ctx context.Context) (any, error) {
+			return obj.MonthlyCost, nil
+		},
+		nil,
+		ec.marshalNFloat2float64,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Organization_monthlyCost(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Organization",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Float does not have child fields")
 		},
 	}
 	return fc, nil
@@ -2498,8 +2574,18 @@ func (ec *executionContext) _Organization(ctx context.Context, sel ast.Selection
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "employeeCount":
+			out.Values[i] = ec._Organization_employeeCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "billing":
 			out.Values[i] = ec._Organization_billing(ctx, field, obj)
+		case "monthlyCost":
+			out.Values[i] = ec._Organization_monthlyCost(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -3034,6 +3120,22 @@ func (ec *executionContext) marshalNFieldSet2string(ctx context.Context, sel ast
 	return res
 }
 
+func (ec *executionContext) unmarshalNFloat2float64(ctx context.Context, v any) (float64, error) {
+	res, err := graphql.UnmarshalFloatContext(ctx, v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.SelectionSet, v float64) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalFloatContext(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return graphql.WrapContextMarshaler(ctx, res)
+}
+
 func (ec *executionContext) unmarshalNID2string(ctx context.Context, v any) (string, error) {
 	res, err := graphql.UnmarshalID(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -3042,6 +3144,22 @@ func (ec *executionContext) unmarshalNID2string(ctx context.Context, v any) (str
 func (ec *executionContext) marshalNID2string(ctx context.Context, sel ast.SelectionSet, v string) graphql.Marshaler {
 	_ = sel
 	res := graphql.MarshalID(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
+}
+
+func (ec *executionContext) unmarshalNInt2int(ctx context.Context, v any) (int, error) {
+	res, err := graphql.UnmarshalInt(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNInt2int(ctx context.Context, sel ast.SelectionSet, v int) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalInt(v)
 	if res == graphql.Null {
 		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
 			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
