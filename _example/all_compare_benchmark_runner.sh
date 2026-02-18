@@ -51,10 +51,19 @@ echo "  Timeout: ${TIMEOUT}s"
 echo "  Domains: EC, Fintech, SaaS, Social, Travel"
 echo ""
 
+# Initial cleanup - stop all containers
+echo -e "${CYAN}Cleaning up existing containers...${NC}"
+docker ps -aq | xargs -r docker stop > /dev/null 2>&1 || true
+docker ps -aq | xargs -r docker rm > /dev/null 2>&1 || true
+sleep 2
+echo -e "${GREEN}✓ Cleanup complete${NC}"
+echo ""
+
 # Function to wait for service to be ready
+# Wait for service to be ready (same logic as test_runner.sh)
 wait_for_service() {
     local url=$1
-    local max_retries=15
+    local max_retries=5
     local count=0
     
     while ! curl -s -f -X POST "${url}" \
@@ -62,9 +71,14 @@ wait_for_service() {
         -d '{"query":"{ __typename }"}' > /dev/null 2>&1; do
         count=$((count + 1))
         if [ $count -ge $max_retries ]; then
+            echo -e "${RED}Service at ${url} failed to respond after ${max_retries} attempts${NC}"
+            echo -e "${YELLOW}Checking container status...${NC}"
+            docker compose ps
+            echo -e "${YELLOW}Recent logs (last 30 lines):${NC}"
+            docker compose logs --tail=30
             return 1
         fi
-        sleep 2
+        sleep 1
     done
     return 0
 }
@@ -130,11 +144,19 @@ benchmark_domain() {
         return 1
     fi
     
-    # Step 1: Start subgraph services
+    # Step 1: Pull images first to avoid timeout during startup
+    echo -e "${CYAN}Pulling Docker images...${NC}"
+    docker compose pull > /dev/null 2>&1
+    
+    # Start subgraph services
     docker compose up -d > /dev/null 2>&1
     
-    # Wait for subgraphs based on domain
-    echo -e "${CYAN}Waiting for subgraph services...${NC}"
+    # Wait for services to initialize (same as test_runner.sh)
+    echo -e "${CYAN}Waiting for subgraph services to initialize (30s)...${NC}"
+    sleep 30
+    
+    # Quick health check for subgraphs
+    echo -e "${CYAN}Checking subgraph services...${NC}"
     case "$domain" in
         "ec")
             SUBGRAPH_PORTS="8101 8102 8103 8104"
@@ -172,9 +194,10 @@ benchmark_domain() {
     # Step 2: Start Apollo Router
     echo -e "${CYAN}Starting Apollo Router...${NC}"
     docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
+    sleep 5
     
     # Wait for Apollo Router
-    echo -e "${CYAN}Waiting for Apollo Router (port ${apollo_port})...${NC}"
+    echo -e "${CYAN}Checking Apollo Router (port ${apollo_port})...${NC}"
     if ! wait_for_service "http://localhost:${apollo_port}"; then
         echo -e "${RED}Apollo Router failed to start for ${domain}${NC}"
         docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
@@ -187,8 +210,10 @@ benchmark_domain() {
     # Step 3: Start Go Gateway (Docker)
     echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
     docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
+    sleep 5
     
     # Wait for Go Gateway
+    echo -e "${CYAN}Checking Go Gateway...${NC}"
     if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
         echo -e "${RED}Go Gateway failed to start for ${domain}${NC}"
         docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1

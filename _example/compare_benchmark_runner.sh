@@ -49,10 +49,10 @@ echo "  Concurrency: $CONCURRENCY"
 echo "  Timeout: ${TIMEOUT}s"
 echo ""
 
-# Function to wait for service to be ready
+# Function to wait for service to be ready (same logic as test_runner.sh)
 wait_for_service() {
     local url=$1
-    local max_retries=10
+    local max_retries=5
     local count=0
     
     while ! curl -s -f -X POST "${url}" \
@@ -62,7 +62,7 @@ wait_for_service() {
         if [ $count -ge $max_retries ]; then
             return 1
         fi
-        sleep 2
+        sleep 1
     done
     return 0
 }
@@ -128,9 +128,11 @@ fi
 # Step 1: Start subgraph services
 docker compose up -d > /dev/null 2>&1
 
-echo -e "${CYAN}Waiting for subgraph services...${NC}"
+# Wait for services to initialize (same as test_runner.sh)
+echo -e "${CYAN}Waiting for subgraph services to initialize (30s)...${NC}"
+sleep 30
 
-# Wait for subgraphs
+# Quick health check for subgraphs
 for port in 8101 8102 8103 8104; do
     if ! wait_for_service "http://localhost:${port}/query"; then
         echo -e "${RED}Subgraph on port ${port} failed to start${NC}"
@@ -144,6 +146,7 @@ echo -e "${GREEN}✓ All subgraphs ready${NC}"
 # Step 2: Start Apollo Router
 echo -e "${CYAN}Starting Apollo Router...${NC}"
 docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
+sleep 5
 
 # Check Apollo Router
 echo -e "${CYAN}Checking Apollo Router...${NC}"
@@ -158,8 +161,10 @@ echo -e "${GREEN}✓ Apollo Router ready${NC}"
 # Step 3: Start Go Gateway (Docker)
 echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
 docker compose -f docker-compose.gateway.yaml up --build -d > /dev/null 2>&1
+sleep 5
 
 # Wait for Go Gateway
+echo -e "${CYAN}Checking Go Gateway...${NC}"
 if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
     echo -e "${RED}Go Gateway failed to start${NC}"
     docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
