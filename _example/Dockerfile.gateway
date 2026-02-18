@@ -1,0 +1,29 @@
+FROM golang:1.25-alpine AS builder
+
+WORKDIR /build
+
+# Copy go mod files
+COPY go.mod go.sum ./
+RUN go mod download
+
+# Copy source code
+COPY . .
+
+# Build the gateway binary
+RUN CGO_ENABLED=0 GOOS=linux go build -o /build/gateway-bin cmd/go-graphql-federation-gateway/main.go
+
+FROM alpine:latest
+
+WORKDIR /app
+
+# Copy binary from builder with explicit target filename
+COPY --from=builder /build/gateway-bin /app/gateway
+
+# Make it executable
+RUN chmod +x /app/gateway
+
+# Expose port
+EXPOSE 9000
+
+ENTRYPOINT ["/app/gateway"]
+CMD ["serve"]

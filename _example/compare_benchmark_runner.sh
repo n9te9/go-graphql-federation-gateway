@@ -125,8 +125,8 @@ if [ ! -f "docker-compose.apollo.yaml" ]; then
     exit 1
 fi
 
-# Start services using Apollo Router compose (includes all subgraphs + Apollo Router)
-docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
+# Step 1: Start subgraph services
+docker compose up -d > /dev/null 2>&1
 
 echo -e "${CYAN}Waiting for subgraph services...${NC}"
 
@@ -134,35 +134,37 @@ echo -e "${CYAN}Waiting for subgraph services...${NC}"
 for port in 8101 8102 8103 8104; do
     if ! wait_for_service "http://localhost:${port}/query"; then
         echo -e "${RED}Subgraph on port ${port} failed to start${NC}"
-        docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
+        docker compose down > /dev/null 2>&1
         exit 1
     fi
 done
 
 echo -e "${GREEN}✓ All subgraphs ready${NC}"
 
+# Step 2: Start Apollo Router
+echo -e "${CYAN}Starting Apollo Router...${NC}"
+docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
+
 # Check Apollo Router
 echo -e "${CYAN}Checking Apollo Router...${NC}"
 if ! wait_for_service "http://localhost:${APOLLO_ROUTER_PORT}"; then
     echo -e "${RED}Apollo Router failed to start${NC}"
     docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
+    docker compose down > /dev/null 2>&1
     exit 1
 fi
 echo -e "${GREEN}✓ Apollo Router ready${NC}"
 
-# Start Go Gateway
-echo -e "${CYAN}Starting Go Gateway...${NC}"
-cd ..
-GO_GATEWAY_PID=""
-(cd ec && ../../cmd/go-graphql-federation-gateway/gateway serve > /dev/null 2>&1) &
-GO_GATEWAY_PID=$!
+# Step 3: Start Go Gateway (Docker)
+echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
+docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
 
 # Wait for Go Gateway
 if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
     echo -e "${RED}Go Gateway failed to start${NC}"
-    kill $GO_GATEWAY_PID 2>/dev/null || true
-    cd ec
+    docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
     docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
+    docker compose down > /dev/null 2>&1
     exit 1
 fi
 echo -e "${GREEN}✓ Go Gateway ready${NC}"
@@ -190,11 +192,9 @@ echo ""
 
 # Cleanup
 echo -e "${CYAN}Cleaning up...${NC}"
-kill $GO_GATEWAY_PID 2>/dev/null || true
-wait $GO_GATEWAY_PID 2>/dev/null || true
-cd ec
-docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
-cd ..
+(cd ec && docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1)
+(cd ec && docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1)
+(cd ec && docker compose down > /dev/null 2>&1)
 
 rm -f /tmp/gql_query.json
 

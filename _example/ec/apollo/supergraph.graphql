@@ -23,10 +23,10 @@ directive @link(url: String, as: String, for: link__Purpose, import: [link__Impo
 scalar join__FieldSet
 
 enum join__Graph {
-  PRODUCTS @join__graph(name: "products", url: "http://products:8080/query")
-  REVIEWS @join__graph(name: "reviews", url: "http://reviews:8080/query")
-  USERS @join__graph(name: "users", url: "http://users:8080/query")
-  INVENTORY @join__graph(name: "inventory", url: "http://inventory:8080/query")
+  PRODUCTS @join__graph(name: "products", url: "http://host.docker.internal:8101/query")
+  REVIEWS @join__graph(name: "reviews", url: "http://host.docker.internal:8102/query")
+  USERS @join__graph(name: "users", url: "http://host.docker.internal:8103/query")
+  INVENTORY @join__graph(name: "inventory", url: "http://host.docker.internal:8104/query")
 }
 
 scalar link__Import

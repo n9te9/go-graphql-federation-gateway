@@ -1,22 +1,4 @@
 services:
-  flights:
-    build: 
-      context: ./flights 
-      dockerfile: Dockerfile
-    ports:
-      - "8401:8080"
-    environment:
-      - PORT=8080
-
-  bookings:
-    build: 
-      context: ./bookings 
-      dockerfile: Dockerfile
-    ports:
-      - "8402:8080"
-    environment:
-      - PORT=8080
-
   apollo-router:
     image: ghcr.io/apollographql/router:v1.52.0
     ports:
@@ -24,6 +6,3 @@ services:
     volumes:
       - ./apollo:/apollo
     command: -s /apollo/supergraph.graphql -c /apollo/router.yaml --listen 0.0.0.0:4000
-    depends_on:
-      - flights
-      - bookings

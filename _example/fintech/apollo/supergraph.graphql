@@ -22,9 +22,9 @@ directive @link(url: String, as: String, for: link__Purpose, import: [link__Impo
 scalar join__FieldSet
 
 enum join__Graph {
-  CUSTOMERS @join__graph(name: "customers", url: "http://customers:8080/query")
-  ACCOUNTS @join__graph(name: "accounts", url: "http://accounts:8080/query")
-  TRANSACTIONS @join__graph(name: "transactions", url: "http://transactions:8080/query")
+  CUSTOMERS @join__graph(name: "customers", url: "http://host.docker.internal:8201/query")
+  ACCOUNTS @join__graph(name: "accounts", url: "http://host.docker.internal:8202/query")
+  TRANSACTIONS @join__graph(name: "transactions", url: "http://host.docker.internal:8203/query")
 }
 
 scalar link__Import
@@ -59,7 +59,7 @@ type Customer
 {
   id: ID! @join__field(graph: CUSTOMERS) @join__field(graph: ACCOUNTS, external: true)
   name: String! @join__field(graph: CUSTOMERS)
-  tier: String! @join__field(graph: CUSTOMERS) @join__field(graph: ACCOUNTS, external: true)
+  tier: String! @join__field(graph: CUSTOMERS)
   accounts: [Account!]! @join__field(graph: ACCOUNTS)
 }
 

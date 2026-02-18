@@ -118,9 +118,11 @@ benchmark_domain() {
     echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
     
+    # Change to domain directory
+    cd "$domain" || { echo "Failed to cd to $domain"; return 1; }
+    
     # Start services
-    echo -e "${CYAN}Starting ${domain} services...${NC}"
-    cd "$domain"
+    echo -e "${CYAN}Starting ${domain} subgraph services...${NC}"
     
     if [ ! -f "docker-compose.apollo.yaml" ]; then
         echo -e "${RED}Error: Apollo Router setup not found for ${domain}${NC}"
@@ -128,6 +130,47 @@ benchmark_domain() {
         return 1
     fi
     
+    # Step 1: Start subgraph services
+    docker compose up -d > /dev/null 2>&1
+    
+    # Wait for subgraphs based on domain
+    echo -e "${CYAN}Waiting for subgraph services...${NC}"
+    case "$domain" in
+        "ec")
+            SUBGRAPH_PORTS="8101 8102 8103 8104"
+            ;;
+        "fintech")
+            SUBGRAPH_PORTS="8201 8202 8203"
+            ;;
+        "saas")
+            SUBGRAPH_PORTS="8501 8502 8503"
+            ;;
+        "social")
+            SUBGRAPH_PORTS="8301 8302 8303"
+            ;;
+        "travel")
+            SUBGRAPH_PORTS="8401 8402"
+            ;;
+        *)
+            echo -e "${RED}Unknown domain: ${domain}${NC}"
+            docker compose down > /dev/null 2>&1
+            cd ..
+            return 1
+            ;;
+    esac
+    
+    for port in $SUBGRAPH_PORTS; do
+        if ! wait_for_service "http://localhost:${port}/query"; then
+            echo -e "${RED}Subgraph on port ${port} failed to start${NC}"
+            docker compose down > /dev/null 2>&1
+            cd ..
+            return 1
+        fi
+    done
+    echo -e "${GREEN}✓ All subgraphs ready${NC}"
+    
+    # Step 2: Start Apollo Router
+    echo -e "${CYAN}Starting Apollo Router...${NC}"
     docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
     
     # Wait for Apollo Router
@@ -135,24 +178,22 @@ benchmark_domain() {
     if ! wait_for_service "http://localhost:${apollo_port}"; then
         echo -e "${RED}Apollo Router failed to start for ${domain}${NC}"
         docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
+        docker compose down > /dev/null 2>&1
         cd ..
         return 1
     fi
     echo -e "${GREEN}✓ Apollo Router ready${NC}"
     
-    # Start Go Gateway
-    echo -e "${CYAN}Starting Go Gateway...${NC}"
-    cd ..
-    GO_GATEWAY_PID=""
-    (cd "$domain" && ../../cmd/go-graphql-federation-gateway/gateway serve > /dev/null 2>&1) &
-    GO_GATEWAY_PID=$!
+    # Step 3: Start Go Gateway (Docker)
+    echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
+    docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
     
     # Wait for Go Gateway
     if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
         echo -e "${RED}Go Gateway failed to start for ${domain}${NC}"
-        kill $GO_GATEWAY_PID 2>/dev/null || true
-        cd "$domain"
+        docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
         docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
+        docker compose down > /dev/null 2>&1
         cd ..
         return 1
     fi
@@ -170,10 +211,9 @@ benchmark_domain() {
     
     # Cleanup
     echo -e "${CYAN}Cleaning up ${domain}...${NC}"
-    kill $GO_GATEWAY_PID 2>/dev/null || true
-    wait $GO_GATEWAY_PID 2>/dev/null || true
-    cd "$domain"
+    docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
     docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
+    docker compose down > /dev/null 2>&1
     cd ..
     echo ""
 }
