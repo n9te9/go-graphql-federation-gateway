@@ -1,0 +1,77 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+{
+  query: Query
+}
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar join__FieldSet
+
+enum join__Graph {
+  ORGANIZATIONS @join__graph(name: "organizations", url: "http://organizations:8080/query")
+  PROJECTS @join__graph(name: "projects", url: "http://projects:8080/query")
+  BILLING @join__graph(name: "billing", url: "http://billing:8080/query")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type BillingInfo
+  @join__type(graph: BILLING, key: "id")
+{
+  id: ID!
+  plan: String! @join__field(graph: BILLING)
+}
+
+type Organization
+  @join__type(graph: ORGANIZATIONS, key: "id")
+  @join__type(graph: PROJECTS, key: "id")
+  @join__type(graph: BILLING, key: "id")
+{
+  id: ID!
+  name: String! @join__field(graph: ORGANIZATIONS)
+  employeeCount: Int! @join__field(graph: ORGANIZATIONS) @join__field(graph: BILLING, external: true)
+  billing: BillingInfo @join__field(graph: BILLING)
+  monthlyCost: Float! @join__field(graph: BILLING, requires: "employeeCount")
+}
+
+type Project
+  @join__type(graph: PROJECTS, key: "id")
+{
+  id: ID!
+  name: String! @join__field(graph: PROJECTS)
+  organization: Organization! @join__field(graph: PROJECTS)
+}
+
+type Query
+  @join__type(graph: ORGANIZATIONS)
+  @join__type(graph: PROJECTS)
+{
+  organization(id: ID!): Organization @join__field(graph: ORGANIZATIONS)
+  project(id: ID!): Project @join__field(graph: PROJECTS)
+}

@@ -1,0 +1,79 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+{
+  query: Query
+}
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar join__FieldSet
+
+enum join__Graph {
+  USERS @join__graph(name: "users", url: "http://users:8080/query")
+  POSTS @join__graph(name: "posts", url: "http://posts:8080/query")
+  COMMENTS @join__graph(name: "comments", url: "http://comments:8080/query")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type Comment
+  @join__type(graph: COMMENTS, key: "id")
+{
+  id: ID!
+  body: String! @join__field(graph: COMMENTS)
+  author: User! @join__field(graph: COMMENTS)
+}
+
+type Post
+  @join__type(graph: POSTS, key: "id")
+  @join__type(graph: COMMENTS, key: "id")
+{
+  id: ID!
+  title: String! @join__field(graph: POSTS)
+  content: String! @join__field(graph: POSTS)
+  likeCount: Int! @join__field(graph: POSTS) @join__field(graph: COMMENTS, external: true)
+  author: User! @join__field(graph: POSTS)
+  comments: [Comment!]! @join__field(graph: COMMENTS)
+  engagementScore: Float! @join__field(graph: COMMENTS, requires: "likeCount")
+}
+
+type User
+  @join__type(graph: USERS, key: "id")
+  @join__type(graph: POSTS, key: "id")
+  @join__type(graph: COMMENTS, key: "id")
+{
+  id: ID!
+  name: String! @join__field(graph: USERS) @join__field(graph: POSTS, external: true) @join__field(graph: COMMENTS, external: true)
+  posts: [Post!]! @join__field(graph: POSTS)
+}
+
+type Query
+  @join__type(graph: USERS)
+{
+  user(id: ID!): User @join__field(graph: USERS)
+}

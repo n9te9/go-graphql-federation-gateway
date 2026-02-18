@@ -1,0 +1,67 @@
+schema
+  @link(url: "https://specs.apollo.dev/link/v1.0")
+  @link(url: "https://specs.apollo.dev/join/v0.3", for: EXECUTION)
+{
+  query: Query
+}
+
+directive @join__enumValue(graph: join__Graph!) repeatable on ENUM_VALUE
+
+directive @join__field(graph: join__Graph, requires: join__FieldSet, provides: join__FieldSet, type: String, external: Boolean, override: String, usedOverridden: Boolean) repeatable on FIELD_DEFINITION | INPUT_FIELD_DEFINITION
+
+directive @join__graph(name: String!, url: String!) on ENUM_VALUE
+
+directive @join__implements(graph: join__Graph!, interface: String!) repeatable on OBJECT | INTERFACE
+
+directive @join__type(graph: join__Graph!, key: join__FieldSet, extension: Boolean! = false, resolvable: Boolean! = true, isInterfaceObject: Boolean! = false) repeatable on OBJECT | INTERFACE | UNION | ENUM | INPUT_OBJECT | SCALAR
+
+directive @join__unionMember(graph: join__Graph!, member: String!) repeatable on UNION
+
+directive @link(url: String, as: String, for: link__Purpose, import: [link__Import]) repeatable on SCHEMA
+
+scalar join__FieldSet
+
+enum join__Graph {
+  FLIGHTS @join__graph(name: "flights", url: "http://flights:8080/query")
+  BOOKINGS @join__graph(name: "bookings", url: "http://bookings:8080/query")
+}
+
+scalar link__Import
+
+enum link__Purpose {
+  """
+  `SECURITY` features provide metadata necessary to securely resolve fields.
+  """
+  SECURITY
+
+  """
+  `EXECUTION` features provide metadata necessary for operation execution.
+  """
+  EXECUTION
+}
+
+type Booking
+  @join__type(graph: BOOKINGS, key: "id")
+{
+  id: ID!
+  flight: Flight! @join__field(graph: BOOKINGS)
+}
+
+type Flight
+  @join__type(graph: FLIGHTS, key: "number departureDate")
+  @join__type(graph: BOOKINGS, key: "number departureDate")
+{
+  number: String!
+  departureDate: String!
+  origin: String! @join__field(graph: FLIGHTS)
+  destination: String! @join__field(graph: FLIGHTS)
+  price: Float! @join__field(graph: FLIGHTS) @join__field(graph: BOOKINGS, external: true)
+  bookings: [Booking!]! @join__field(graph: BOOKINGS)
+  totalCost: Float! @join__field(graph: BOOKINGS, requires: "price")
+}
+
+type Query
+  @join__type(graph: FLIGHTS)
+{
+  flight(number: String!, departureDate: String!): Flight @join__field(graph: FLIGHTS)
+}

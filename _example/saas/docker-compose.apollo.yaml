@@ -1,0 +1,39 @@
+services:
+  organizations:
+    build: 
+      context: ./organizations 
+      dockerfile: Dockerfile
+    ports:
+      - "8501:8080"
+    environment:
+      - PORT=8080
+
+  projects:
+    build: 
+      context: ./projects 
+      dockerfile: Dockerfile
+    ports:
+      - "8502:8080"
+    environment:
+      - PORT=8080
+
+  billing:
+    build: 
+      context: ./billing 
+      dockerfile: Dockerfile
+    ports:
+      - "8503:8080"
+    environment:
+      - PORT=8080
+
+  apollo-router:
+    image: ghcr.io/apollographql/router:v1.52.0
+    ports:
+      - "9003:4000"
+    volumes:
+      - ./apollo:/apollo
+    command: -s /apollo/supergraph.graphql -c /apollo/router.yaml --listen 0.0.0.0:4000
+    depends_on:
+      - organizations
+      - projects
+      - billing
