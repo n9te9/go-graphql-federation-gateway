@@ -4,14 +4,14 @@ service_name: social-gateway
 timeout_duration: "5s"
 services:
 - name: users
-  host: http://localhost:8301/query
+  host: http://host.docker.internal:8301/query
   schema_files:
   - users/graph/schema.graphqls
 - name: posts
-  host: http://localhost:8302/query
+  host: http://host.docker.internal:8302/query
   schema_files:
   - posts/graph/schema.graphqls
 - name: comments
-  host: http://localhost:8303/query
+  host: http://host.docker.internal:8303/query
   schema_files:
   - comments/graph/schema.graphqls

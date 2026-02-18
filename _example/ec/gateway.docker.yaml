@@ -6,19 +6,19 @@ enable_complement_request_id: false
 enable_hang_over_request_header: false
 services:
 - name: products
-  host: http://localhost:8101/query
+  host: http://host.docker.internal:8101/query
   schema_files:
   - ./products/graph/schema.graphqls
 - name: reviews
-  host: http://localhost:8102/query
+  host: http://host.docker.internal:8102/query
   schema_files:
   - ./reviews/graph/schema.graphqls
 - name: users
-  host: http://localhost:8103/query
+  host: http://host.docker.internal:8103/query
   schema_files:
   - ./users/graph/schema.graphqls
 - name: inventory
-  host: http://localhost:8104/query
+  host: http://host.docker.internal:8104/query
   schema_files:
   - ./inventory/graph/schema.graphqls
 opentelemetry:

@@ -4,14 +4,14 @@ service_name: fintech-gateway
 timeout_duration: "5s"
 services:
 - name: customers
-  host: http://localhost:8201/query
+  host: http://host.docker.internal:8201/query
   schema_files:
   - ./customers/graph/schema.graphqls
 - name: accounts
-  host: http://localhost:8202/query
+  host: http://host.docker.internal:8202/query
   schema_files:
   - ./accounts/graph/schema.graphqls
 - name: transactions
-  host: http://localhost:8203/query
+  host: http://host.docker.internal:8203/query
   schema_files:
   - ./transactions/graph/schema.graphqls

@@ -6,7 +6,7 @@ services:
     ports:
       - "9000:9000"
     volumes:
-      - ./gateway.yaml:/app/gateway.yaml
+      - ./gateway.docker.yaml:/app/gateway.yaml
       - ./customers:/app/customers
       - ./accounts:/app/accounts
       - ./transactions:/app/transactions
