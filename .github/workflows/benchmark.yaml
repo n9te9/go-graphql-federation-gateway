@@ -147,6 +147,13 @@ jobs:
           path: results/
           merge-multiple: true
 
+      - name: Debug - List downloaded files
+        run: |
+          echo "=== Checking results directory ==="
+          ls -la results/ || echo "results/ directory not found"
+          echo "=== Looking for result files ==="
+          find results/ -type f -name "*.txt" || echo "No .txt files found"
+
       - name: Aggregate and format results
         id: aggregate
         run: |
@@ -159,21 +166,46 @@ jobs:
               "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" >> benchmark_summary.md
           echo "────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
           
+          # Check if results files exist
+          if [ ! -d "results" ]; then
+            echo "⚠️ No results directory found" >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            cat benchmark_summary.md
+            exit 0
+          fi
+          
+          # Use find to locate all result files and process them
+          RESULT_FILES=$(find results/ -type f -name "benchmark_*_results.txt")
+          
+          if [ -z "$RESULT_FILES" ]; then
+            echo "⚠️ No benchmark results found" >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            cat benchmark_summary.md
+            exit 0
+          fi
+          
           # Combine all results
-          cat results/benchmark_*_results.txt | while IFS='|' read -r gateway domain test req_sec avg p50 p95 p99; do
-            printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
-                "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
-          done
+          while IFS= read -r file; do
+            while IFS='|' read -r gateway domain test req_sec avg p50 p95 p99; do
+              printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
+                  "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
+            done < "$file"
+          done <<< "$RESULT_FILES"
           
           echo '```' >> benchmark_summary.md
           echo "" >> benchmark_summary.md
           
-          # Calculate averages
+          # Calculate averages - combine all files first
+          TEMP_ALL=$(mktemp)
+          find results/ -type f -name "benchmark_*_results.txt" -exec cat {} \; > "$TEMP_ALL"
+          
           echo "### 📊 Performance Analysis" >> benchmark_summary.md
           echo '```' >> benchmark_summary.md
           
-          GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' results/benchmark_*_results.txt)
-          APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' results/benchmark_*_results.txt)
+          GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+          APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+          
+          rm -f "$TEMP_ALL"
           
           echo "Average Requests/sec across all domains:" >> benchmark_summary.md
           echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
