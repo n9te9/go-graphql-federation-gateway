@@ -55,33 +55,97 @@ jobs:
           retention-days: 1
 
   benchmark:
-    name: Benchmark ${{ matrix.domain }}
+    name: Benchmark ${{ matrix.test.domain }}-${{ matrix.test.type }}
     runs-on: ubuntu-latest
     needs: setup
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        domain:
-          - name: ec
+        test:
+          # EC Domain Tests
+          - domain: ec
+            type: key
             port: 9001
-            test: "EC - Cross-Service with @requires"
+            test: "EC - @key (Entity Resolution)"
+            query: '{"query":"query ProductBasic { product(id: \"p1\") { id name price } }"}'
+          - domain: ec
+            type: shareable
+            port: 9001
+            test: "EC - @shareable (Shared Fields)"
+            query: '{"query":"query ProductShared { product(id: \"p1\") { id name price weight } }"}'
+          - domain: ec
+            type: external-requires
+            port: 9001
+            test: "EC - @external + @requires (Cross-Service)"
             query: '{"query":"query ProductWithShipping { product(id: \"p1\") { id name price reviews { id body authorName } inStock shippingCost } }"}'
-          - name: fintech
+          
+          # Fintech Domain Tests
+          - domain: fintech
+            type: key
             port: 9002
-            test: "Fintech - Account Risk Score (@requires)"
+            test: "Fintech - @key (Entity Resolution)"
+            query: '{"query":"query CustomerBasic { customer(id: \"1\") { id name tier } }"}'
+          - domain: fintech
+            type: shareable
+            port: 9002
+            test: "Fintech - @shareable (Account Balance)"
+            query: '{"query":"query AccountWithBalance { account(iban: \"DE1234567890\") { iban id balance } }"}'
+          - domain: fintech
+            type: external-requires
+            port: 9002
+            test: "Fintech - @external + @requires (Risk Score)"
             query: '{"query":"query CustomerWithAccounts { customer(id: \"1\") { id name tier accounts { iban balance riskScore } } }"}'
-          - name: saas
+          
+          # SaaS Domain Tests
+          - domain: saas
+            type: key
             port: 9003
-            test: "SaaS - Organization Billing (@requires)"
+            test: "SaaS - @key (Entity Resolution)"
+            query: '{"query":"query OrganizationBasic { organization(id: \"org1\") { id name employeeCount } }"}'
+          - domain: saas
+            type: shareable
+            port: 9003
+            test: "SaaS - @shareable (Organization Shared)"
+            query: '{"query":"query OrganizationShared { organization(id: \"org1\") { id name employeeCount } }"}'
+          - domain: saas
+            type: external-requires
+            port: 9003
+            test: "SaaS - @external + @requires (Monthly Cost)"
             query: '{"query":"query OrganizationWithBilling { organization(id: \"org1\") { id name employeeCount billing { plan } monthlyCost } }"}'
-          - name: social
+          
+          # Social Domain Tests
+          - domain: social
+            type: key
             port: 9004
-            test: "Social - Post Engagement (@requires)"
+            test: "Social - @key (Entity Resolution)"
+            query: '{"query":"query UserBasic { user(id: \"user1\") { id name } }"}'
+          - domain: social
+            type: shareable
+            port: 9004
+            test: "Social - @shareable (Post Likes)"
+            query: '{"query":"query UserWithPosts { user(id: \"user1\") { id name posts { id title likeCount } } }"}'
+          - domain: social
+            type: external-requires
+            port: 9004
+            test: "Social - @external + @requires (Engagement)"
             query: '{"query":"query UserWithPosts { user(id: \"user1\") { id name posts { id title likeCount comments { body } engagementScore } } }"}'
-          - name: travel
+          
+          # Travel Domain Tests
+          - domain: travel
+            type: key
             port: 9005
-            test: "Travel - Flight Bookings (@requires)"
+            test: "Travel - @key (Entity Resolution)"
+            query: '{"query":"query FlightBasic { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price } }"}'
+          - domain: travel
+            type: shareable
+            port: 9005
+            test: "Travel - @shareable (Flight Price)"
+            query: '{"query":"query FlightWithPrice { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price } }"}'
+          - domain: travel
+            type: external-requires
+            port: 9005
+            test: "Travel - @external + @requires (Total Cost)"
             query: '{"query":"query FlightWithBookings { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price bookings { id } totalCost } }"}'
     
     steps:
@@ -116,18 +180,18 @@ jobs:
           docker load -i /tmp/gateway-image.tar
           chmod +x cmd/go-graphql-federation-gateway/gateway
 
-      - name: Run benchmark for ${{ matrix.domain.name }}
+      - name: Run benchmark for ${{ matrix.test.domain }}-${{ matrix.test.type }}
         run: |
           cd _example
           chmod +x domain_benchmark.sh
-          ./domain_benchmark.sh "${{ matrix.domain.name }}" "${{ matrix.domain.port }}" '${{ matrix.domain.query }}' "${{ matrix.domain.test }}"
+          ./domain_benchmark.sh "${{ matrix.test.domain }}" "${{ matrix.test.port }}" '${{ matrix.test.query }}' "${{ matrix.test.test }}"
 
       - name: Upload benchmark results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-results-${{ matrix.domain.name }}
-          path: _example/benchmark_${{ matrix.domain.name }}_results.txt
+          name: benchmark-results-${{ matrix.test.domain }}-${{ matrix.test.type }}
+          path: _example/benchmark_${{ matrix.test.domain }}_results.txt
           retention-days: 90
 
   summary:
@@ -176,50 +240,50 @@ jobs:
           echo "" >> benchmark_summary.md
           echo "### All Domains Performance Comparison" >> benchmark_summary.md
           echo "" >> benchmark_summary.md
-          echo '```' >> benchmark_summary.md
-          printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
-              "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" >> benchmark_summary.md
-          echo "────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
           
-          # Find all result files recursively
-          RESULT_FILES=$(find results/ -type f -name "benchmark_*_results.txt" 2>/dev/null)
-          
-          if [ -z "$RESULT_FILES" ]; then
-            echo "⚠️ No benchmark results found" >> benchmark_summary.md
-            echo "" >> benchmark_summary.md
-            echo "Debug information:" >> benchmark_summary.md
-            echo "- Results directory exists: $([ -d results/ ] && echo 'Yes' || echo 'No')" >> benchmark_summary.md
-            echo "- Files found: $(find results/ -type f 2>/dev/null | wc -l)" >> benchmark_summary.md
+          # Group by domain
+          for domain in ec fintech saas social travel; do
+            echo "#### ${domain^^} Domain" >> benchmark_summary.md
             echo '```' >> benchmark_summary.md
-            cat benchmark_summary.md
-            exit 0
-          fi
-          
-          # Combine all results
-          echo "$RESULT_FILES" | while IFS= read -r file; do
-            if [ -f "$file" ]; then
-              while IFS='|' read -r gateway domain test req_sec avg p50 p95 p99; do
-                printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
-                    "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
-              done < "$file"
+            printf "%-20s %-45s %15s %12s %12s %12s %12s\n" \
+                "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" >> benchmark_summary.md
+            echo "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
+            
+            # Find result files for this domain
+            DOMAIN_FILES=$(find results/ -type f -name "benchmark_${domain}_results.txt" 2>/dev/null)
+            
+            if [ -n "$DOMAIN_FILES" ]; then
+              echo "$DOMAIN_FILES" | while IFS= read -r file; do
+                if [ -f "$file" ]; then
+                  while IFS='|' read -r gateway domain_name test req_sec avg p50 p95 p99; do
+                    printf "%-20s %-45s %15s %12s %12s %12s %12s\n" \
+                        "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
+                  done < "$file"
+                fi
+              done
+            else
+              echo "No results found for $domain domain" >> benchmark_summary.md
             fi
+            
+            echo '```' >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
           done
-          
-          echo '```' >> benchmark_summary.md
-          echo "" >> benchmark_summary.md
           
           # Calculate averages - combine all files first
           TEMP_ALL=$(mktemp)
           find results/ -type f -name "benchmark_*_results.txt" -exec cat {} \; > "$TEMP_ALL" 2>/dev/null
           
           echo "### 📊 Performance Analysis" >> benchmark_summary.md
-          echo '```' >> benchmark_summary.md
+          echo "" >> benchmark_summary.md
           
           if [ -s "$TEMP_ALL" ]; then
+            # Overall averages
+            echo "#### Overall Performance" >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
             GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
             APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
             
-            echo "Average Requests/sec across all domains:" >> benchmark_summary.md
+            echo "Average Requests/sec across all tests:" >> benchmark_summary.md
             echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
             echo "  Apollo Router:  ${APOLLO_AVG} req/s" >> benchmark_summary.md
             
@@ -247,13 +311,39 @@ jobs:
               echo "" >> benchmark_summary.md
               echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
             fi
+            echo '```' >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+            
+            # Per-directive analysis
+            echo "#### Performance by Federation Directive" >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            
+            for test_type in key shareable external-requires; do
+              GO_TYPE_AVG=$(awk -F'|' -v type="$test_type" '/^Go-Gateway/ && $3 ~ type {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+              APOLLO_TYPE_AVG=$(awk -F'|' -v type="$test_type" '/^Apollo-Router/ && $3 ~ type {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+              
+              case $test_type in
+                key)
+                  echo "@key (Entity Resolution):" >> benchmark_summary.md
+                  ;;
+                shareable)
+                  echo "@shareable (Shared Fields):" >> benchmark_summary.md
+                  ;;
+                external-requires)
+                  echo "@external + @requires (Cross-Service):" >> benchmark_summary.md
+                  ;;
+              esac
+              echo "  Go Gateway:     ${GO_TYPE_AVG} req/s" >> benchmark_summary.md
+              echo "  Apollo Router:  ${APOLLO_TYPE_AVG} req/s" >> benchmark_summary.md
+              echo "" >> benchmark_summary.md
+            done
+            
+            echo '```' >> benchmark_summary.md
           else
             echo "⚠️ No data available for analysis" >> benchmark_summary.md
           fi
           
           rm -f "$TEMP_ALL"
-          
-          echo '```' >> benchmark_summary.md
           
           cat benchmark_summary.md
           exit 0  # Always exit successfully
