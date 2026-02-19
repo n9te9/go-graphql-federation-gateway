@@ -318,25 +318,28 @@ jobs:
             echo "#### Performance by Federation Directive" >> benchmark_summary.md
             echo '```' >> benchmark_summary.md
             
-            for test_type in key shareable external-requires; do
-              GO_TYPE_AVG=$(awk -F'|' -v type="$test_type" '/^Go-Gateway/ && $3 ~ type {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
-              APOLLO_TYPE_AVG=$(awk -F'|' -v type="$test_type" '/^Apollo-Router/ && $3 ~ type {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
-              
-              case $test_type in
-                key)
-                  echo "@key (Entity Resolution):" >> benchmark_summary.md
-                  ;;
-                shareable)
-                  echo "@shareable (Shared Fields):" >> benchmark_summary.md
-                  ;;
-                external-requires)
-                  echo "@external + @requires (Cross-Service):" >> benchmark_summary.md
-                  ;;
-              esac
-              echo "  Go Gateway:     ${GO_TYPE_AVG} req/s" >> benchmark_summary.md
-              echo "  Apollo Router:  ${APOLLO_TYPE_AVG} req/s" >> benchmark_summary.md
-              echo "" >> benchmark_summary.md
-            done
+            # @key (Entity Resolution)
+            GO_KEY_AVG=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@key \(Entity Resolution\)/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            APOLLO_KEY_AVG=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@key \(Entity Resolution\)/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            echo "@key (Entity Resolution):" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_KEY_AVG} req/s" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_KEY_AVG} req/s" >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+            
+            # @shareable (Shared Fields)
+            GO_SHAREABLE_AVG=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@shareable/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            APOLLO_SHAREABLE_AVG=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@shareable/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            echo "@shareable (Shared Fields):" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_SHAREABLE_AVG} req/s" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_SHAREABLE_AVG} req/s" >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+            
+            # @external + @requires (Cross-Service)
+            GO_EXTERNAL_AVG=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@external \+ @requires/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            APOLLO_EXTERNAL_AVG=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@external \+ @requires/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            echo "@external + @requires (Cross-Service):" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_EXTERNAL_AVG} req/s" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_EXTERNAL_AVG} req/s" >> benchmark_summary.md
             
             echo '```' >> benchmark_summary.md
           else
