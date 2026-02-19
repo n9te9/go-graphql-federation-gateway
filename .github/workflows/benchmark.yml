@@ -66,19 +66,51 @@ jobs:
           
           # Extract performance comparison
           if [ -f benchmark_results.txt ]; then
+            echo "📝 Extracting benchmark summary..."
+            
+            # Remove ANSI color codes for clean extraction
+            sed 's/\x1b\[[0-9;]*m//g' benchmark_results.txt > benchmark_results_clean.txt
+            
+            # Debug: Show what we have
+            echo "=== Debug: Checking for key markers ==="
+            grep -n "Benchmark Results Summary" benchmark_results_clean.txt || echo "⚠️ 'Benchmark Results Summary' not found"
+            grep -n "Performance Comparison" benchmark_results_clean.txt || echo "⚠️ 'Performance Comparison' not found"
+            echo "========================================"
+            
             echo "## 🚀 Benchmark Results Summary" > benchmark_summary.md
             echo "" >> benchmark_summary.md
             
-            # Extract the summary table
-            sed -n '/╔.*Benchmark Results Summary.*╗/,/✓ Benchmark completed/p' benchmark_results.txt >> benchmark_summary.md
+            # Extract the results table
+            if grep -q "Benchmark Results Summary" benchmark_results_clean.txt; then
+              echo '```' >> benchmark_summary.md
+              # Extract from the header to the end of table
+              awk '/Benchmark Results Summary/,/Performance Comparison/ { 
+                if ($0 !~ /Performance Comparison/) print 
+              }' benchmark_results_clean.txt >> benchmark_summary.md
+              echo '```' >> benchmark_summary.md
+              echo "" >> benchmark_summary.md
+            fi
             
-            # Save for artifact
+            # Extract performance comparison section
+            if grep -q "Performance Comparison:" benchmark_results_clean.txt; then
+              echo "### 📊 Performance Comparison" >> benchmark_summary.md
+              echo '```' >> benchmark_summary.md
+              awk '/Performance Comparison:/,/Benchmark completed/ { 
+                if ($0 !~ /Benchmark completed/) print 
+              }' benchmark_results_clean.txt >> benchmark_summary.md
+              echo '```' >> benchmark_summary.md
+            fi
+            
+            # Save for artifact and show what we extracted
             cp benchmark_summary.md ../benchmark_summary.md
             
             echo "✓ Summary extracted"
-            cat benchmark_summary.md
+            echo "=== Extracted Summary Preview ==="
+            head -30 benchmark_summary.md
+            echo "================================="
           else
-            echo "⚠️ Benchmark results not found"
+            echo "⚠️ Benchmark results file not found"
+            ls -la
           fi
 
       - name: Upload benchmark results
@@ -104,12 +136,21 @@ jobs:
             try {
               if (fs.existsSync('benchmark_summary.md')) {
                 const summary = fs.readFileSync('benchmark_summary.md', 'utf8');
-                comment += summary;
+                
+                // Check if summary has meaningful content
+                if (summary.trim().length > 100) {
+                  comment += summary;
+                } else {
+                  comment += '⚠️ Benchmark completed but results were too short or empty.\n\n';
+                  comment += '<details>\n<summary>Debug Info</summary>\n\n';
+                  comment += '```\n' + summary + '\n```\n';
+                  comment += '</details>\n\n';
+                }
               } else {
-                comment += '⚠️ Benchmark completed but summary extraction failed.\n\n';
+                comment += '⚠️ Benchmark completed but summary file was not found.\n\n';
               }
               
-              comment += '\n\n---\n';
+              comment += '\n---\n';
               comment += '📊 Full benchmark results are available in [Actions Artifacts](';
               comment += `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
               
