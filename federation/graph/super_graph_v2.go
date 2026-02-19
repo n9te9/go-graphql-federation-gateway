@@ -44,9 +44,17 @@ func (sg *SuperGraphV2) composeSchema() error {
 		Definitions: make([]ast.Definition, 0),
 	}
 
-	// Merge schemas from all subgraphs (using deep copy)
+	// Two-pass merge to ensure ObjectTypeExtensions find their base types regardless
+	// of subgraph iteration order (Go maps are non-deterministic).
+	//
+	// Pass 1: merge all non-extension type definitions so every base type exists.
 	for _, subGraph := range sg.SubGraphs {
-		sg.mergeSchemaDeep(subGraph.Schema)
+		sg.mergeSchemaDeepPass1(subGraph.Schema)
+	}
+
+	// Pass 2: merge all ObjectTypeExtensions now that base types are present.
+	for _, subGraph := range sg.SubGraphs {
+		sg.mergeSchemaDeepPass2(subGraph.Schema)
 	}
 
 	return nil
@@ -72,6 +80,40 @@ func (sg *SuperGraphV2) mergeSchemaDeep(newSchema *ast.Document) {
 			sg.mergeUnionTypeDefinition(newTypeDef)
 		case *ast.DirectiveDefinition:
 			sg.mergeDirectiveDefinition(newTypeDef)
+		}
+	}
+}
+
+// mergeSchemaDeepPass1 merges all non-extension type definitions.
+// This is the first pass of the two-pass composition strategy.
+func (sg *SuperGraphV2) mergeSchemaDeepPass1(newSchema *ast.Document) {
+	for _, newDef := range newSchema.Definitions {
+		switch newTypeDef := newDef.(type) {
+		case *ast.ObjectTypeDefinition:
+			sg.mergeObjectTypeDefinitionDeep(newTypeDef)
+		case *ast.InterfaceTypeDefinition:
+			sg.mergeInterfaceTypeDefinition(newTypeDef)
+		case *ast.InputObjectTypeDefinition:
+			sg.mergeInputObjectTypeDefinition(newTypeDef)
+		case *ast.EnumTypeDefinition:
+			sg.mergeEnumTypeDefinition(newTypeDef)
+		case *ast.ScalarTypeDefinition:
+			sg.mergeScalarTypeDefinition(newTypeDef)
+		case *ast.UnionTypeDefinition:
+			sg.mergeUnionTypeDefinition(newTypeDef)
+		case *ast.DirectiveDefinition:
+			sg.mergeDirectiveDefinition(newTypeDef)
+		}
+	}
+}
+
+// mergeSchemaDeepPass2 merges ObjectTypeExtension definitions only.
+// This is the second pass of the two-pass composition strategy, run after
+// all base types have been merged so extensions can always find their target.
+func (sg *SuperGraphV2) mergeSchemaDeepPass2(newSchema *ast.Document) {
+	for _, newDef := range newSchema.Definitions {
+		if newExt, ok := newDef.(*ast.ObjectTypeExtension); ok {
+			sg.mergeObjectTypeExtensionDeep(newExt)
 		}
 	}
 }

@@ -2,16 +2,20 @@ endpoint: /graphql
 port: 9000
 service_name: fintech-gateway
 timeout_duration: "5s"
+request_timeout: "30s"
 services:
 - name: customers
   host: http://localhost:8201/query
-  schema_files:
-  - ./customers/graph/schema.graphqls
+  retry:
+    attempts: 3
+    timeout: "5s"
 - name: accounts
   host: http://localhost:8202/query
-  schema_files:
-  - ./accounts/graph/schema.graphqls
+  retry:
+    attempts: 3
+    timeout: "5s"
 - name: transactions
   host: http://localhost:8203/query
-  schema_files:
-  - ./transactions/graph/schema.graphqls
+  retry:
+    attempts: 3
+    timeout: "5s"

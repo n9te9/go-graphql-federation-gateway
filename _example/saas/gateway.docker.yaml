@@ -2,16 +2,20 @@ endpoint: /graphql
 port: 9000
 service_name: saas-gateway
 timeout_duration: "5s"
+request_timeout: "30s"
 services:
 - name: organizations
   host: http://host.docker.internal:8501/query
-  schema_files:
-  - ./organizations/graph/schema.graphqls
+  retry:
+    attempts: 3
+    timeout: "5s"
 - name: projects
   host: http://host.docker.internal:8502/query
-  schema_files:
-  - ./projects/graph/schema.graphqls
+  retry:
+    attempts: 3
+    timeout: "5s"
 - name: billing
   host: http://host.docker.internal:8503/query
-  schema_files:
-  - ./billing/graph/schema.graphqls
+  retry:
+    attempts: 3
+    timeout: "5s"
