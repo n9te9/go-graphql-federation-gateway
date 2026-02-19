@@ -15,6 +15,11 @@ type EntityKey struct {
 	Resolvable bool   // Resolvable parameter of @key directive
 }
 
+// OverrideMetadata represents the @override directive information.
+type OverrideMetadata struct {
+	From string // The source subgraph name (e.g., "products")
+}
+
 // Field represents field information of an Entity.
 type Field struct {
 	Name        string   // Field name
@@ -22,6 +27,11 @@ type Field struct {
 	Requires    []string // Fields specified in @requires directive
 	Provides    []string // Fields specified in @provides directive
 	isShareable bool     // Whether @shareable directive is present
+
+	// Federation v2 directives
+	Override       *OverrideMetadata // @override(from: "products")
+	isInaccessible bool              // @inaccessible
+	Tags           []string          // @tag(name: "public")
 }
 
 // Entity represents an ObjectType with @key directive.
@@ -29,6 +39,9 @@ type Entity struct {
 	Keys        []EntityKey       // Key information of the Entity
 	isExtension bool              // Whether defined as an extension
 	Fields      map[string]*Field // Field map with field name as key
+
+	// Federation v2 directives
+	isInterfaceObject bool // @interfaceObject
 }
 
 // SubGraphV2 represents a subgraph information.
@@ -37,6 +50,9 @@ type SubGraphV2 struct {
 	Host     string             // Host (e.g., "product.example.com")
 	Schema   *ast.Document      // Schema AST
 	entities map[string]*Entity // Entity map with entity name as key
+
+	// Federation v2 directives
+	ComposeDirectives []string // @composeDirective directives
 }
 
 // NewSubGraphV2 initializes a SubGraphV2 by parsing the schema and extracting entities.
@@ -52,10 +68,11 @@ func NewSubGraphV2(name string, src []byte, host string) (*SubGraphV2, error) {
 
 	// Initialize SubGraph structure
 	sg := &SubGraphV2{
-		Name:     name,
-		Host:     host,
-		Schema:   doc,
-		entities: make(map[string]*Entity),
+		Name:              name,
+		Host:              host,
+		Schema:            doc,
+		entities:          make(map[string]*Entity),
+		ComposeDirectives: extractSchemaComposeDirectives(doc),
 	}
 
 	// Traverse all type definitions
@@ -64,9 +81,10 @@ func NewSubGraphV2(name string, src []byte, host string) (*SubGraphV2, error) {
 		if objType, ok := def.(*ast.ObjectTypeDefinition); ok {
 			if isEntity(objType.Directives) {
 				entity := &Entity{
-					Keys:        parseEntityKeys(objType.Directives),
-					isExtension: false,
-					Fields:      make(map[string]*Field),
+					Keys:              parseEntityKeys(objType.Directives),
+					isExtension:       false,
+					Fields:            make(map[string]*Field),
+					isInterfaceObject: hasDirective(objType.Directives, "interfaceObject"),
 				}
 
 				// Traverse all fields
@@ -82,9 +100,10 @@ func NewSubGraphV2(name string, src []byte, host string) (*SubGraphV2, error) {
 		if objExt, ok := def.(*ast.ObjectTypeExtension); ok {
 			if isEntity(objExt.Directives) {
 				entity := &Entity{
-					Keys:        parseEntityKeys(objExt.Directives),
-					isExtension: true,
-					Fields:      make(map[string]*Field),
+					Keys:              parseEntityKeys(objExt.Directives),
+					isExtension:       true,
+					Fields:            make(map[string]*Field),
+					isInterfaceObject: hasDirective(objExt.Directives, "interfaceObject"),
 				}
 
 				// Traverse all fields
@@ -156,11 +175,13 @@ func parseEntityKeys(directives []*ast.Directive) []EntityKey {
 // parseField creates a Field structure from field definition.
 func parseField(field *ast.FieldDefinition) *Field {
 	f := &Field{
-		Name:        field.Name.String(),
-		Type:        field.Type,
-		Requires:    []string{},
-		Provides:    []string{},
-		isShareable: false,
+		Name:           field.Name.String(),
+		Type:           field.Type,
+		Requires:       []string{},
+		Provides:       []string{},
+		isShareable:    false,
+		isInaccessible: false,
+		Tags:           []string{},
 	}
 
 	// Parse directives
@@ -180,6 +201,24 @@ func parseField(field *ast.FieldDefinition) *Field {
 			}
 		case "shareable":
 			f.isShareable = true
+		case "override":
+			// Parse from argument of @override directive
+			for _, arg := range d.Arguments {
+				if arg.Name.String() == "from" {
+					from := strings.Trim(arg.Value.String(), "\"")
+					f.Override = &OverrideMetadata{From: from}
+				}
+			}
+		case "inaccessible":
+			f.isInaccessible = true
+		case "tag":
+			// Parse name argument of @tag directive
+			for _, arg := range d.Arguments {
+				if arg.Name.String() == "name" {
+					tagName := strings.Trim(arg.Value.String(), "\"")
+					f.Tags = append(f.Tags, tagName)
+				}
+			}
 		}
 	}
 
@@ -205,4 +244,49 @@ func (e *Entity) IsResolvable() bool {
 		}
 	}
 	return false
+}
+
+// IsInterfaceObject returns whether the Entity has @interfaceObject directive.
+func (e *Entity) IsInterfaceObject() bool {
+	return e.isInterfaceObject
+}
+
+// IsInaccessible returns whether the field has @inaccessible directive.
+func (f *Field) IsInaccessible() bool {
+	return f.isInaccessible
+}
+
+// GetTags returns the tags of the field.
+func (f *Field) GetTags() []string {
+	return f.Tags
+}
+
+// GetOverride returns the override metadata of the field.
+func (f *Field) GetOverride() *OverrideMetadata {
+	return f.Override
+}
+
+// extractSchemaComposeDirectives extracts @composeDirective from schema definition.
+func extractSchemaComposeDirectives(doc *ast.Document) []string {
+	var directives []string
+	for _, def := range doc.Definitions {
+		if schemaDef, ok := def.(*ast.SchemaDefinition); ok {
+			for _, d := range schemaDef.Directives {
+				if d.Name == "composeDirective" {
+					for _, arg := range d.Arguments {
+						if arg.Name.String() == "name" {
+							name := strings.Trim(arg.Value.String(), "\"")
+							directives = append(directives, name)
+						}
+					}
+				}
+			}
+		}
+	}
+	return directives
+}
+
+// GetComposeDirectives returns the compose directives of the subgraph.
+func (sg *SubGraphV2) GetComposeDirectives() []string {
+	return sg.ComposeDirectives
 }

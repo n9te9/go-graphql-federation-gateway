@@ -20,6 +20,7 @@ func (r *queryResolver) Flight(ctx context.Context, number string, departureDate
 			Origin:        "SFO",
 			Destination:   "JFK",
 			Price:         500.0,
+			AircraftType:  "Boeing 787",
 		}, nil
 	}
 	return &model.Flight{
@@ -28,6 +29,7 @@ func (r *queryResolver) Flight(ctx context.Context, number string, departureDate
 		Origin:        "HND",
 		Destination:   "NRT",
 		Price:         300.0,
+		AircraftType:  "Airbus A320",
 	}, nil
 }
 

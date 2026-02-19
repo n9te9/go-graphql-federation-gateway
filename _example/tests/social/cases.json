@@ -166,5 +166,25 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @inaccessible - Should block access to email",
+    "description": "Verify that @inaccessible field cannot be queried",
+    "query": "query { user(id: \"user1\") { id name email } }",
+    "variables": {},
+    "expectedError": true,
+    "expectedErrorMessage": "Cannot query field \"email\" on type \"User\""
+  },
+  {
+    "name": "Federation v2: @tag - Fields with tags should work normally",
+    "description": "Verify that @tag fields can be queried (tags are metadata)",
+    "query": "query { user(id: \"user1\") { id name } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice"
+      }
+    }
   }
 ]

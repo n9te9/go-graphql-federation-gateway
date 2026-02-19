@@ -17,6 +17,7 @@ func (r *queryResolver) Customer(ctx context.Context, id string) (*model.Custome
 		ID:   id,
 		Name: "Customer " + id,
 		Tier: "Premium",
+		Ssn:  "XXX-XX-" + id,
 	}, nil
 }
 

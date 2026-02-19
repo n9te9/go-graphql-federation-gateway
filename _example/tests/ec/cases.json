@@ -258,5 +258,26 @@
         "shippingCost": 5
       }
     }
+  },
+  {
+    "name": "Federation v2: @inaccessible - Should block access to internal fields",
+    "description": "Verify that @inaccessible field cannot be queried",
+    "query": "query ProductWithInternalCode { product(id: \"p1\") { id name internalCode } }",
+    "variables": {},
+    "expectedError": true,
+    "expectedErrorMessage": "Cannot query field \"internalCode\" on type \"Product\""
+  },
+  {
+    "name": "Federation v2: @tag - Fields with tags should work normally",
+    "description": "Verify that @tag fields can be queried (tags are metadata)",
+    "query": "query ProductWithTags { product(id: \"p1\") { id name price } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000
+      }
+    }
   }
 ]

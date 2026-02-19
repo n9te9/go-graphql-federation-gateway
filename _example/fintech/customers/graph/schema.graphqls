@@ -1,11 +1,12 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@shareable"])
+        import: ["@key", "@shareable", "@inaccessible", "@tag"])
 
 type Customer @key(fields: "id") {
   id: ID!
-  name: String!
-  tier: String! @shareable
+  name: String! @tag(name: "public")
+  tier: String! @shareable @tag(name: "public") @tag(name: "internal")
+  ssn: String! @inaccessible
 }
 
 type Query {

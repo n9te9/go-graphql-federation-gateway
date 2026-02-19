@@ -6,6 +6,7 @@ type Organization struct {
 	ID            string `json:"id"`
 	Name          string `json:"name"`
 	EmployeeCount int    `json:"employeeCount"`
+	TaxID         string `json:"taxId"`
 }
 
 func (Organization) IsEntity() {}

@@ -8,6 +8,7 @@ type Flight struct {
 	Origin        string  `json:"origin"`
 	Destination   string  `json:"destination"`
 	Price         float64 `json:"price"`
+	AircraftType  string  `json:"aircraftType"`
 }
 
 func (Flight) IsEntity() {}

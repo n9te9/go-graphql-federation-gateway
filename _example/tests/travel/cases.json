@@ -120,5 +120,26 @@
         "totalCost": 550
       }
     }
+  },
+  {
+    "name": "Federation v2: @inaccessible - Should block access to aircraft type",
+    "description": "Verify that @inaccessible field cannot be queried",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number aircraftType } }",
+    "variables": {},
+    "expectedError": true,
+    "expectedErrorMessage": "Cannot query field \"aircraftType\" on type \"Flight\""
+  },
+  {
+    "name": "Federation v2: @tag - Fields with tags should work normally",
+    "description": "Verify that @tag fields can be queried (tags are metadata)",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination } }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "origin": "SFO",
+        "destination": "JFK"
+      }
+    }
   }
 ]

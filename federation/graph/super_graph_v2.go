@@ -317,10 +317,45 @@ func (sg *SuperGraphV2) buildOwnershipMap() error {
 			fieldName := field.Name.String()
 			key := fmt.Sprintf("%s.%s", typeName, fieldName)
 
+			// Check for @override directive
+			var overrideFrom string
+			var overrideSubGraph *SubGraphV2
+
+			for _, subGraph := range sg.SubGraphs {
+				if entity, exists := subGraph.GetEntity(typeName); exists {
+					if entityField, ok := entity.Fields[fieldName]; ok {
+						if override := entityField.GetOverride(); override != nil {
+							overrideFrom = override.From
+							overrideSubGraph = subGraph
+							break
+						}
+					}
+				}
+			}
+
 			// Traverse all subgraphs to find those that can resolve this field
 			for _, subGraph := range sg.SubGraphs {
+				// Skip the original owner if @override is present
+				if overrideFrom != "" && subGraph.Name == overrideFrom {
+					continue
+				}
+
 				if sg.canResolveField(subGraph, typeName, fieldName) {
 					sg.Ownership[key] = append(sg.Ownership[key], subGraph)
+				}
+			}
+
+			// Ensure the override subgraph is in the ownership list
+			if overrideSubGraph != nil {
+				found := false
+				for _, owner := range sg.Ownership[key] {
+					if owner.Name == overrideSubGraph.Name {
+						found = true
+						break
+					}
+				}
+				if !found {
+					sg.Ownership[key] = append(sg.Ownership[key], overrideSubGraph)
 				}
 			}
 		}
@@ -419,4 +454,16 @@ func (sg *SuperGraphV2) GetEntityOwnerSubGraph(typeName string) *SubGraphV2 {
 // IsEntityType checks if a type is an entity (has @key directive in any subgraph).
 func (sg *SuperGraphV2) IsEntityType(typeName string) bool {
 	return sg.GetEntityOwnerSubGraph(typeName) != nil
+}
+
+// GetFieldOwnerSubGraph returns the subgraph that owns a specific field.
+// It considers @override directives to determine the correct owner.
+// Returns the first subgraph in the ownership list, or nil if none found.
+func (sg *SuperGraphV2) GetFieldOwnerSubGraph(typeName, fieldName string) *SubGraphV2 {
+	key := fmt.Sprintf("%s.%s", typeName, fieldName)
+	owners := sg.Ownership[key]
+	if len(owners) > 0 {
+		return owners[0]
+	}
+	return nil
 }

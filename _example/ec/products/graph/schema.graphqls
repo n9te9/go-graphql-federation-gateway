@@ -1,6 +1,6 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@shareable"])
+        import: ["@key", "@shareable", "@inaccessible", "@tag"])
 
 type Query {
   product(id: ID!): Product
@@ -12,7 +12,8 @@ type Mutation {
 
 type Product @key(fields: "id") {
   id: ID!
-  name: String! @shareable
-  price: Int! @shareable
+  name: String! @shareable @tag(name: "public")
+  price: Int! @shareable @tag(name: "public") @tag(name: "partner")
   weight: Float! @shareable
+  internalCode: String! @inaccessible
 }

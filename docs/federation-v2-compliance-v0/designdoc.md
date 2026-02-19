@@ -1,9 +1,5 @@
 # Design Doc: Federation v2 Core Compliance Upgrade
 
-* **Status**: Proposed
-* **Date**: 2026-02-18
-* **Target Version**: v0.x (Next Minor Release)
-
 ## 1. Summary
 
 現在の `go-graphql-federation-gateway` は、Apollo Federation v2 の基本機能（`_entities` クエリ生成など）を有していますが、v2 の高度な構成機能である **Entity Ownership の正確な判定（`resolvable: false`）**、**依存フィールドの解決（`@requires`）**、**フェッチ最適化（`@provides`）**、および **Mutation 実行** が未実装または不完全です。

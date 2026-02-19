@@ -19,12 +19,14 @@ func (r *queryResolver) Organization(ctx context.Context, id string) (*model.Org
 			ID:            id,
 			Name:          "Acme Corp",
 			EmployeeCount: 50,
+			TaxID:         "TAX-" + id,
 		}, nil
 	}
 	return &model.Organization{
 		ID:            id,
 		Name:          "Org " + id,
 		EmployeeCount: 10,
+		TaxID:         "TAX-" + id,
 	}, nil
 }
 

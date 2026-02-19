@@ -6,10 +6,11 @@ type Mutation struct {
 }
 
 type Product struct {
-	ID     string  `json:"id"`
-	Name   string  `json:"name"`
-	Price  int     `json:"price"`
-	Weight float64 `json:"weight"`
+	ID           string  `json:"id"`
+	Name         string  `json:"name"`
+	Price        int     `json:"price"`
+	Weight       float64 `json:"weight"`
+	InternalCode string  `json:"internalCode"`
 }
 
 func (Product) IsEntity() {}

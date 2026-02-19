@@ -69,6 +69,8 @@ for i in $(seq 0 $((NUM_CASES - 1))); do
   QUERY=$(echo "$CASE" | jq -r '.query')
   VARIABLES=$(echo "$CASE" | jq -c '.variables')
   EXPECTED=$(echo "$CASE" | jq -c '.expected')
+  EXPECTED_ERROR=$(echo "$CASE" | jq -r '.expectedError // false')
+  EXPECTED_ERROR_MSG=$(echo "$CASE" | jq -r '.expectedErrorMessage // ""')
 
   echo "Running test: $NAME..."
 
@@ -77,19 +79,49 @@ for i in $(seq 0 $((NUM_CASES - 1))); do
     -d "{\"query\": $(echo "$QUERY" | jq -R .), \"variables\": $VARIABLES}" \
     "${GATEWAY_URL}")
 
-  ACTUAL=$(echo "$RESPONSE" | jq -S '.data')
-
-  # Compare
-  DIFF=$(diff <(echo "$EXPECTED" | jq -S .) <(echo "$ACTUAL" | jq -S .) || true)
-
-  if [ -z "$DIFF" ]; then
-    echo "SUCCESS: $NAME"
-    PASSED=$((PASSED + 1))
+  # Check if this is an error test case
+  if [ "$EXPECTED_ERROR" = "true" ]; then
+    # Verify that errors exist in response
+    ERRORS=$(echo "$RESPONSE" | jq '.errors')
+    if [ "$ERRORS" = "null" ] || [ -z "$ERRORS" ]; then
+      echo "FAILED: $NAME"
+      echo "Expected error but got none"
+      echo "Response: $RESPONSE"
+      FAILED=$((FAILED + 1))
+    else
+      # Check if error message matches (if specified)
+      if [ -n "$EXPECTED_ERROR_MSG" ]; then
+        ERROR_MSG=$(echo "$RESPONSE" | jq -r '.errors[0].message')
+        if [[ "$ERROR_MSG" == *"$EXPECTED_ERROR_MSG"* ]]; then
+          echo "SUCCESS: $NAME (error as expected)"
+          PASSED=$((PASSED + 1))
+        else
+          echo "FAILED: $NAME"
+          echo "Expected error message: $EXPECTED_ERROR_MSG"
+          echo "Actual error message: $ERROR_MSG"
+          FAILED=$((FAILED + 1))
+        fi
+      else
+        echo "SUCCESS: $NAME (error as expected)"
+        PASSED=$((PASSED + 1))
+      fi
+    fi
   else
-    echo "FAILED: $NAME"
-    echo "Difference:"
-    echo "$DIFF"
-    FAILED=$((FAILED + 1))
+    # Normal success case - compare data
+    ACTUAL=$(echo "$RESPONSE" | jq -S '.data')
+
+    # Compare
+    DIFF=$(diff <(echo "$EXPECTED" | jq -S .) <(echo "$ACTUAL" | jq -S .) || true)
+
+    if [ -z "$DIFF" ]; then
+      echo "SUCCESS: $NAME"
+      PASSED=$((PASSED + 1))
+    else
+      echo "FAILED: $NAME"
+      echo "Difference:"
+      echo "$DIFF"
+      FAILED=$((FAILED + 1))
+    fi
   fi
 done
 
