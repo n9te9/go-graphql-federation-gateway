@@ -155,27 +155,27 @@ run_domain_benchmark() {
 
 # EC Domain Benchmark
 run_domain_benchmark "ec" \
-    '{"query":"{ product(id: \"1\") { id name price } }"}' \
+    '{"query":"query ProductBase { product(id: \"p1\") { id name price inStock } }"}' \
     "Simple Query (Product)"
 
 # Fintech Domain Benchmark  
 run_domain_benchmark "fintech" \
-    '{"query":"{ customer(id: \"1\") { id name tier } }"}' \
+    '{"query":"query GetCustomer { customer(id: \"1\") { id name tier } }"}' \
     "Simple Query (Customer)"
 
 # SaaS Domain Benchmark
 run_domain_benchmark "saas" \
-    '{"query":"{ organization(id: \"1\") { id name employeeCount } }"}' \
+    '{"query":"query GetOrganization { organization(id: \"org1\") { id name employeeCount } }"}' \
     "Simple Query (Organization)"
 
 # Social Domain Benchmark
 run_domain_benchmark "social" \
-    '{"query":"{ user(id: \"1\") { id name } }"}' \
+    '{"query":"query GetUser { user(id: \"user1\") { id name } }"}' \
     "Simple Query (User)"
 
 # Travel Domain Benchmark
 run_domain_benchmark "travel" \
-    '{"query":"{ flight(number: \"AA100\" departureDate: \"2024-12-25\") { number departureDate airline } }"}' \
+    '{"query":"query GetFlight { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number departureDate origin destination } }"}' \
     "Simple Query (Flight)"
 
 # Cleanup temp file

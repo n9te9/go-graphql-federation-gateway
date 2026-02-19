@@ -24,24 +24,24 @@ TOTAL_REQUESTS=10000
 CONCURRENCY=50
 TIMEOUT=30
 
-# Test queries
+# Test queries - aligned with integration test queries
 SIMPLE_QUERY=$(cat <<EOF
 {
-  "query": "{ product(id: \\"1\\") { id name price } }"
+  "query": "query ProductBase { product(id: \\"p1\\") { id name price inStock } }"
 }
 EOF
 )
 
 CROSS_SERVICE_QUERY=$(cat <<EOF
 {
-  "query": "{ product(id: \\"1\\") { id name price reviews { id body authorName } } }"
+  "query": "query ProductWithReviews { product(id: \\"p1\\") { name price reviews { body authorName } } }"
 }
 EOF
 )
 
 REQUIRES_QUERY=$(cat <<EOF
 {
-  "query": "{ product(id: \\"1\\") { id name weight inStock shippingCost } }"
+  "query": "query ProductWithShipping { product(id: \\"p1\\") { id name shippingCost } }"
 }
 EOF
 )
