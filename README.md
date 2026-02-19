@@ -3,7 +3,8 @@
 A robust, hackable, and high-performance **GraphQL Federation v2 Gateway** written purely in **Go**.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Go Version](https://img.shields.io/badge/go-1.24+-00ADD8.svg?logo=go)
+![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg?logo=go)
+![Version](https://img.shields.io/badge/version-v0.1.3-blue.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
 ## 📖 Introduction
@@ -13,9 +14,31 @@ A robust, hackable, and high-performance **GraphQL Federation v2 Gateway** writt
 While existing solutions like Apollo Router (Rust) are excellent, extending them often requires learning Rust or dealing with binary constraints. This project provides a fully-featured Federation Gateway that is:
 
 * **Native Go:** Easy to read, debug, and extend for Go developers.
-* **Federation v2 Compliant:** Supports core directives like `@key`, `@requires`, and `@external`.
+* **Federation v2 Compliant:** Supports core and advanced directives including `@key`, `@requires`, `@external`, `@override`, `@inaccessible`, and more.
 * **Hackable:** The Planner and Executor logic is modular, allowing for custom optimization strategies.
 * **Observable:** Built-in OpenTelemetry support for production-grade tracing.
+* **Performance Optimized:** Parallel benchmark workflow with comprehensive performance testing across multiple domains.
+
+## 🆕 What's New in v0.1.3
+
+### Enhanced Federation v2 Support
+- **`@override` directive:** Progressive field ownership migration between subgraphs
+- **`@inaccessible` directive:** Hide fields/types from the public schema
+- **`@tag` directive:** Schema metadata annotations for tooling
+- **`@interfaceObject` directive:** Interface representation in subgraphs
+- **`@composeDirective` directive:** Custom directive preservation
+
+### Comprehensive Testing Infrastructure
+- **73+ integration tests** across 5 production-like domains
+- Variable-based query testing with complex nested structures
+- Full coverage of all Federation v2 directives
+- Automated validation in CI/CD pipeline
+
+### Performance Benchmarking
+- **Parallel benchmark workflow** for efficient performance testing
+- Direct comparison with Apollo Router baseline
+- Automated PR comments with detailed performance metrics
+- Domain-specific benchmark scripts for local testing
 
 ## ✨ Key Features
 
@@ -34,9 +57,11 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
   * Graceful degradation with continued execution when possible.
   * See [Partial Response Documentation](docs/partial-response.md) for details.
 * **Comprehensive Testing:** 
-  * 23+ integration tests covering all core Federation v2 features across 5 example domains (EC, Fintech, SaaS, Social, Travel).
-  * 9+ partial response tests validating graceful degradation scenarios.
-  * Tests validate @key (simple & composite), @external, @requires, @provides, @shareable directives.
+  * **73+ integration tests** covering all Federation v2 features across 5 example domains (EC, Fintech, SaaS, Social, Travel).
+  * Variable-based query testing with multiple data types, nested queries, and composite keys.
+  * Partial response tests validating graceful degradation scenarios.
+  * Tests validate `@key`, `@external`, `@requires`, `@provides`, `@shareable`, `@override`, `@inaccessible`, and `@tag` directives.
+  * **Automated parallel benchmarking** comparing Go Gateway vs Apollo Router performance across all domains.
 * **Observability:**
   * Full **OpenTelemetry** support.
   * Traces propagate context to subgraphs (`traceparent` injection), allowing for end-to-end visualization of distributed requests.
@@ -81,6 +106,8 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 
 ## 🧩 Supported Directives
 
+### Core Federation v1/v2 Directives
+
 | Directive | Status | Description |
 | :--- | :---: | :--- |
 | `@key` | ✅ | Entity resolution via `_entities`. Supports both simple and composite keys. |
@@ -89,6 +116,16 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 | `@provides` | ✅ | Optimization for pre-fetching fields from entities. |
 | `@shareable`| ✅ | Allows same field/type definition across multiple subgraphs. |
 
+### Advanced Federation v2 Directives
+
+| Directive | Status | Description |
+| :--- | :---: | :--- |
+| `@override` | ✅ | Progressive migration of field ownership between subgraphs. |
+| `@inaccessible` | ✅ | Hides fields/types from the public schema while keeping them in the supergraph. |
+| `@tag` | ✅ | Annotates schema elements with metadata for tooling and documentation. |
+| `@interfaceObject` | ✅ | Represents interface types as value types in subgraphs. |
+| `@composeDirective` | ✅ | Preserves custom directives during composition. |
+
 **Tested Features:**
 - ✅ Simple keys (`@key(fields: "id")`)
 - ✅ Composite keys (`@key(fields: "number departureDate")`)
@@ -96,9 +133,13 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 - ✅ Computed fields with `@requires` directive
 - ✅ Field optimization with `@provides` directive  
 - ✅ Shareable fields and types across services
+- ✅ Field ownership migration with `@override` directive
+- ✅ Schema element hiding with `@inaccessible` directive
+- ✅ Metadata annotations with `@tag` directive
 - ✅ Nested entity resolution chains
 - ✅ Circular/loopback references
 - ✅ Partial responses with graceful degradation
+- ✅ Variable-based queries with complex nested structures
 
 ## 🛠️ Getting Started
 
@@ -184,6 +225,31 @@ You will receive a fully stitched response. If tracing is enabled, check Jaeger 
   }
 }
 ```
+
+## 📊 Performance Benchmarking
+
+The project includes comprehensive performance testing infrastructure:
+
+### Automated Benchmarks
+- **Parallel execution** across 5 production-like domains (EC, Fintech, SaaS, Social, Travel)
+- **Direct comparison** between Go Gateway and Apollo Router
+- **10,000 requests** per test at 50 concurrent connections
+- **Metrics tracked:** Requests/sec, Average latency, P50/P95/P99 percentiles
+
+### Running Benchmarks Locally
+
+```bash
+# Run single domain benchmark
+cd _example
+./domain_benchmark.sh ec 9001 '{"query":"..."}' "Test Name"
+
+# Run all domain benchmarks
+cd _example/ec
+./benchmark.sh
+```
+
+### CI/CD Integration
+Pull requests automatically trigger parallel benchmarks across all domains, with results posted as PR comments comparing Go Gateway vs Apollo Router performance.
 
 ## 🤝 Contributing
 
