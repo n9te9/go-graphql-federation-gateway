@@ -3,12 +3,13 @@ package executor
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"sync"
+
+	"github.com/goccy/go-json"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
