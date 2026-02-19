@@ -38,7 +38,10 @@ func NewExecutorV2(httpClient *http.Client, superGraph *graph.SuperGraphV2) *Exe
 		httpClient: httpClient,
 		pool: sync.Pool{
 			New: func() interface{} {
-				return &ExecutionContext{}
+				return &ExecutionContext{
+					results: make(map[int]interface{}),
+					errors:  make([]GraphQLError, 0, 8), // Pre-allocate small capacity
+				}
 			},
 		},
 		queryBuilder: NewQueryBuilderV2(superGraph),
@@ -67,15 +70,30 @@ func (e *ExecutorV2) Execute(
 		return nil, fmt.Errorf("invalid plan: %w", err)
 	}
 
-	// Initialize execution context
+	// Initialize execution context from pool
 	execCtx := e.pool.Get().(*ExecutionContext)
 	defer func() {
+		// Clear context before returning to pool to prevent memory leaks
+		execCtx.ctx = nil
+		execCtx.plan = nil
+		// Clear map entries (reuse underlying storage)
+		for k := range execCtx.results {
+			delete(execCtx.results, k)
+		}
+		// Reset slice but keep capacity
+		execCtx.errors = execCtx.errors[:0]
 		e.pool.Put(execCtx)
 	}()
+
+	// Set context and plan
 	execCtx.ctx = ctx
 	execCtx.plan = plan
-	execCtx.results = make(map[int]interface{})
-	execCtx.errors = make([]GraphQLError, 0)
+
+	// Clear results and errors (should already be cleared from previous use)
+	for k := range execCtx.results {
+		delete(execCtx.results, k)
+	}
+	execCtx.errors = execCtx.errors[:0]
 
 	// Execute root steps (don't fail on error, collect them)
 	_ = e.executeSteps(execCtx, plan.RootStepIndexes, variables)
@@ -175,7 +193,6 @@ func (e *ExecutorV2) executeSteps(
 	eg, ctx := errgroup.WithContext(execCtx.ctx)
 
 	for _, stepID := range stepIDs {
-		stepID := stepID // Capture for goroutine
 		step := execCtx.plan.Steps[stepID]
 
 		eg.Go(func() error {
@@ -290,7 +307,6 @@ func (e *ExecutorV2) processStep(
 		execCtx.mu.Lock()
 		execCtx.results[step.ID] = result
 		execCtx.mu.Unlock()
-
 	} else {
 		// Merge entity results into parent
 		if err := e.mergeEntityResults(execCtx, step, result); err != nil {
@@ -301,7 +317,6 @@ func (e *ExecutorV2) processStep(
 		execCtx.mu.Lock()
 		execCtx.results[step.ID] = result
 		execCtx.mu.Unlock()
-
 	}
 
 	return nil
