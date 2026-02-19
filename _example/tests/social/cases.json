@@ -186,5 +186,60 @@
         "name": "Alice"
       }
     }
+  },
+  {
+    "name": "Variables: Multiple Variables Query",
+    "description": "Verify handling of queries with multiple variables using aliases",
+    "query": "query MultiVars($userId1: ID!, $userId2: ID!) { user1: user(id: $userId1) { id name } user2: user(id: $userId2) { id name } }",
+    "variables": { "userId1": "user1", "userId2": "user2" },
+    "expected": {
+      "user1": {
+        "id": "user1",
+        "name": "Alice"
+      },
+      "user2": {
+        "id": "user2",
+        "name": "Bob"
+      }
+    }
+  },
+  {
+    "name": "Variables: Optional Variable Override",
+    "description": "Verify variables work correctly with different values",
+    "query": "query UserWithDefault($id: ID!) { user(id: $id) { id name } }",
+    "variables": { "id": "user2" },
+    "expected": {
+      "user": {
+        "id": "user2",
+        "name": "Bob"
+      }
+    }
+  },
+  {
+    "name": "Variables: Complex Nested Query with Variables",
+    "description": "Verify variables work in complex nested federation queries",
+    "query": "query UserPostsCommentsVar($uid: ID!) { user(id: $uid) { id name posts { id title comments { id body author { name } } } } }",
+    "variables": { "uid": "user1" },
+    "expected": {
+      "user": {
+        "id": "user1",
+        "name": "Alice",
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post",
+            "comments": [
+              {
+                "id": "comment1",
+                "body": "Great post!",
+                "author": {
+                  "name": "Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
   }
 ]

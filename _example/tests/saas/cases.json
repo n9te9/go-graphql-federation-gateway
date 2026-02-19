@@ -172,5 +172,53 @@
         "employeeCount": 50
       }
     }
+  },
+  {
+    "name": "Variables: Multiple Variables Query",
+    "description": "Verify handling of queries with multiple variables",
+    "query": "query MultiVars($orgId: ID!, $projId: ID!) { organization(id: $orgId) { id name } project(id: $projId) { id name } }",
+    "variables": { "orgId": "org1", "projId": "proj1" },
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp"
+      },
+      "project": {
+        "id": "proj1",
+        "name": "Project Alpha"
+      }
+    }
+  },
+  {
+    "name": "Variables: Optional Variable Override",
+    "description": "Verify variables work correctly with different values",
+    "query": "query OrgWithDefault($id: ID!) { organization(id: $id) { id name employeeCount } }",
+    "variables": { "id": "org2" },
+    "expected": {
+      "organization": {
+        "id": "org2",
+        "name": "Org org2",
+        "employeeCount": 10
+      }
+    }
+  },
+  {
+    "name": "Variables: Nested Federation Query with Variables",
+    "description": "Verify variables work in nested cross-service queries",
+    "query": "query ProjectOrgVar($projectId: ID!) { project(id: $projectId) { id name organization { id name billing { plan } } } }",
+    "variables": { "projectId": "proj1" },
+    "expected": {
+      "project": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "organization": {
+          "id": "org1",
+          "name": "Acme Corp",
+          "billing": {
+            "plan": "Enterprise"
+          }
+        }
+      }
+    }
   }
 ]

@@ -1,0 +1,307 @@
+name: Benchmark Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:  # Manual trigger
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+jobs:
+  setup:
+    name: Setup and Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
+      - name: Build gateway binary
+        run: |
+          go build -o cmd/go-graphql-federation-gateway/gateway cmd/go-graphql-federation-gateway/main.go
+          chmod +x cmd/go-graphql-federation-gateway/gateway
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build gateway Docker image
+        run: |
+          docker build -f _example/Dockerfile.gateway -t federation-gateway:latest .
+          docker save federation-gateway:latest -o /tmp/gateway-image.tar
+
+      - name: Upload gateway binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-binary
+          path: cmd/go-graphql-federation-gateway/gateway
+          retention-days: 1
+
+      - name: Upload gateway Docker image
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-image
+          path: /tmp/gateway-image.tar
+          retention-days: 1
+
+  benchmark:
+    name: Benchmark ${{ matrix.domain }}
+    runs-on: ubuntu-latest
+    needs: setup
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        domain:
+          - name: ec
+            port: 9001
+            test: "EC - Cross-Service with @requires"
+            query: '{"query":"query ProductWithShipping { product(id: \"p1\") { id name price reviews { id body authorName } inStock shippingCost } }"}'
+          - name: fintech
+            port: 9002
+            test: "Fintech - Account Risk Score (@requires)"
+            query: '{"query":"query CustomerWithAccounts { customer(id: \"1\") { id name tier accounts { iban balance riskScore } } }"}'
+          - name: saas
+            port: 9003
+            test: "SaaS - Organization Billing (@requires)"
+            query: '{"query":"query OrganizationWithBilling { organization(id: \"org1\") { id name employeeCount billing { plan } monthlyCost } }"}'
+          - name: social
+            port: 9004
+            test: "Social - Post Engagement (@requires)"
+            query: '{"query":"query UserWithPosts { user(id: \"user1\") { id name posts { id title likeCount comments { body } engagementScore } } }"}'
+          - name: travel
+            port: 9005
+            test: "Travel - Flight Bookings (@requires)"
+            query: '{"query":"query FlightWithBookings { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price bookings { id } totalCost } }"}'
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install hey (HTTP load generator)
+        run: |
+          wget -q https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64
+          chmod +x hey_linux_amd64
+          sudo mv hey_linux_amd64 /usr/local/bin/hey
+
+      - name: Install Apollo Router
+        run: |
+          curl -sSL https://router.apollo.dev/download/nix/latest | sh
+          sudo mv router /usr/local/bin/
+
+      - name: Download gateway binary
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-binary
+          path: cmd/go-graphql-federation-gateway/
+
+      - name: Download gateway Docker image
+        uses: actions/download-artifact@v4
+        with:
+          name: gateway-image
+          path: /tmp/
+
+      - name: Load gateway Docker image
+        run: |
+          docker load -i /tmp/gateway-image.tar
+          chmod +x cmd/go-graphql-federation-gateway/gateway
+
+      - name: Run benchmark for ${{ matrix.domain.name }}
+        run: |
+          cd _example
+          chmod +x domain_benchmark.sh
+          ./domain_benchmark.sh "${{ matrix.domain.name }}" "${{ matrix.domain.port }}" '${{ matrix.domain.query }}' "${{ matrix.domain.test }}"
+
+      - name: Upload benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ matrix.domain.name }}
+          path: _example/benchmark_${{ matrix.domain.name }}_results.txt
+          retention-days: 90
+
+  summary:
+    name: Aggregate Results
+    runs-on: ubuntu-latest
+    needs: benchmark
+    if: always()
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all benchmark results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: benchmark-results-*
+          path: results/
+
+      - name: Debug - Comprehensive check
+        run: |
+          echo "=== Current directory ==="
+          pwd
+          echo ""
+          echo "=== All files in current directory ==="
+          ls -la
+          echo ""
+          echo "=== Checking results directory ==="
+          ls -la results/ || echo "results/ directory not found"
+          echo ""
+          echo "=== All subdirectories in results ==="
+          ls -la results/*/ 2>/dev/null || echo "No subdirectories found"
+          echo ""
+          echo "=== Finding all files ==="
+          find . -type f -name "*.txt" 2>/dev/null || echo "No .txt files found anywhere"
+          echo ""
+          echo "=== Tree view of results (if available) ==="
+          find results/ -type f 2>/dev/null || echo "results/ not accessible"
+
+      - name: Aggregate and format results
+        id: aggregate
+        shell: bash
+        run: |
+          set +e  # Don't exit on error, we want to handle them gracefully
+          
+          echo "## 🚀 Benchmark Results (Go Gateway vs Apollo Router)" > benchmark_summary.md
+          echo "" >> benchmark_summary.md
+          echo "### All Domains Performance Comparison" >> benchmark_summary.md
+          echo "" >> benchmark_summary.md
+          echo '```' >> benchmark_summary.md
+          printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
+              "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" >> benchmark_summary.md
+          echo "────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
+          
+          # Find all result files recursively
+          RESULT_FILES=$(find results/ -type f -name "benchmark_*_results.txt" 2>/dev/null)
+          
+          if [ -z "$RESULT_FILES" ]; then
+            echo "⚠️ No benchmark results found" >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+            echo "Debug information:" >> benchmark_summary.md
+            echo "- Results directory exists: $([ -d results/ ] && echo 'Yes' || echo 'No')" >> benchmark_summary.md
+            echo "- Files found: $(find results/ -type f 2>/dev/null | wc -l)" >> benchmark_summary.md
+            echo '```' >> benchmark_summary.md
+            cat benchmark_summary.md
+            exit 0
+          fi
+          
+          # Combine all results
+          echo "$RESULT_FILES" | while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              while IFS='|' read -r gateway domain test req_sec avg p50 p95 p99; do
+                printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
+                    "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
+              done < "$file"
+            fi
+          done
+          
+          echo '```' >> benchmark_summary.md
+          echo "" >> benchmark_summary.md
+          
+          # Calculate averages - combine all files first
+          TEMP_ALL=$(mktemp)
+          find results/ -type f -name "benchmark_*_results.txt" -exec cat {} \; > "$TEMP_ALL" 2>/dev/null
+          
+          echo "### 📊 Performance Analysis" >> benchmark_summary.md
+          echo '```' >> benchmark_summary.md
+          
+          if [ -s "$TEMP_ALL" ]; then
+            GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            
+            echo "Average Requests/sec across all domains:" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_AVG} req/s" >> benchmark_summary.md
+            
+            # Use awk for comparison instead of bc to avoid dependency issues
+            COMPARISON=$(awk -v go="$GO_AVG" -v apollo="$APOLLO_AVG" 'BEGIN {
+              if (go > 0 && apollo > 0) {
+                if (go > apollo) {
+                  ratio = go / apollo
+                  printf "go_faster|%.2f", ratio
+                } else {
+                  ratio = apollo / go
+                  printf "apollo_faster|%.2f", ratio
+                }
+              } else {
+                print "insufficient_data"
+              }
+            }')
+            
+            if [[ "$COMPARISON" == go_faster* ]]; then
+              RATIO=$(echo "$COMPARISON" | cut -d'|' -f2)
+              echo "" >> benchmark_summary.md
+              echo "✓ Go Gateway is ${RATIO}x faster on average" >> benchmark_summary.md
+            elif [[ "$COMPARISON" == apollo_faster* ]]; then
+              RATIO=$(echo "$COMPARISON" | cut -d'|' -f2)
+              echo "" >> benchmark_summary.md
+              echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
+            fi
+          else
+            echo "⚠️ No data available for analysis" >> benchmark_summary.md
+          fi
+          
+          rm -f "$TEMP_ALL"
+          
+          echo '```' >> benchmark_summary.md
+          
+          cat benchmark_summary.md
+          exit 0  # Always exit successfully
+
+      - name: Upload aggregated results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-summary
+          path: benchmark_summary.md
+          retention-days: 90
+
+      - name: Comment PR with benchmark results
+        if: github.event_name == 'pull_request'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            
+            let comment = '';
+            
+            try {
+              if (fs.existsSync('benchmark_summary.md')) {
+                comment = fs.readFileSync('benchmark_summary.md', 'utf8');
+              } else {
+                comment = '## 🚀 Benchmark Results\n\n⚠️ Summary file not found.\n';
+              }
+              
+              comment += '\n\n---\n';
+              comment += '📊 Full benchmark results are available in [Actions Artifacts](';
+              comment += `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})`;
+              
+            } catch (e) {
+              comment = '## 🚀 Benchmark Results\n\n❌ Failed to extract results.\n\n';
+              comment += `Error: ${e.message}\n`;
+            }
+            
+            // Post comment
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
+
+      - name: Cleanup
+        if: always()
+        run: |
+          docker ps -a -q | xargs -r docker stop || true
+          docker ps -a -q | xargs -r docker rm || true
+          pkill -f gateway || true

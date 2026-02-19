@@ -279,5 +279,66 @@
         "price": 1000
       }
     }
+  },
+  {
+    "name": "Variables: Multiple Variables Query",
+    "description": "Verify handling of queries with multiple variables using aliases",
+    "query": "query MultiVarQuery($productId1: ID!, $productId2: ID!) { product1: product(id: $productId1) { id name price } product2: product(id: $productId2) { id name } }",
+    "variables": { "productId1": "p1", "productId2": "p2" },
+    "expected": {
+      "product1": {
+        "id": "p1",
+        "name": "Product p1",
+        "price": 1000
+      },
+      "product2": {
+        "id": "p2",
+        "name": "Product p2"
+      }
+    }
+  },
+  {
+    "name": "Variables: Optional Variable Override",
+    "description": "Verify that variable values override defaults when provided",
+    "query": "query ProductWithDefault($id: ID!) { product(id: $id) { id name price inStock } }",
+    "variables": { "id": "p2" },
+    "expected": {
+      "product": {
+        "id": "p2",
+        "name": "Product p2",
+        "price": 1000,
+        "inStock": false
+      }
+    }
+  },
+  {
+    "name": "Variables: Nested Query with Variables",
+    "description": "Verify variables work correctly in nested federation queries",
+    "query": "query ProductReviewsWithVar($prodId: ID!) { product(id: $prodId) { id name reviews { id body authorName product { name } } } }",
+    "variables": { "prodId": "p1" },
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Product p1",
+        "reviews": [
+          {
+            "id": "1",
+            "body": "Great product!",
+            "authorName": "Alice",
+            "product": {
+              "name": "Product 1"
+            }
+          },
+          {
+            "id": "2",
+            "body": "Not bad",
+            "authorName": "Bob",
+            "product": {
+              "name": "Product 1"
+            }
+          }
+        ]
+      }
+    }
   }
 ]

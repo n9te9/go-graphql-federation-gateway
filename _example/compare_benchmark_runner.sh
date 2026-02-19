@@ -111,10 +111,9 @@ run_gateway_benchmark() {
 }
 
 # Test queries
-SIMPLE_QUERY='{"query":"{ product(id: \"1\") { id name price } }"}'
-CROSS_SERVICE_QUERY='{"query":"{ product(id: \"1\") { id name price reviews { id body authorName } } }"}'
-REQUIRES_QUERY='{"query":"{ product(id: \"1\") { id name weight inStock shippingCost } }"}'
-
+SIMPLE_QUERY='{"query":"query ProductBase { product(id: \"p1\") { id name price } }"}'                                      
+CROSS_SERVICE_QUERY='{"query":"query ProductWithReviews { product(id: \"p1\") { id name price reviews { id body authorName } } }"}'      
+REQUIRES_QUERY='{"query":"query ProductWithShipping { product(id: \"p1\") { id name weight inStock shippingCost } }"}'
 # Start EC domain services
 echo -e "${CYAN}Starting EC domain subgraphs...${NC}"
 cd ec

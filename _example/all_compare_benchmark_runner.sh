@@ -249,27 +249,27 @@ echo ""
 
 # EC Domain
 benchmark_domain "ec" 9001 \
-    '{"query":"{ product(id: \"1\") { id name price reviews { id body authorName } inStock shippingCost } }"}' \
+    '{"query":"query ProductWithShipping { product(id: \"p1\") { id name price reviews { id body authorName } inStock shippingCost } }"}' \
     "EC - Cross-Service with @requires"
 
 # Fintech Domain
 benchmark_domain "fintech" 9002 \
-    '{"query":"{ customer(id: \"1\") { id name tier accounts { iban balance riskScore } } }"}' \
+    '{"query":"query CustomerWithAccounts { customer(id: \"1\") { id name tier accounts { iban balance riskScore } } }"}' \
     "Fintech - Account Risk Score (@requires)"
 
 # SaaS Domain
 benchmark_domain "saas" 9003 \
-    '{"query":"{ organization(id: \"org1\") { id name employeeCount billing { plan } monthlyCost } }"}' \
+    '{"query":"query OrganizationWithBilling { organization(id: \"org1\") { id name employeeCount billing { plan } monthlyCost } }"}' \
     "SaaS - Organization Billing (@requires)"
 
 # Social Domain
 benchmark_domain "social" 9004 \
-    '{"query":"{ user(id: \"user1\") { id name posts { id title likeCount comments { body } engagementScore } } }"}' \
+    '{"query":"query UserWithPosts { user(id: \"user1\") { id name posts { id title likeCount comments { body } engagementScore } } }"}' \
     "Social - Post Engagement (@requires)"
 
 # Travel Domain
 benchmark_domain "travel" 9005 \
-    '{"query":"{ flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price bookings { id } totalCost } }"}' \
+    '{"query":"query FlightWithBookings { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price bookings { id } totalCost } }"}' \
     "Travel - Flight Bookings (@requires)"
 
 rm -f /tmp/gql_query.json
