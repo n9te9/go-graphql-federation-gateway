@@ -168,7 +168,10 @@ jobs:
 
       - name: Aggregate and format results
         id: aggregate
+        shell: bash
         run: |
+          set +e  # Don't exit on error, we want to handle them gracefully
+          
           echo "## 🚀 Benchmark Results (Go Gateway vs Apollo Router)" > benchmark_summary.md
           echo "" >> benchmark_summary.md
           echo "### All Domains Performance Comparison" >> benchmark_summary.md
@@ -220,16 +223,29 @@ jobs:
             echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
             echo "  Apollo Router:  ${APOLLO_AVG} req/s" >> benchmark_summary.md
             
-            if (( $(echo "$GO_AVG > 0 && $APOLLO_AVG > 0" | bc -l) )); then
-              RATIO=$(echo "scale=2; $GO_AVG / $APOLLO_AVG" | bc)
-              if (( $(echo "$RATIO > 1" | bc -l) )); then
-                echo "" >> benchmark_summary.md
-                echo "✓ Go Gateway is ${RATIO}x faster on average" >> benchmark_summary.md
-              else
-                RATIO=$(echo "scale=2; $APOLLO_AVG / $GO_AVG" | bc)
-                echo "" >> benchmark_summary.md
-                echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
-              fi
+            # Use awk for comparison instead of bc to avoid dependency issues
+            COMPARISON=$(awk -v go="$GO_AVG" -v apollo="$APOLLO_AVG" 'BEGIN {
+              if (go > 0 && apollo > 0) {
+                if (go > apollo) {
+                  ratio = go / apollo
+                  printf "go_faster|%.2f", ratio
+                } else {
+                  ratio = apollo / go
+                  printf "apollo_faster|%.2f", ratio
+                }
+              } else {
+                print "insufficient_data"
+              }
+            }')
+            
+            if [[ "$COMPARISON" == go_faster* ]]; then
+              RATIO=$(echo "$COMPARISON" | cut -d'|' -f2)
+              echo "" >> benchmark_summary.md
+              echo "✓ Go Gateway is ${RATIO}x faster on average" >> benchmark_summary.md
+            elif [[ "$COMPARISON" == apollo_faster* ]]; then
+              RATIO=$(echo "$COMPARISON" | cut -d'|' -f2)
+              echo "" >> benchmark_summary.md
+              echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
             fi
           else
             echo "⚠️ No data available for analysis" >> benchmark_summary.md
@@ -240,6 +256,7 @@ jobs:
           echo '```' >> benchmark_summary.md
           
           cat benchmark_summary.md
+          exit 0  # Always exit successfully
 
       - name: Upload aggregated results
         uses: actions/upload-artifact@v4
