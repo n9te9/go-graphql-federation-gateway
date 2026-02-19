@@ -7,7 +7,5 @@ services:
       - "9000:9000"
     volumes:
       - ./gateway.docker.yaml:/app/gateway.yaml
-      - ./flights:/app/flights
-      - ./bookings:/app/bookings
-    environment:
-      - PORT=9000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
