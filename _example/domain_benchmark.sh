@@ -34,8 +34,8 @@ TIMEOUT=${TIMEOUT:-30}
 GO_GATEWAY_PORT=9000
 GATEWAY_BINARY="../cmd/go-graphql-federation-gateway/gateway"
 
-# Output file
-RESULTS_FILE="benchmark_${DOMAIN}_results.txt"
+# Output file (created in parent directory since we cd into domain)
+RESULTS_FILE="../benchmark_${DOMAIN}_results.txt"
 
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║      Domain Benchmark: ${DOMAIN}${NC}"
@@ -101,6 +101,9 @@ run_gateway_benchmark() {
 
 # Change to domain directory
 cd "$DOMAIN" || { echo -e "${RED}Failed to cd to ${DOMAIN}${NC}"; exit 1; }
+
+# Initialize results file
+> "$RESULTS_FILE"
 
 # Start services
 echo -e "${CYAN}Starting ${DOMAIN} subgraph services...${NC}"
@@ -192,4 +195,4 @@ cd ..
 rm -f /tmp/gql_query.json
 
 echo -e "${GREEN}✓ Benchmark for ${DOMAIN} completed${NC}"
-echo -e "${CYAN}Results saved to: _example/${RESULTS_FILE}${NC}"
+echo -e "${CYAN}Results saved to: _example/benchmark_${DOMAIN}_results.txt${NC}"
