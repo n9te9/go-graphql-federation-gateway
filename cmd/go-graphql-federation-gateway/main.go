@@ -15,21 +15,18 @@ var SampleGatewaySetting = &gateway.GatewayOption{
 	Port:                        9000,
 	ServiceName:                 "go-graphql-federation-gateway",
 	TimeoutDuration:             "5s",
+	RequestTimeout:              "30s",
 	EnableHangOverRequestHeader: true,
 	Services: []gateway.GatewayService{
 		{
-			Name: "products",
-			Host: "http://localhost:4001/graphql",
-			SchemaFiles: []string{
-				"./product/product.gql",
-			},
+			Name:  "products",
+			Host:  "http://localhost:4001",
+			Retry: gateway.RetryOption{Attempts: 3, Timeout: "5s"},
 		},
 		{
-			Name: "reviews",
-			Host: "http://localhost:4002/graphql",
-			SchemaFiles: []string{
-				"./inventory/review.gql",
-			},
+			Name:  "reviews",
+			Host:  "http://localhost:4002",
+			Retry: gateway.RetryOption{Attempts: 3, Timeout: "5s"},
 		},
 	},
 }

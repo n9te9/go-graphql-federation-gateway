@@ -1,0 +1,20 @@
+endpoint: /graphql
+port: 9000
+service_name: schema-update-demo
+timeout_duration: "5s"
+request_timeout: "30s"
+enable_hang_over_request_header: false
+services:
+  - name: products
+    host: http://localhost:8501
+    retry:
+      attempts: 3
+      timeout: "5s"
+  - name: reviews
+    host: http://localhost:8502
+    retry:
+      attempts: 3
+      timeout: "5s"
+opentelemetry:
+  tracing:
+    enable: false
