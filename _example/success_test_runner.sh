@@ -10,6 +10,19 @@ fi
 
 TEST_CASES_FILE="tests/${DOMAIN}/cases.json"
 GATEWAY_URL="http://localhost:9000/graphql"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+GATEWAY_BIN="${SCRIPT_DIR}/../cmd/go-graphql-federation-gateway/gateway"
+
+# Kill any stale gateway process on port 9000 before starting
+lsof -t -i :9000 2>/dev/null | xargs kill 2>/dev/null || true
+
+# Build the gateway binary so all test runs use the same compiled binary
+# (avoids go run compilation variance and race conditions between domains)
+echo "Building gateway binary..."
+(cd "${SCRIPT_DIR}/.." && go build -o cmd/go-graphql-federation-gateway/gateway ./cmd/go-graphql-federation-gateway/) || {
+  echo "ERROR: Gateway build failed"
+  exit 1
+}
 
 # Function to wait for service to be ready
 wait_for_service() {
@@ -61,17 +74,31 @@ fi
 # Function to cleanup
 cleanup() {
   echo "Stopping gateway and subgraphs..."
-  kill $(lsof -t -i :9000) || true
+  # Send SIGTERM and wait for port 9000 to be fully released before returning
+  local gw_pids
+  gw_pids=$(lsof -t -i :9000 2>/dev/null) || true
+  if [ -n "$gw_pids" ]; then
+    kill $gw_pids 2>/dev/null || true
+    local i=0
+    while lsof -i :9000 > /dev/null 2>&1; do
+      sleep 0.5
+      i=$((i + 1))
+      if [ $i -ge 20 ]; then
+        lsof -t -i :9000 2>/dev/null | xargs kill -9 2>/dev/null || true
+        break
+      fi
+    done
+  fi
   cd "${DOMAIN}" && docker compose down
   cd ..
 }
 
 trap cleanup EXIT
 
-# 3. Start Gateway
+# 3. Start Gateway (use pre-built binary to avoid go run compilation variance)
 echo "Starting Gateway..."
 cd ${DOMAIN}
-go run ../../cmd/go-graphql-federation-gateway/main.go serve &
+"${GATEWAY_BIN}" serve &
 GATEWAY_PID=$!
 cd ..
 
