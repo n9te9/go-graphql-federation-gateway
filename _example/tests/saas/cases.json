@@ -151,5 +151,26 @@
         "monthlyCost": 5000
       }
     }
+  },
+  {
+    "name": "Federation v2: @inaccessible - Should block access to Tax ID",
+    "description": "Verify that @inaccessible field cannot be queried",
+    "query": "query { organization(id: \"org1\") { id name taxId } }",
+    "variables": {},
+    "expectedError": true,
+    "expectedErrorMessage": "Cannot query field \"taxId\" on type \"Organization\""
+  },
+  {
+    "name": "Federation v2: @tag - Fields with tags should work normally",
+    "description": "Verify that @tag fields can be queried (tags are metadata)",
+    "query": "query { organization(id: \"org1\") { id name employeeCount } }",
+    "variables": {},
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "employeeCount": 50
+      }
+    }
   }
 ]

@@ -92,5 +92,26 @@
         "riskScore": 10
       }
     }
+  },
+  {
+    "name": "Federation v2: @inaccessible - Should block access to SSN",
+    "description": "Verify that @inaccessible field cannot be queried",
+    "query": "query { customer(id: \"1\") { id name ssn } }",
+    "variables": {},
+    "expectedError": true,
+    "expectedErrorMessage": "Cannot query field \"ssn\" on type \"Customer\""
+  },
+  {
+    "name": "Federation v2: @tag - Fields with tags should work normally",
+    "description": "Verify that @tag fields can be queried (tags are metadata)",
+    "query": "query { customer(id: \"1\") { id name tier } }",
+    "variables": {},
+    "expected": {
+      "customer": {
+        "id": "1",
+        "name": "Customer 1",
+        "tier": "Premium"
+      }
+    }
   }
 ]

@@ -184,3 +184,182 @@ func TestNewSubGraphV2_WithNonResolvableKey(t *testing.T) {
 		t.Error("expected key to be non-resolvable")
 	}
 }
+
+func TestNewSubGraphV2_WithOverride(t *testing.T) {
+	schema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			name: String! @override(from: "products")
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product-v2", []byte(schema), "http://product-v2.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	nameField, ok := productEntity.Fields["name"]
+	if !ok {
+		t.Fatal("name field not found")
+	}
+
+	override := nameField.GetOverride()
+	if override == nil {
+		t.Fatal("expected override metadata, got nil")
+	}
+
+	if override.From != "products" {
+		t.Errorf("expected override from 'products', got '%s'", override.From)
+	}
+}
+
+func TestNewSubGraphV2_WithInaccessible(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			internalCode: String! @inaccessible
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	internalCodeField, ok := productEntity.Fields["internalCode"]
+	if !ok {
+		t.Fatal("internalCode field not found")
+	}
+
+	if !internalCodeField.IsInaccessible() {
+		t.Error("expected internalCode field to be inaccessible")
+	}
+
+	// Check that other fields are not inaccessible
+	nameField, ok := productEntity.Fields["name"]
+	if !ok {
+		t.Fatal("name field not found")
+	}
+
+	if nameField.IsInaccessible() {
+		t.Error("expected name field to be accessible")
+	}
+}
+
+func TestNewSubGraphV2_WithTag(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String! @tag(name: "public")
+			price: Float! @tag(name: "public") @tag(name: "partner")
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	nameField, ok := productEntity.Fields["name"]
+	if !ok {
+		t.Fatal("name field not found")
+	}
+
+	tags := nameField.GetTags()
+	if len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(tags))
+	}
+
+	if tags[0] != "public" {
+		t.Errorf("expected tag 'public', got '%s'", tags[0])
+	}
+
+	priceField, ok := productEntity.Fields["price"]
+	if !ok {
+		t.Fatal("price field not found")
+	}
+
+	tags = priceField.GetTags()
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(tags))
+	}
+
+	if tags[0] != "public" || tags[1] != "partner" {
+		t.Errorf("expected tags 'public' and 'partner', got %v", tags)
+	}
+}
+
+func TestNewSubGraphV2_WithInterfaceObject(t *testing.T) {
+	schema := `
+		type Node @key(fields: "id") @interfaceObject {
+			id: ID!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("nodes", []byte(schema), "http://nodes.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	nodeEntity, ok := entities["Node"]
+	if !ok {
+		t.Fatal("Node entity not found")
+	}
+
+	if !nodeEntity.IsInterfaceObject() {
+		t.Error("expected Node entity to be an interface object")
+	}
+}
+
+func TestNewSubGraphV2_WithComposeDirective(t *testing.T) {
+	schema := `
+		schema @composeDirective(name: "@custom") {
+			query: Query
+		}
+
+		directive @custom on FIELD_DEFINITION
+
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String! @custom
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	composeDirectives := sg.GetComposeDirectives()
+	if len(composeDirectives) != 1 {
+		t.Fatalf("expected 1 compose directive, got %d", len(composeDirectives))
+	}
+
+	if composeDirectives[0] != "@custom" {
+		t.Errorf("expected compose directive '@custom', got '%s'", composeDirectives[0])
+	}
+}

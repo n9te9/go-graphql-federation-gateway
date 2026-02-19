@@ -6,6 +6,7 @@ type Customer struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
 	Tier string `json:"tier"`
+	Ssn  string `json:"ssn"`
 }
 
 func (Customer) IsEntity() {}

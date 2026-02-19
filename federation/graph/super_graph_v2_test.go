@@ -395,3 +395,78 @@ func TestNewSuperGraphV2_ResolvableFalse(t *testing.T) {
 		t.Error("expected Product to be recognized as entity type")
 	}
 }
+
+func TestNewSuperGraphV2_WithOverride(t *testing.T) {
+	// Product service v1 (original owner of name field)
+	productV1Schema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			price: Float!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	// Product service v2 (overrides name field)
+	productV2Schema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			name: String! @override(from: "products")
+			description: String!
+		}
+	`
+
+	productV1SG, err := graph.NewSubGraphV2("products", []byte(productV1Schema), "http://products.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+	}
+
+	productV2SG, err := graph.NewSubGraphV2("products-v2", []byte(productV2Schema), "http://products-v2.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products-v2: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productV1SG, productV2SG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Verify Product.name is owned by products-v2 (not products)
+	nameOwners := superGraph.GetSubGraphsForField("Product", "name")
+	if len(nameOwners) != 1 {
+		t.Fatalf("expected 1 owner for Product.name, got %d", len(nameOwners))
+	}
+	if nameOwners[0].Name != "products-v2" {
+		t.Errorf("expected Product.name to be owned by 'products-v2', got '%s'", nameOwners[0].Name)
+	}
+
+	// Verify Product.price is still owned by products
+	priceOwners := superGraph.GetSubGraphsForField("Product", "price")
+	if len(priceOwners) != 1 {
+		t.Fatalf("expected 1 owner for Product.price, got %d", len(priceOwners))
+	}
+	if priceOwners[0].Name != "products" {
+		t.Errorf("expected Product.price to be owned by 'products', got '%s'", priceOwners[0].Name)
+	}
+
+	// Verify Product.description is owned by products-v2
+	descriptionOwners := superGraph.GetSubGraphsForField("Product", "description")
+	if len(descriptionOwners) != 1 {
+		t.Fatalf("expected 1 owner for Product.description, got %d", len(descriptionOwners))
+	}
+	if descriptionOwners[0].Name != "products-v2" {
+		t.Errorf("expected Product.description to be owned by 'products-v2', got '%s'", descriptionOwners[0].Name)
+	}
+
+	// Verify GetFieldOwnerSubGraph returns correct owner
+	nameOwner := superGraph.GetFieldOwnerSubGraph("Product", "name")
+	if nameOwner == nil {
+		t.Fatal("expected Product.name to have an owner")
+	}
+	if nameOwner.Name != "products-v2" {
+		t.Errorf("expected GetFieldOwnerSubGraph to return 'products-v2', got '%s'", nameOwner.Name)
+	}
+}
