@@ -145,14 +145,26 @@ jobs:
         with:
           pattern: benchmark-results-*
           path: results/
-          merge-multiple: true
 
-      - name: Debug - List downloaded files
+      - name: Debug - Comprehensive check
         run: |
+          echo "=== Current directory ==="
+          pwd
+          echo ""
+          echo "=== All files in current directory ==="
+          ls -la
+          echo ""
           echo "=== Checking results directory ==="
           ls -la results/ || echo "results/ directory not found"
-          echo "=== Looking for result files ==="
-          find results/ -type f -name "*.txt" || echo "No .txt files found"
+          echo ""
+          echo "=== All subdirectories in results ==="
+          ls -la results/*/ 2>/dev/null || echo "No subdirectories found"
+          echo ""
+          echo "=== Finding all files ==="
+          find . -type f -name "*.txt" 2>/dev/null || echo "No .txt files found anywhere"
+          echo ""
+          echo "=== Tree view of results (if available) ==="
+          find results/ -type f 2>/dev/null || echo "results/ not accessible"
 
       - name: Aggregate and format results
         id: aggregate
@@ -166,62 +178,64 @@ jobs:
               "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" >> benchmark_summary.md
           echo "────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
           
-          # Check if results files exist
-          if [ ! -d "results" ]; then
-            echo "⚠️ No results directory found" >> benchmark_summary.md
-            echo '```' >> benchmark_summary.md
-            cat benchmark_summary.md
-            exit 0
-          fi
-          
-          # Use find to locate all result files and process them
-          RESULT_FILES=$(find results/ -type f -name "benchmark_*_results.txt")
+          # Find all result files recursively
+          RESULT_FILES=$(find results/ -type f -name "benchmark_*_results.txt" 2>/dev/null)
           
           if [ -z "$RESULT_FILES" ]; then
             echo "⚠️ No benchmark results found" >> benchmark_summary.md
+            echo "" >> benchmark_summary.md
+            echo "Debug information:" >> benchmark_summary.md
+            echo "- Results directory exists: $([ -d results/ ] && echo 'Yes' || echo 'No')" >> benchmark_summary.md
+            echo "- Files found: $(find results/ -type f 2>/dev/null | wc -l)" >> benchmark_summary.md
             echo '```' >> benchmark_summary.md
             cat benchmark_summary.md
             exit 0
           fi
           
           # Combine all results
-          while IFS= read -r file; do
-            while IFS='|' read -r gateway domain test req_sec avg p50 p95 p99; do
-              printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
-                  "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
-            done < "$file"
-          done <<< "$RESULT_FILES"
+          echo "$RESULT_FILES" | while IFS= read -r file; do
+            if [ -f "$file" ]; then
+              while IFS='|' read -r gateway domain test req_sec avg p50 p95 p99; do
+                printf "%-20s %-30s %15s %12s %12s %12s %12s\n" \
+                    "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
+              done < "$file"
+            fi
+          done
           
           echo '```' >> benchmark_summary.md
           echo "" >> benchmark_summary.md
           
           # Calculate averages - combine all files first
           TEMP_ALL=$(mktemp)
-          find results/ -type f -name "benchmark_*_results.txt" -exec cat {} \; > "$TEMP_ALL"
+          find results/ -type f -name "benchmark_*_results.txt" -exec cat {} \; > "$TEMP_ALL" 2>/dev/null
           
           echo "### 📊 Performance Analysis" >> benchmark_summary.md
           echo '```' >> benchmark_summary.md
           
-          GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
-          APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+          if [ -s "$TEMP_ALL" ]; then
+            GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            
+            echo "Average Requests/sec across all domains:" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_AVG} req/s" >> benchmark_summary.md
+            
+            if (( $(echo "$GO_AVG > 0 && $APOLLO_AVG > 0" | bc -l) )); then
+              RATIO=$(echo "scale=2; $GO_AVG / $APOLLO_AVG" | bc)
+              if (( $(echo "$RATIO > 1" | bc -l) )); then
+                echo "" >> benchmark_summary.md
+                echo "✓ Go Gateway is ${RATIO}x faster on average" >> benchmark_summary.md
+              else
+                RATIO=$(echo "scale=2; $APOLLO_AVG / $GO_AVG" | bc)
+                echo "" >> benchmark_summary.md
+                echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
+              fi
+            fi
+          else
+            echo "⚠️ No data available for analysis" >> benchmark_summary.md
+          fi
           
           rm -f "$TEMP_ALL"
-          
-          echo "Average Requests/sec across all domains:" >> benchmark_summary.md
-          echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
-          echo "  Apollo Router:  ${APOLLO_AVG} req/s" >> benchmark_summary.md
-          
-          if (( $(echo "$GO_AVG > 0 && $APOLLO_AVG > 0" | bc -l) )); then
-            RATIO=$(echo "scale=2; $GO_AVG / $APOLLO_AVG" | bc)
-            if (( $(echo "$RATIO > 1" | bc -l) )); then
-              echo "" >> benchmark_summary.md
-              echo "✓ Go Gateway is ${RATIO}x faster on average" >> benchmark_summary.md
-            else
-              RATIO=$(echo "scale=2; $APOLLO_AVG / $GO_AVG" | bc)
-              echo "" >> benchmark_summary.md
-              echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
-            fi
-          fi
           
           echo '```' >> benchmark_summary.md
           
