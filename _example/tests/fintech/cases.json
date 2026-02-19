@@ -1,8 +1,8 @@
 [
   {
     "name": "Get Customer and Accounts",
-    "query": "query { customer(id: \"1\") { name accounts { iban balance } } }",
-    "variables": {},
+    "query": "query GetCustomer($customerId: ID!) { customer(id: $customerId) { name accounts { iban balance } } }",
+    "variables": { "customerId": "1" },
     "expected": {
       "customer": {
         "name": "Customer 1",
@@ -17,8 +17,8 @@
   },
   {
     "name": "Get Account and Transactions",
-    "query": "query { account(iban: \"IBAN 1\") { iban transactions { amount } } }",
-    "variables": {},
+    "query": "query GetAccount($iban: String!) { account(iban: $iban) { iban transactions { amount } } }",
+    "variables": { "iban": "IBAN 1" },
     "expected": {
       "account": {
         "iban": "IBAN 1",
@@ -33,8 +33,8 @@
   {
     "name": "Federation Feature: Fragment Spread",
     "description": "Verify fragment spread support with named fragments",
-    "query": "query { customer(id: \"1\") { ...CustomerFields } } fragment CustomerFields on Customer { name accounts { iban balance } }",
-    "variables": {},
+    "query": "query GetCustomerWithFragment($id: ID!) { customer(id: $id) { ...CustomerFields } } fragment CustomerFields on Customer { name accounts { iban balance } }",
+    "variables": { "id": "1" },
     "expected": {
       "customer": {
         "name": "Customer 1",
@@ -50,8 +50,8 @@
   {
     "name": "Federation Feature: Inline Fragments",
     "description": "Verify inline fragment support",
-    "query": "query { customer(id: \"1\") { name ... on Customer { accounts { iban balance } } } }",
-    "variables": {},
+    "query": "query GetCustomerInline($customerId: ID!) { customer(id: $customerId) { name ... on Customer { accounts { iban balance } } } }",
+    "variables": { "customerId": "1" },
     "expected": {
       "customer": {
         "name": "Customer 1",
@@ -67,8 +67,8 @@
   {
     "name": "Federation Feature: Nested Fragments",
     "description": "Verify nested fragment expansion (fragments referencing other fragments)",
-    "query": "query { customer(id: \"1\") { ...CustomerWithAccounts } } fragment CustomerWithAccounts on Customer { ...BasicCustomer accounts { ...AccountInfo } } fragment BasicCustomer on Customer { name } fragment AccountInfo on Account { iban balance }",
-    "variables": {},
+    "query": "query NestedFragments($id: ID!) { customer(id: $id) { ...CustomerWithAccounts } } fragment CustomerWithAccounts on Customer { ...BasicCustomer accounts { ...AccountInfo } } fragment BasicCustomer on Customer { name } fragment AccountInfo on Account { iban balance }",
+    "variables": { "id": "1" },
     "expected": {
       "customer": {
         "name": "Customer 1",
@@ -84,8 +84,8 @@
   {
     "name": "Federation v2: @requires - Risk Score Computation",
     "description": "Verify that @requires automatically fetches balance field for riskScore calculation",
-    "query": "query { account(iban: \"IBAN 1\") { iban riskScore } }",
-    "variables": {},
+    "query": "query AccountRisk($iban: String!) { account(iban: $iban) { iban riskScore } }",
+    "variables": { "iban": "IBAN 1" },
     "expected": {
       "account": {
         "iban": "IBAN 1",
@@ -96,20 +96,49 @@
   {
     "name": "Federation v2: @inaccessible - Should block access to SSN",
     "description": "Verify that @inaccessible field cannot be queried",
-    "query": "query { customer(id: \"1\") { id name ssn } }",
-    "variables": {},
+    "query": "query CustomerSSN($id: ID!) { customer(id: $id) { id name ssn } }",
+    "variables": { "id": "1" },
     "expectedError": true,
     "expectedErrorMessage": "Cannot query field \"ssn\" on type \"Customer\""
   },
   {
     "name": "Federation v2: @tag - Fields with tags should work normally",
     "description": "Verify that @tag fields can be queried (tags are metadata)",
-    "query": "query { customer(id: \"1\") { id name tier } }",
-    "variables": {},
+    "query": "query CustomerTier($customerId: ID!) { customer(id: $customerId) { id name tier } }",
+    "variables": { "customerId": "1" },
     "expected": {
       "customer": {
         "id": "1",
         "name": "Customer 1",
+        "tier": "Premium"
+      }
+    }
+  },
+  {
+    "name": "Variables: Multiple Variables with Different Types",
+    "description": "Verify multiple variables can be used together with different types",
+    "query": "query MultipleVars($customerId: ID!, $iban: String!) { customer(id: $customerId) { id name } account(iban: $iban) { iban balance } }",
+    "variables": { "customerId": "1", "iban": "IBAN 1" },
+    "expected": {
+      "customer": {
+        "id": "1",
+        "name": "Customer 1"
+      },
+      "account": {
+        "iban": "IBAN 1",
+        "balance": 1000
+      }
+    }
+  },
+  {
+    "name": "Variables: Optional Variable Override",
+    "description": "Verify that variable values work correctly",
+    "query": "query CustomerWithDefault($id: ID!) { customer(id: $id) { id name tier } }",
+    "variables": { "id": "2" },
+    "expected": {
+      "customer": {
+        "id": "2",
+        "name": "Customer 2",
         "tier": "Premium"
       }
     }

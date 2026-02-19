@@ -141,5 +141,54 @@
         "destination": "JFK"
       }
     }
+  },
+  {
+    "name": "Variables: Multiple String Variables for Composite Key",
+    "description": "Verify multiple string variables work for composite key queries",
+    "query": "query FlightVars($flightNum: String!, $date: String!) { flight(number: $flightNum, departureDate: $date) { number departureDate origin destination price } }",
+    "variables": { "flightNum": "AA100", "date": "2026-03-01" },
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "departureDate": "2026-03-01",
+        "origin": "SFO",
+        "destination": "JFK",
+        "price": 500
+      }
+    }
+  },
+  {
+    "name": "Variables: Optional Variable Override",
+    "description": "Verify variables work correctly with different values",
+    "query": "query FlightDefaults($num: String!, $date: String!) { flight(number: $num, departureDate: $date) { number origin destination } }",
+    "variables": { "num": "UA200", "date": "2026-04-01" },
+    "expected": {
+      "flight": {
+        "number": "UA200",
+        "origin": "HND",
+        "destination": "NRT"
+      }
+    }
+  },
+  {
+    "name": "Variables: Nested Query with Composite Key Variables",
+    "description": "Verify variables work in nested queries with composite keys",
+    "query": "query FlightBookingsVar($fNum: String!, $fDate: String!) { flight(number: $fNum, departureDate: $fDate) { number bookings { id flight { number origin destination } } } }",
+    "variables": { "fNum": "AA100", "fDate": "2026-03-01" },
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "bookings": [
+          {
+            "id": "booking1",
+            "flight": {
+              "number": "AA100",
+              "origin": "SFO",
+              "destination": "JFK"
+            }
+          }
+        ]
+      }
+    }
   }
 ]
