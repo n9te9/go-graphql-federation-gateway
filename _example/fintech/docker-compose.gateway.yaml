@@ -9,3 +9,11 @@ services:
       - ./gateway.docker.yaml:/app/gateway.yaml
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 128M

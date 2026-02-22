@@ -1,22 +1,56 @@
 .PHONY: test-ec test-fintech test-saas test-social test-travel test-all
 .PHONY: partial-test-ec partial-test-fintech partial-test-saas partial-test-social partial-test-travel partial-test-all
-.PHONY: setup benchmark compare-benchmark all-compare-benchmark
+.PHONY: setup benchmark benchmark-ec benchmark-fintech benchmark-saas benchmark-social benchmark-travel compare-benchmark all-compare-benchmark
 
-# Setup benchmark dependencies (hey, Apollo Router, gateway binary)
+# Setup benchmark dependencies (hey, Docker check, gateway binary build)
 setup:
 	bash setup_benchmark.sh
 
-# Benchmark target (Go Gateway only, all domains)
-benchmark:
-	bash benchmark_runner.sh
+# ── Benchmark targets ──────────────────────────────────────────────────────────
+# Go Gateway vs Apollo Router — identical conditions:
+#   • Both run in Docker (same execution model)
+#   • Resource limits: 2 CPU / 512 MB each (deploy.resources.limits in docker-compose.*.yaml)
+#   • Warmup: WARMUP_REQUESTS=100 requests at WARMUP_CONCURRENCY=10 (same for both)
+#   • Measurement: TOTAL_REQUESTS=10000 at CONCURRENCY=50
+# Tunable via environment variables, e.g.:
+#   TOTAL_REQUESTS=5000 CONCURRENCY=20 make benchmark
 
-# Comparative benchmark target (Go Gateway vs Apollo Router - EC domain only)
+# All domains (default benchmark target)
+benchmark:
+	bash all_compare_benchmark_runner.sh
+
+# Single-domain benchmarks
+benchmark-ec:
+	bash domain_benchmark.sh ec 9001 \
+		'{"query":"query ProductWithShipping { product(id: \"p1\") { id name price reviews { id body authorName } inStock shippingCost } }"}' \
+		"EC - @external + @requires (Cross-Service)"
+
+benchmark-fintech:
+	bash domain_benchmark.sh fintech 9002 \
+		'{"query":"query CustomerWithAccounts { customer(id: \"1\") { id name tier accounts { iban balance riskScore } } }"}' \
+		"Fintech - @external + @requires (Risk Score)"
+
+benchmark-saas:
+	bash domain_benchmark.sh saas 9003 \
+		'{"query":"query OrganizationWithBilling { organization(id: \"org1\") { id name employeeCount billing { plan } monthlyCost } }"}' \
+		"SaaS - @external + @requires (Monthly Cost)"
+
+benchmark-social:
+	bash domain_benchmark.sh social 9004 \
+		'{"query":"query UserWithPosts { user(id: \"user1\") { id name posts { id title likeCount comments { body } engagementScore } } }"}' \
+		"Social - @external + @requires (Engagement)"
+
+benchmark-travel:
+	bash domain_benchmark.sh travel 9005 \
+		'{"query":"query FlightWithBookings { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin destination price bookings { id } totalCost } }"}' \
+		"Travel - @external + @requires (Total Cost)"
+
+# Legacy aliases (kept for backward compatibility)
 compare-benchmark:
 	bash compare_benchmark_runner.sh
 
-# Comprehensive comparative benchmark (Go Gateway vs Apollo Router - ALL domains)
-all-compare-benchmark:
-	bash all_compare_benchmark_runner.sh
+all-compare-benchmark: benchmark
+# ──────────────────────────────────────────────────────────────────────────────
 
 # Success test targets (normal operation)
 test-ec:

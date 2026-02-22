@@ -31,6 +31,9 @@ fi
 TOTAL_REQUESTS=${TOTAL_REQUESTS:-10000}
 CONCURRENCY=${CONCURRENCY:-50}
 TIMEOUT=${TIMEOUT:-30}
+WARMUP_REQUESTS=${WARMUP_REQUESTS:-100}   # Warmup requests (same for both gateways)
+WARMUP_CONCURRENCY=${WARMUP_CONCURRENCY:-10}
+WARMUP_SLEEP=${WARMUP_SLEEP:-3}           # Seconds to wait after warmup before measurement
 GO_GATEWAY_PORT=9000
 GATEWAY_BINARY="../cmd/go-graphql-federation-gateway/gateway"
 
@@ -66,17 +69,42 @@ run_gateway_benchmark() {
     local gateway_name=$1
     local gateway_url=$2
     local query_data=$3
-    
-    # Warmup
+
     echo "$query_data" > /tmp/gql_query.json
-    for i in {1..10}; do
-        curl -s -X POST "${gateway_url}" \
-            -H "Content-Type: application/json" \
-            -d @/tmp/gql_query.json > /dev/null 2>&1 || true
-    done
-    sleep 2
-    
-    # Run benchmark
+
+    # --- Correctness check (1 request before warmup) ---
+    echo -e "${CYAN}[${gateway_name}] Checking response correctness...${NC}"
+    local check_response
+    check_response=$(curl -s -X POST "${gateway_url}" \
+        -H "Content-Type: application/json" \
+        -d @/tmp/gql_query.json 2>/dev/null)
+    local has_errors
+    has_errors=$(echo "$check_response" | grep -c '"errors"' || true)
+    local has_data
+    has_data=$(echo "$check_response" | grep -c '"data"' || true)
+    if [ "$has_errors" -gt 0 ]; then
+        echo -e "${RED}  ⚠ Response contains 'errors' field${NC}"
+        CORRECTNESS_FLAG="⚠ errors in response"
+    elif [ "$has_data" -eq 0 ]; then
+        echo -e "${RED}  ⚠ Response missing 'data' field${NC}"
+        CORRECTNESS_FLAG="⚠ no data field"
+    else
+        echo -e "${GREEN}  ✓ Response looks correct${NC}"
+        CORRECTNESS_FLAG="✓"
+    fi
+
+    # --- Warmup: identical for both gateways ---
+    echo -e "${CYAN}[${gateway_name}] Warming up (${WARMUP_REQUESTS} requests, concurrency ${WARMUP_CONCURRENCY})...${NC}"
+    hey -n "$WARMUP_REQUESTS" \
+        -c "$WARMUP_CONCURRENCY" \
+        -t "$TIMEOUT" \
+        -m POST \
+        -H "Content-Type: application/json" \
+        -D /tmp/gql_query.json \
+        "${gateway_url}" > /dev/null 2>&1 || true
+    sleep "$WARMUP_SLEEP"
+
+    # --- Benchmark ---
     echo -e "${CYAN}Running benchmark for ${gateway_name}...${NC}"
     RESULT=$(hey -n $TOTAL_REQUESTS \
         -c $CONCURRENCY \
@@ -85,18 +113,28 @@ run_gateway_benchmark() {
         -H "Content-Type: application/json" \
         -D /tmp/gql_query.json \
         "${gateway_url}" 2>&1)
-    
+
     # Parse results
     REQ_SEC=$(echo "$RESULT" | grep "Requests/sec:" | awk '{print $2}')
     AVG_LATENCY=$(echo "$RESULT" | grep "Average:" | awk '{print $2}')
     P50_LATENCY=$(echo "$RESULT" | grep "50% in" | awk '{print $3}')
     P95_LATENCY=$(echo "$RESULT" | grep "95% in" | awk '{print $3}')
     P99_LATENCY=$(echo "$RESULT" | grep "99% in" | awk '{print $3}')
-    
-    # Save results in CSV format
-    echo "${gateway_name}|${DOMAIN}|${TEST_NAME}|${REQ_SEC}|${AVG_LATENCY}|${P50_LATENCY}|${P95_LATENCY}|${P99_LATENCY}" >> "$RESULTS_FILE"
-    
-    echo -e "${GREEN}[${gateway_name}]${NC} ${REQ_SEC} req/s, avg ${AVG_LATENCY}s, p95 ${P95_LATENCY}s"
+
+    # Error rate: extract from hey's status code distribution
+    TOTAL_REQ=$(echo "$RESULT" | grep "Total:" | awk '{print $2}')
+    SUCCESS_REQ=$(echo "$RESULT"  | grep -E "^\s+\[2[0-9]{2}\]" | awk '{sum+=$2} END{print sum+0}')
+    if [ -n "$TOTAL_REQ" ] && [ "$TOTAL_REQ" -gt 0 ] 2>/dev/null; then
+        ERROR_RATE=$(awk -v total="$TOTAL_REQ" -v success="$SUCCESS_REQ" \
+            'BEGIN{printf "%.2f", (total - success) / total * 100}')
+    else
+        ERROR_RATE="N/A"
+    fi
+
+    # Save results in CSV format (added error_rate and correctness columns)
+    echo "${gateway_name}|${DOMAIN}|${TEST_NAME}|${REQ_SEC}|${AVG_LATENCY}|${P50_LATENCY}|${P95_LATENCY}|${P99_LATENCY}|${ERROR_RATE}|${CORRECTNESS_FLAG}" >> "$RESULTS_FILE"
+
+    echo -e "${GREEN}[${gateway_name}]${NC} ${REQ_SEC} req/s, avg ${AVG_LATENCY}s, p95 ${P95_LATENCY}s, errors ${ERROR_RATE}%, correctness: ${CORRECTNESS_FLAG}"
 }
 
 # Change to domain directory
