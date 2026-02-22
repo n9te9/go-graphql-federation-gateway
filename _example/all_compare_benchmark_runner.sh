@@ -147,7 +147,11 @@ benchmark_domain() {
     # Step 1: Pull images first to avoid timeout during startup
     echo -e "${CYAN}Pulling Docker images...${NC}"
     docker compose pull > /dev/null 2>&1
-    
+
+    # Build subgraph images without cache
+    echo -e "${CYAN}Building subgraph images (no-cache)...${NC}"
+    docker compose build --no-cache > /dev/null 2>&1
+
     # Start subgraph services
     docker compose up -d > /dev/null 2>&1
     
@@ -192,6 +196,8 @@ benchmark_domain() {
     echo -e "${GREEN}✓ All subgraphs ready${NC}"
     
     # Step 2: Start Apollo Router
+    echo -e "${CYAN}Building Apollo Router image (no-cache)...${NC}"
+    docker compose -f docker-compose.apollo.yaml build --no-cache > /dev/null 2>&1
     echo -e "${CYAN}Starting Apollo Router...${NC}"
     docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
     sleep 5
@@ -208,6 +214,8 @@ benchmark_domain() {
     echo -e "${GREEN}✓ Apollo Router ready${NC}"
     
     # Step 3: Start Go Gateway (Docker)
+    echo -e "${CYAN}Building Go Gateway image (no-cache)...${NC}"
+    docker compose -f docker-compose.gateway.yaml build --no-cache > /dev/null 2>&1
     echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
     docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
     sleep 5

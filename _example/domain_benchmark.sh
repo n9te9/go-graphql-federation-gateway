@@ -106,8 +106,9 @@ cd "$DOMAIN" || { echo -e "${RED}Failed to cd to ${DOMAIN}${NC}"; exit 1; }
 > "$RESULTS_FILE"
 
 # Start services
+echo -e "${CYAN}Building ${DOMAIN} subgraph images (no-cache)...${NC}"
+docker compose build --no-cache > /dev/null 2>&1
 echo -e "${CYAN}Starting ${DOMAIN} subgraph services...${NC}"
-docker compose pull > /dev/null 2>&1
 docker compose up -d > /dev/null 2>&1
 
 echo -e "${CYAN}Waiting for subgraph services (30s)...${NC}"
@@ -150,6 +151,8 @@ done
 echo -e "${GREEN}✓ All subgraphs ready${NC}"
 
 # Start Apollo Router
+echo -e "${CYAN}Building Apollo Router image (no-cache)...${NC}"
+docker compose -f docker-compose.apollo.yaml build --no-cache > /dev/null 2>&1
 echo -e "${CYAN}Starting Apollo Router...${NC}"
 docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
 sleep 5
@@ -164,6 +167,8 @@ fi
 echo -e "${GREEN}✓ Apollo Router ready${NC}"
 
 # Start Go Gateway
+echo -e "${CYAN}Building Go Gateway image (no-cache)...${NC}"
+docker compose -f docker-compose.gateway.yaml build --no-cache > /dev/null 2>&1
 echo -e "${CYAN}Starting Go Gateway...${NC}"
 docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
 sleep 5
