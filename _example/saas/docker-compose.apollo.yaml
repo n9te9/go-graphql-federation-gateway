@@ -6,6 +6,9 @@ services:
     volumes:
       - ./apollo:/apollo
     command: -s /apollo/supergraph.graphql -c /apollo/router.yaml --listen 0.0.0.0:4000
+    networks:
+      - default
+      - subgraph_net
     deploy:
       resources:
         limits:
@@ -14,3 +17,8 @@ services:
         reservations:
           cpus: '0.5'
           memory: 128M
+
+networks:
+  subgraph_net:
+    name: saas_default
+    external: true
