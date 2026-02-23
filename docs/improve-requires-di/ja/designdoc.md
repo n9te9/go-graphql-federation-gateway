@@ -23,9 +23,9 @@
 
 **現状の問題:**
 
-`injectFieldsIntoSelections()` 自体は再帰処理を持っているが、
-`getFieldReturnType(currentType, fieldName)` が `SubGraphV2.Field` に
-`ReturnType` を持たないため、targetType との比較が常に失敗している。
+`getFieldReturnType(currentType, fieldName)` が `SubGraphV2.Field.ReturnType` を
+参照しているが、サブグラフパース時に `ReturnType` が正しく設定されていないため、
+targetType との比較が常に失敗している。
 
 ```go
 // getFieldReturnType("Query", "product") → "" （空文字）
@@ -34,9 +34,8 @@
 ```
 
 **修正方針:**
-型比較をスキップして、**フィールド名ベース**で注入先を特定するアプローチに変更する。
-具体的には `SelectionSet` を再帰的に走査し、`targetType` を返すフィールドを
-型情報ではなく `step.ParentType` と `SubGraphV2.Fields` の照合で特定する。
+`SubGraphV2.Field` に `ReturnType` を正しくパース・設定する。
+`injectFieldsIntoSelections()` の型比較ロジック自体は正しいため変更不要。
 
 ```mermaid
 flowchart TD
@@ -69,11 +68,16 @@ flowchart TD
 **`RequiredFields` の取得方法:**
 
 ```go
-// graph.SubGraphV2.Field から取得する
-// TypeName と FieldName で対象フィールドを特定する
-for _, f := range subGraph.Fields {
-    if f.TypeName == step.ParentType && f.FieldName == targetFieldName {
-        requiredFields = f.RequiredFields  // []string{"weight"}
+// @requires を持つフィールド（例: shippingCost）を step の SelectionSet から特定し、
+// そのフィールドの RequiredFields（例: ["weight"]）を SubGraphV2.Fields から取得する
+var allRequiredFields []string
+for _, sel := range step.SelectionSet {
+    if f, ok := sel.(*plan.Field); ok {
+        for _, sgField := range subGraph.Fields {
+            if sgField.TypeName == step.ParentType && sgField.FieldName == f.Name {
+                allRequiredFields = append(allRequiredFields, sgField.RequiredFields...)
+            }
+        }
     }
 }
 ```
@@ -145,12 +149,15 @@ sequenceDiagram
 
 ### Process
 
+### Process
+
 1. **Planner 修正**
    1.1. `planner_v2_requires_test.go` にテストを追加
         - `product { shippingCost }` → Planner が `product { shippingCost weight }` を生成すること
         - ネスト `@requires`（fieldA→fieldB→fieldC）の注入順序が正しいこと
-   1.2. `getFieldReturnType()` をフィールド名ベースの照合に変更して 1.1 を通す
+   1.2. `subgraph_v2.go` の SDL パース時に `Field.ReturnType` を正しく設定して 1.1 を通す
    1.3. `injectRequiresDependencies()` にトポロジカルソートを実装して 1.1 を通す
+   1.4. テストカバレッジは 95% 以上を目指す
 
 2. **Executor 修正**
    2.1. `executor_v2_test.go` にテストを追加
