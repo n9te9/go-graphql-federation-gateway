@@ -24,8 +24,8 @@ NC='\033[0m'
 export TOTAL_REQUESTS=${TOTAL_REQUESTS:-10000}
 export CONCURRENCY=${CONCURRENCY:-50}
 export TIMEOUT=${TIMEOUT:-30}
-export WARMUP_REQUESTS=${WARMUP_REQUESTS:-100}   # identical for both gateways
-export WARMUP_CONCURRENCY=${WARMUP_CONCURRENCY:-10}
+export WARMUP_REQUESTS=${WARMUP_REQUESTS:-500}   # identical for both gateways
+export WARMUP_CONCURRENCY=${WARMUP_CONCURRENCY:-50}
 export WARMUP_SLEEP=${WARMUP_SLEEP:-3}
 # ──────────────────────────────────────────────────────────────────────────
 

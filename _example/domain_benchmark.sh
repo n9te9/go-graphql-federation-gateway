@@ -31,8 +31,8 @@ fi
 TOTAL_REQUESTS=${TOTAL_REQUESTS:-10000}
 CONCURRENCY=${CONCURRENCY:-50}
 TIMEOUT=${TIMEOUT:-30}
-WARMUP_REQUESTS=${WARMUP_REQUESTS:-100}   # Warmup requests (same for both gateways)
-WARMUP_CONCURRENCY=${WARMUP_CONCURRENCY:-10}
+WARMUP_REQUESTS=${WARMUP_REQUESTS:-500}   # Warmup requests (same for both gateways)
+WARMUP_CONCURRENCY=${WARMUP_CONCURRENCY:-50}
 WARMUP_SLEEP=${WARMUP_SLEEP:-3}           # Seconds to wait after warmup before measurement
 GO_GATEWAY_PORT=9000
 GATEWAY_BINARY="../cmd/go-graphql-federation-gateway/gateway"
@@ -234,7 +234,7 @@ echo -e "${CYAN}Starting Apollo Router...${NC}"
 docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
 sleep 5
 
-if ! wait_for_service "http://localhost:${APOLLO_PORT}"; then
+if ! wait_for_service "http://localhost:${APOLLO_PORT}/graphql"; then
     echo -e "${RED}Apollo Router failed${NC}"
     docker compose -f docker-compose.apollo.yaml down --remove-orphans > /dev/null 2>&1 || true
     docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
@@ -243,7 +243,7 @@ if ! wait_for_service "http://localhost:${APOLLO_PORT}"; then
 fi
 # Wait until federation query succeeds (subgraph connections established)
 echo -e "${CYAN}Waiting for Apollo Router federation to be ready...${NC}"
-if ! wait_for_federation_ready "http://localhost:${APOLLO_PORT}" "$QUERY"; then
+if ! wait_for_federation_ready "http://localhost:${APOLLO_PORT}/graphql" "$QUERY"; then
     echo -e "${RED}Apollo Router federation not ready${NC}"
     docker compose -f docker-compose.apollo.yaml down --remove-orphans > /dev/null 2>&1 || true
     docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
@@ -294,11 +294,11 @@ run_gateway_benchmark "Go-Gateway" "http://localhost:${GO_GATEWAY_PORT}/graphql"
 echo -e "${CYAN}Waiting for subgraphs to recover (10s)...${NC}"
 sleep 10
 echo -e "${CYAN}Re-verifying Apollo Router federation...${NC}"
-if ! wait_for_federation_ready "http://localhost:${APOLLO_PORT}" "$QUERY"; then
+if ! wait_for_federation_ready "http://localhost:${APOLLO_PORT}/graphql" "$QUERY"; then
     echo -e "${RED}Apollo Router federation lost after Go-Gateway benchmark${NC}"
     CORRECTNESS_FLAG="⚠ federation lost"
 fi
-run_gateway_benchmark "Apollo-Router" "http://localhost:${APOLLO_PORT}" "$QUERY"
+run_gateway_benchmark "Apollo-Router" "http://localhost:${APOLLO_PORT}/graphql" "$QUERY"
 echo ""
 
 # Cleanup

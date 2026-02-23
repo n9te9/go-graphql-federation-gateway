@@ -14,8 +14,8 @@ on:
 env:
   TOTAL_REQUESTS: 10000
   CONCURRENCY: 50
-  WARMUP_REQUESTS: 100      # Identical warmup for Go Gateway and Apollo Router
-  WARMUP_CONCURRENCY: 10
+  WARMUP_REQUESTS: 500      # Identical warmup for Go Gateway and Apollo Router
+  WARMUP_CONCURRENCY: 50
   WARMUP_SLEEP: 3
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -251,7 +251,7 @@ jobs:
           echo "## 🚀 Benchmark Results (Go Gateway vs Apollo Router)" > benchmark_summary.md
           echo "" >> benchmark_summary.md
           echo "> **Fairness conditions:** Both gateways run in Docker containers with identical resource limits (2 CPU / 512MB RAM)." >> benchmark_summary.md
-          echo "> Warmup: ${WARMUP_REQUESTS:-100} requests at concurrency ${WARMUP_CONCURRENCY:-10} before each measurement." >> benchmark_summary.md
+          echo "> Warmup: ${WARMUP_REQUESTS:-500} requests at concurrency ${WARMUP_CONCURRENCY:-50} before each measurement." >> benchmark_summary.md
           echo "" >> benchmark_summary.md
           echo "### All Domains Performance Comparison" >> benchmark_summary.md
           echo "" >> benchmark_summary.md

@@ -1,3 +1,6 @@
+supergraph:
+  path: /graphql
+
 cors:
   allow_any_origin: true
   
