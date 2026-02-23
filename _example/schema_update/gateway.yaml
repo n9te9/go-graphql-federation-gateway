@@ -5,13 +5,15 @@ timeout_duration: "5s"
 request_timeout: "30s"
 enable_hang_over_request_header: false
 services:
+  # When running with docker compose, use service names (products, reviews).
+  # When running locally (go run), use localhost.
   - name: products
-    host: http://localhost:8501
+    host: http://products:8501/query
     retry:
       attempts: 3
       timeout: "5s"
   - name: reviews
-    host: http://localhost:8502
+    host: http://reviews:8502/query
     retry:
       attempts: 3
       timeout: "5s"

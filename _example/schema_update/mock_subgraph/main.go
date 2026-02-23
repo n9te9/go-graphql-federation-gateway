@@ -27,6 +27,7 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strings"
 	"sync"
 )
 
@@ -115,21 +116,36 @@ func main() {
 		})
 	})
 
-	// POST /query — stub GraphQL handler
+	// POST /query — GraphQL handler (also handles _service{sdl} introspection)
 	mux.HandleFunc("/query", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
+		var req struct {
+			Query string `json:"query"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
+		// Handle federation SDL introspection: { _service { sdl } }
+		if strings.Contains(req.Query, "_service") {
+			sdl := srv.getSDL()
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"data": map[string]any{
+					"_service": map[string]any{"sdl": sdl},
+				},
+			})
+			return
+		}
+		// Stub response for regular queries.
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"data": map[string]any{
-				"products": []map[string]any{
-					{"id": "1", "name": "Widget", "price": 999},
-				},
-				"reviews": []map[string]any{
-					{"id": "r1", "body": "Great product!", "productId": "1"},
-				},
+				"product":  map[string]any{"id": "1", "name": "Widget", "price": 999},
+				"products": []map[string]any{{"id": "1", "name": "Widget", "price": 999}},
+				"reviews":  []map[string]any{{"id": "r1", "body": "Great product!", "productId": "1"}},
 			},
 		})
 	})
