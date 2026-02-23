@@ -1,3 +1,6 @@
+supergraph:
+  path: /graphql
+
 cors:
   allow_any_origin: true
   
@@ -6,6 +9,9 @@ headers:
     request:
       - propagate:
           matching: .*
+
+include_subgraph_errors:
+  all: true
 
 telemetry:
   instrumentation:

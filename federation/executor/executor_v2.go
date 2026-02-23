@@ -654,18 +654,21 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 
 	keyField := entity.Keys[0].FieldSet
 
+	// Collect @requires fields from this step's subgraph for the entity type
+	requiredFields := e.collectRequiredFields(step)
+
 	// Handle both single entity and list of entities
 	switch v := current.(type) {
 	case map[string]interface{}:
 		// Single entity
-		if rep := e.buildRepresentation(v, step.ParentType, keyField); rep != nil {
+		if rep := e.buildRepresentation(v, step.ParentType, keyField, requiredFields); rep != nil {
 			representations = append(representations, rep)
 		}
 	case []interface{}:
 		// List of entities
 		for _, item := range v {
 			if itemMap, ok := item.(map[string]interface{}); ok {
-				if rep := e.buildRepresentation(itemMap, step.ParentType, keyField); rep != nil {
+				if rep := e.buildRepresentation(itemMap, step.ParentType, keyField, requiredFields); rep != nil {
 					representations = append(representations, rep)
 				}
 			}
@@ -673,6 +676,35 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 	}
 
 	return representations
+}
+
+// collectRequiredFields collects all @requires field names for the entity type in this step's subgraph.
+func (e *ExecutorV2) collectRequiredFields(step *planner.StepV2) []string {
+	var required []string
+	seen := make(map[string]bool)
+
+	entityDef, exists := step.SubGraph.GetEntity(step.ParentType)
+	if !exists {
+		return required
+	}
+
+	// For each field in the step's SelectionSet, check if it has @requires
+	for _, sel := range step.SelectionSet {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		if fieldMeta, ok := entityDef.Fields[field.Name.String()]; ok {
+			for _, rf := range fieldMeta.Requires {
+				if !seen[rf] {
+					seen[rf] = true
+					required = append(required, rf)
+				}
+			}
+		}
+	}
+
+	return required
 }
 
 // navigatePathWithArrays navigates through a path that may contain nested arrays
@@ -684,7 +716,8 @@ func (e *ExecutorV2) navigatePathWithArrays(current map[string]interface{}, path
 		if ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType); ownerSubGraph != nil {
 			if entity, exists := ownerSubGraph.GetEntity(step.ParentType); exists && len(entity.Keys) > 0 {
 				keyField := entity.Keys[0].FieldSet
-				if rep := e.buildRepresentation(current, step.ParentType, keyField); rep != nil {
+				requiredFields := e.collectRequiredFields(step)
+				if rep := e.buildRepresentation(current, step.ParentType, keyField, requiredFields); rep != nil {
 					representations = append(representations, rep)
 				}
 			}
@@ -719,7 +752,8 @@ func (e *ExecutorV2) navigatePathWithArrays(current map[string]interface{}, path
 
 // buildRepresentation builds a representation for an entity.
 // keyField can be a single field or composite keys separated by space (e.g., "number departureDate")
-func (e *ExecutorV2) buildRepresentation(entity map[string]interface{}, typeName string, keyField string) map[string]interface{} {
+// requiredFields contains additional fields needed by @requires directives.
+func (e *ExecutorV2) buildRepresentation(entity map[string]interface{}, typeName string, keyField string, requiredFields []string) map[string]interface{} {
 	representation := map[string]interface{}{
 		"__typename": typeName,
 	}
@@ -734,6 +768,13 @@ func (e *ExecutorV2) buildRepresentation(entity map[string]interface{}, typeName
 		} else {
 			// Missing required key field
 			return nil
+		}
+	}
+
+	// Inject @requires field values into the representation
+	for _, rf := range requiredFields {
+		if val, ok := entity[rf]; ok {
+			representation[rf] = val
 		}
 	}
 

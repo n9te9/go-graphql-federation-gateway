@@ -749,3 +749,167 @@ func TestPlannerV2_MultiProductsWithAliases(t *testing.T) {
 		t.Error("expected at least one review service step")
 	}
 }
+
+// TestPlannerV2_ResolvableFalse verifies @key(resolvable: false) behavior in query planning.
+//
+// According to Apollo Federation v2 spec:
+//   - resolvable: false means the subgraph declares a stub of the entity for reference purposes
+//     and does NOT define a reference resolver (_entities query handler).
+//   - GetEntityOwnerSubGraph must NOT return a resolvable:false subgraph as the entity owner.
+//
+// Scenario A: "stub only" - reviews service references Product without contributing fields.
+// In this case, when a query fetches review.product fields, the Entity Fetch must go to
+// the products service (the resolvable owner), NOT to the reviews service.
+//
+// Scenario B: "fields with resolvable:false" - inventory service extends Product with
+// resolvable:false but also adds inStock field. This is a non-standard but valid pattern
+// where the gateway must still create an Entity Fetch step for inventory.
+func TestPlannerV2_ResolvableFalse(t *testing.T) {
+	t.Run("StubOnly_EntityFetchGoesToOwner", func(t *testing.T) {
+		// products service: defines Product entity with resolvable key
+		productsSchema := `
+			type Product @key(fields: "id") {
+				id: ID!
+				name: String!
+				price: Float!
+			}
+
+			type Query {
+				product(id: ID!): Product
+			}
+		`
+
+		// reviews service: references Product as a stub (resolvable: false, no extra fields)
+		reviewsSchema := `
+			type Review {
+				id: ID!
+				rating: Int!
+				product: Product!
+			}
+
+			type Product @key(fields: "id", resolvable: false) {
+				id: ID!
+			}
+		`
+
+		productsSG, err := graph.NewSubGraphV2("products", []byte(productsSchema), "http://products.example.com")
+		if err != nil {
+			t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+		}
+
+		reviewsSG, err := graph.NewSubGraphV2("reviews", []byte(reviewsSchema), "http://reviews.example.com")
+		if err != nil {
+			t.Fatalf("NewSubGraphV2 failed for reviews: %v", err)
+		}
+
+		superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productsSG, reviewsSG})
+		if err != nil {
+			t.Fatalf("NewSuperGraphV2 failed: %v", err)
+		}
+
+		// Verify that products (resolvable: true) is the entity owner, not reviews (resolvable: false)
+		owner := superGraph.GetEntityOwnerSubGraph("Product")
+		if owner == nil {
+			t.Fatal("expected a resolvable entity owner for Product, got nil")
+		}
+		if owner.Name != "products" {
+			t.Errorf("expected entity owner to be 'products', got '%s'", owner.Name)
+		}
+	})
+
+	t.Run("FieldsWithResolvableFalse_EntityFetchCreated", func(t *testing.T) {
+		// products service: defines Product entity with resolvable key
+		productsSchema := `
+			type Product @key(fields: "id") {
+				id: ID!
+				name: String!
+				price: Float!
+			}
+
+			type Query {
+				product(id: ID!): Product
+			}
+		`
+
+		// inventory service: extends Product with resolvable: false but adds fields
+		// This is the ec/inventory pattern - non-standard but supported by the gateway
+		inventorySchema := `
+			extend type Product @key(fields: "id", resolvable: false) {
+				id: ID! @external
+				inStock: Boolean!
+			}
+		`
+
+		productsSG, err := graph.NewSubGraphV2("products", []byte(productsSchema), "http://products.example.com")
+		if err != nil {
+			t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+		}
+
+		inventorySG, err := graph.NewSubGraphV2("inventory", []byte(inventorySchema), "http://inventory.example.com")
+		if err != nil {
+			t.Fatalf("NewSubGraphV2 failed for inventory: %v", err)
+		}
+
+		superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productsSG, inventorySG})
+		if err != nil {
+			t.Fatalf("NewSuperGraphV2 failed: %v", err)
+		}
+
+		// products (resolvable: true) must be the entity owner, not inventory (resolvable: false)
+		owner := superGraph.GetEntityOwnerSubGraph("Product")
+		if owner == nil {
+			t.Fatal("expected a resolvable entity owner for Product, got nil")
+		}
+		if owner.Name != "products" {
+			t.Errorf("expected entity owner to be 'products', got '%s'", owner.Name)
+		}
+
+		p := planner.NewPlannerV2(superGraph)
+
+		// Query fetches inStock (owned by inventory with resolvable: false)
+		query := `
+			query {
+				product(id: "1") {
+					id
+					name
+					inStock
+				}
+			}
+		`
+
+		l := lexer.New(query)
+		parser := parser.New(l)
+		doc := parser.ParseDocument()
+		if len(parser.Errors()) > 0 {
+			t.Fatalf("parse error: %v", parser.Errors())
+		}
+
+		plan, err := p.Plan(doc, nil)
+		if err != nil {
+			t.Fatalf("Plan failed: %v", err)
+		}
+
+		// inventory contributes the inStock field, so an Entity Fetch step for inventory
+		// must be created (even though inventory has resolvable: false for _entities).
+		hasInventoryStep := false
+		for _, step := range plan.Steps {
+			if step.SubGraph.Name == "inventory" && step.StepType == planner.StepTypeEntity {
+				hasInventoryStep = true
+			}
+		}
+		if !hasInventoryStep {
+			t.Error("expected an Entity Fetch step for inventory (has inStock field), but none found")
+		}
+
+		// products service must have a root query step
+		hasProductsStep := false
+		for _, step := range plan.Steps {
+			if step.SubGraph.Name == "products" && step.StepType == planner.StepTypeQuery {
+				hasProductsStep = true
+			}
+		}
+		if !hasProductsStep {
+			t.Error("expected a root query step for products, but none found")
+		}
+	})
+}

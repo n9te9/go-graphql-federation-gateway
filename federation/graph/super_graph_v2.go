@@ -11,6 +11,7 @@ type SuperGraphV2 struct {
 	SubGraphs []*SubGraphV2            // List of subgraphs
 	Schema    *ast.Document            // Composed schema
 	Ownership map[string][]*SubGraphV2 // Field ownership map (e.g., "Product.id" -> [SubGraph])
+	Graph     *WeightedDirectedGraph   // Weighted directed graph for Dijkstra-based plan optimization
 }
 
 // NewSuperGraphV2 creates a super graph from a list of SubGraphV2 instances.
@@ -29,6 +30,10 @@ func NewSuperGraphV2(subGraphs []*SubGraphV2) (*SuperGraphV2, error) {
 	if err := sg.buildOwnershipMap(); err != nil {
 		return nil, err
 	}
+
+	// Build weighted directed graph for Dijkstra-based query plan optimization.
+	// This is computed once at startup to avoid per-request overhead.
+	sg.Graph = BuildGraph(subGraphs)
 
 	return sg, nil
 }

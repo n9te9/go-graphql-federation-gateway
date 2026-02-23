@@ -22,8 +22,8 @@ directive @link(url: String, as: String, for: link__Purpose, import: [link__Impo
 scalar join__FieldSet
 
 enum join__Graph {
-  FLIGHTS @join__graph(name: "flights", url: "http://host.docker.internal:8401/query")
-  BOOKINGS @join__graph(name: "bookings", url: "http://host.docker.internal:8402/query")
+  FLIGHTS @join__graph(name: "flights", url: "http://flights:8080/query")
+  BOOKINGS @join__graph(name: "bookings", url: "http://bookings:8080/query")
 }
 
 scalar link__Import
@@ -49,7 +49,7 @@ type Booking
 
 type Flight
   @join__type(graph: FLIGHTS, key: "number departureDate")
-  @join__type(graph: BOOKINGS, key: "number departureDate")
+  @join__type(graph: BOOKINGS, key: "number departureDate", extension: true)
 {
   number: String!
   departureDate: String!

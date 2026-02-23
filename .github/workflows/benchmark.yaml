@@ -7,6 +7,18 @@ on:
     branches: [ main ]
   workflow_dispatch:  # Manual trigger
 
+# ─── Benchmark fairness settings ──────────────────────────────────────────────
+# Both gateways run in Docker containers (same execution model).
+# Resource limits are enforced via Docker Compose deploy.resources.limits
+# (2 CPU / 512 MB each — see docker-compose.gateway.yaml / docker-compose.apollo.yaml).
+env:
+  TOTAL_REQUESTS: 10000
+  CONCURRENCY: 50
+  WARMUP_REQUESTS: 500      # Identical warmup for Go Gateway and Apollo Router
+  WARMUP_CONCURRENCY: 50
+  WARMUP_SLEEP: 3
+# ──────────────────────────────────────────────────────────────────────────────
+
 permissions:
   contents: read
   pull-requests: write
@@ -238,6 +250,9 @@ jobs:
           
           echo "## 🚀 Benchmark Results (Go Gateway vs Apollo Router)" > benchmark_summary.md
           echo "" >> benchmark_summary.md
+          echo "> **Fairness conditions:** Both gateways run in Docker containers with identical resource limits (2 CPU / 512MB RAM)." >> benchmark_summary.md
+          echo "> Warmup: ${WARMUP_REQUESTS:-500} requests at concurrency ${WARMUP_CONCURRENCY:-50} before each measurement." >> benchmark_summary.md
+          echo "" >> benchmark_summary.md
           echo "### All Domains Performance Comparison" >> benchmark_summary.md
           echo "" >> benchmark_summary.md
           
@@ -245,9 +260,9 @@ jobs:
           for domain in ec fintech saas social travel; do
             echo "#### ${domain^^} Domain" >> benchmark_summary.md
             echo '```' >> benchmark_summary.md
-            printf "%-20s %-45s %15s %12s %12s %12s %12s\n" \
-                "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" >> benchmark_summary.md
-            echo "───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
+            printf "%-20s %-45s %15s %12s %12s %12s %12s %12s %12s\n" \
+                "Gateway" "Test" "Req/sec" "Avg (s)" "P50 (s)" "P95 (s)" "P99 (s)" "Err%" "Correct" >> benchmark_summary.md
+            echo "──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────" >> benchmark_summary.md
             
             # Find result files for this domain
             DOMAIN_FILES=$(find results/ -type f -name "benchmark_${domain}_results.txt" 2>/dev/null)
@@ -255,9 +270,9 @@ jobs:
             if [ -n "$DOMAIN_FILES" ]; then
               echo "$DOMAIN_FILES" | while IFS= read -r file; do
                 if [ -f "$file" ]; then
-                  while IFS='|' read -r gateway domain_name test req_sec avg p50 p95 p99; do
-                    printf "%-20s %-45s %15s %12s %12s %12s %12s\n" \
-                        "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" >> benchmark_summary.md
+                  while IFS='|' read -r gateway domain_name test req_sec avg p50 p95 p99 err_rate correct; do
+                    printf "%-20s %-45s %15s %12s %12s %12s %12s %11s%% %12s\n" \
+                        "$gateway" "$test" "$req_sec" "$avg" "$p50" "$p95" "$p99" "$err_rate" "$correct" >> benchmark_summary.md
                   done < "$file"
                 fi
               done
@@ -282,10 +297,18 @@ jobs:
             echo '```' >> benchmark_summary.md
             GO_AVG=$(awk -F'|' '/^Go-Gateway/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
             APOLLO_AVG=$(awk -F'|' '/^Apollo-Router/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            GO_ERR_AVG=$(awk -F'|' '/^Go-Gateway/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f", sum/count; else print "N/A"}' "$TEMP_ALL")
+            APOLLO_ERR_AVG=$(awk -F'|' '/^Apollo-Router/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f", sum/count; else print "N/A"}' "$TEMP_ALL")
+            
+            # Correctness summary: count non-"✓" entries
+            GO_INCORRECT=$(awk -F'|' '/^Go-Gateway/ && $10 != "✓" {count++} END {print count+0}' "$TEMP_ALL")
+            APOLLO_INCORRECT=$(awk -F'|' '/^Apollo-Router/ && $10 != "✓" {count++} END {print count+0}' "$TEMP_ALL")
+            GO_TOTAL_TESTS=$(awk -F'|' '/^Go-Gateway/ {count++} END {print count+0}' "$TEMP_ALL")
+            APOLLO_TOTAL_TESTS=$(awk -F'|' '/^Apollo-Router/ {count++} END {print count+0}' "$TEMP_ALL")
             
             echo "Average Requests/sec across all tests:" >> benchmark_summary.md
-            echo "  Go Gateway:     ${GO_AVG} req/s" >> benchmark_summary.md
-            echo "  Apollo Router:  ${APOLLO_AVG} req/s" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_AVG} req/s  (error rate: ${GO_ERR_AVG}%,  correctness issues: ${GO_INCORRECT}/${GO_TOTAL_TESTS})" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_AVG} req/s  (error rate: ${APOLLO_ERR_AVG}%,  correctness issues: ${APOLLO_INCORRECT}/${APOLLO_TOTAL_TESTS})" >> benchmark_summary.md
             
             # Use awk for comparison instead of bc to avoid dependency issues
             COMPARISON=$(awk -v go="$GO_AVG" -v apollo="$APOLLO_AVG" 'BEGIN {
@@ -305,11 +328,11 @@ jobs:
             if [[ "$COMPARISON" == go_faster* ]]; then
               RATIO=$(echo "$COMPARISON" | cut -d'|' -f2)
               echo "" >> benchmark_summary.md
-              echo "✓ Go Gateway is ${RATIO}x faster on average" >> benchmark_summary.md
+              echo "✓ Go Gateway is ${RATIO}x faster on average (throughput only; see error rate & correctness above)" >> benchmark_summary.md
             elif [[ "$COMPARISON" == apollo_faster* ]]; then
               RATIO=$(echo "$COMPARISON" | cut -d'|' -f2)
               echo "" >> benchmark_summary.md
-              echo "Apollo Router is ${RATIO}x faster on average" >> benchmark_summary.md
+              echo "Apollo Router is ${RATIO}x faster on average (throughput only; see error rate & correctness above)" >> benchmark_summary.md
             fi
             echo '```' >> benchmark_summary.md
             echo "" >> benchmark_summary.md
@@ -321,25 +344,31 @@ jobs:
             # @key (Entity Resolution)
             GO_KEY_AVG=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@key \(Entity Resolution\)/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
             APOLLO_KEY_AVG=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@key \(Entity Resolution\)/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            GO_KEY_ERR=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@key \(Entity Resolution\)/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f%%", sum/count; else print "N/A"}' "$TEMP_ALL")
+            APOLLO_KEY_ERR=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@key \(Entity Resolution\)/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f%%", sum/count; else print "N/A"}' "$TEMP_ALL")
             echo "@key (Entity Resolution):" >> benchmark_summary.md
-            echo "  Go Gateway:     ${GO_KEY_AVG} req/s" >> benchmark_summary.md
-            echo "  Apollo Router:  ${APOLLO_KEY_AVG} req/s" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_KEY_AVG} req/s  (err: ${GO_KEY_ERR})" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_KEY_AVG} req/s  (err: ${APOLLO_KEY_ERR})" >> benchmark_summary.md
             echo "" >> benchmark_summary.md
             
             # @shareable (Shared Fields)
             GO_SHAREABLE_AVG=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@shareable/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
             APOLLO_SHAREABLE_AVG=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@shareable/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            GO_SHAREABLE_ERR=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@shareable/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f%%", sum/count; else print "N/A"}' "$TEMP_ALL")
+            APOLLO_SHAREABLE_ERR=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@shareable/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f%%", sum/count; else print "N/A"}' "$TEMP_ALL")
             echo "@shareable (Shared Fields):" >> benchmark_summary.md
-            echo "  Go Gateway:     ${GO_SHAREABLE_AVG} req/s" >> benchmark_summary.md
-            echo "  Apollo Router:  ${APOLLO_SHAREABLE_AVG} req/s" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_SHAREABLE_AVG} req/s  (err: ${GO_SHAREABLE_ERR})" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_SHAREABLE_AVG} req/s  (err: ${APOLLO_SHAREABLE_ERR})" >> benchmark_summary.md
             echo "" >> benchmark_summary.md
             
             # @external + @requires (Cross-Service)
             GO_EXTERNAL_AVG=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@external \+ @requires/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
             APOLLO_EXTERNAL_AVG=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@external \+ @requires/ {sum+=$4; count++} END {if(count>0) printf "%.2f", sum/count; else print "0"}' "$TEMP_ALL")
+            GO_EXTERNAL_ERR=$(awk -F'|' '/^Go-Gateway/ && $3 ~ /@external \+ @requires/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f%%", sum/count; else print "N/A"}' "$TEMP_ALL")
+            APOLLO_EXTERNAL_ERR=$(awk -F'|' '/^Apollo-Router/ && $3 ~ /@external \+ @requires/ && $9 != "N/A" {sum+=$9; count++} END {if(count>0) printf "%.2f%%", sum/count; else print "N/A"}' "$TEMP_ALL")
             echo "@external + @requires (Cross-Service):" >> benchmark_summary.md
-            echo "  Go Gateway:     ${GO_EXTERNAL_AVG} req/s" >> benchmark_summary.md
-            echo "  Apollo Router:  ${APOLLO_EXTERNAL_AVG} req/s" >> benchmark_summary.md
+            echo "  Go Gateway:     ${GO_EXTERNAL_AVG} req/s  (err: ${GO_EXTERNAL_ERR})" >> benchmark_summary.md
+            echo "  Apollo Router:  ${APOLLO_EXTERNAL_AVG} req/s  (err: ${APOLLO_EXTERNAL_ERR})" >> benchmark_summary.md
             
             echo '```' >> benchmark_summary.md
           else

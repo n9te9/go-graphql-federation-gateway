@@ -73,6 +73,7 @@ run_domain_benchmark() {
     
     # Start subgraphs
     cd "${domain}"
+    docker compose build --no-cache > /dev/null 2>&1
     docker compose up -d > /dev/null 2>&1
     
     # Wait for subgraph services to be ready

@@ -6,3 +6,19 @@ services:
     volumes:
       - ./apollo:/apollo
     command: -s /apollo/supergraph.graphql -c /apollo/router.yaml --listen 0.0.0.0:4000
+    networks:
+      - default
+      - subgraph_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+
+networks:
+  subgraph_net:
+    name: fintech_default
+    external: true
