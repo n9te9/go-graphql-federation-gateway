@@ -109,8 +109,9 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 			return nil, fmt.Errorf("no subgraph found for field %s.%s", rootTypeName, fieldName)
 		}
 
-		// Use the first subgraph (for @shareable fields there may be multiple, but use the first one for now)
-		subGraph := subGraphs[0]
+		// For @shareable fields there may be multiple subgraphs; prefer the first match for root queries
+		// (no parent step at root level, so pass "" to fall back to subGraphs[0]).
+		subGraph := selectSubGraphForField(subGraphs, "")
 		rootFieldsBySubGraph[subGraph] = append(rootFieldsBySubGraph[subGraph], selection)
 	}
 
@@ -247,8 +248,9 @@ func (p *PlannerV2) buildStepSelections(selections []ast.Selection, subGraph *gr
 			}
 
 			// Check if this field is owned by the current subgraph
+			// Use subGraphContains to support @shareable fields owned by multiple subgraphs.
 			subGraphs := p.SuperGraph.GetSubGraphsForField(parentType, fieldName)
-			if len(subGraphs) == 0 || subGraphs[0].Name != subGraph.Name {
+			if len(subGraphs) == 0 || !subGraphContains(subGraphs, subGraph.Name) {
 				// Not owned by this subgraph, skip it
 				continue
 			}
@@ -370,7 +372,9 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 		if len(subGraphs) == 0 {
 			continue
 		}
-		fieldSubGraph := subGraphs[0]
+		// For @shareable fields, prefer the same subgraph as parentStep to avoid
+		// unnecessary Entity Fetches.
+		fieldSubGraph := selectSubGraphForField(subGraphs, parentStep.SubGraph.Name)
 
 		// Check if the field returns an entity type
 		// If so, we need to check which subgraph owns that entity (has @key)
@@ -582,8 +586,9 @@ func (p *PlannerV2) buildEntityStepSelections(
 			}
 		} else {
 			// Leaf field - check if it's owned by this subgraph
+			// Use subGraphContains to support @shareable fields owned by multiple subgraphs.
 			fieldSubGraphs := p.SuperGraph.GetSubGraphsForField(entityType, fieldName)
-			if len(fieldSubGraphs) > 0 && fieldSubGraphs[0].Name == subGraph.Name {
+			if len(fieldSubGraphs) > 0 && subGraphContains(fieldSubGraphs, subGraph.Name) {
 				result = append(result, newField)
 			}
 		}
@@ -916,6 +921,35 @@ func (p *PlannerV2) hasFieldInSelectionSet(selections []ast.Selection, fieldName
 			if field.Name.String() == fieldName {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// selectSubGraphForField selects the most appropriate subgraph for a field.
+// For @shareable fields that can be resolved by multiple subgraphs, it prefers
+// the subgraph that matches parentSubGraphName to avoid unnecessary Entity Fetches.
+// If no match is found, it falls back to subGraphs[0] to preserve existing behaviour.
+func selectSubGraphForField(
+	subGraphs []*graph.SubGraphV2,
+	parentSubGraphName string,
+) *graph.SubGraphV2 {
+	if parentSubGraphName != "" {
+		for _, sg := range subGraphs {
+			if sg.Name == parentSubGraphName {
+				return sg
+			}
+		}
+	}
+	return subGraphs[0]
+}
+
+// subGraphContains reports whether any subgraph in the slice has the given name.
+// Used to check ownership of @shareable fields that may be owned by multiple subgraphs.
+func subGraphContains(subGraphs []*graph.SubGraphV2, name string) bool {
+	for _, sg := range subGraphs {
+		if sg.Name == name {
+			return true
 		}
 	}
 	return false

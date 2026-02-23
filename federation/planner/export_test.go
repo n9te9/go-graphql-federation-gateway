@@ -31,3 +31,8 @@ func (p *PlannerV2) CanResolveViaProvidesForTest(
 ) bool {
 	return p.canResolveViaProvides(childSelections, parentSG, parentType, fieldName, fieldType, dijkstraResult)
 }
+
+// SelectSubGraphForFieldForTest exports selectSubGraphForField for white-box testing.
+func SelectSubGraphForFieldForTest(subGraphs []*graph.SubGraphV2, parentSubGraphName string) *graph.SubGraphV2 {
+	return selectSubGraphForField(subGraphs, parentSubGraphName)
+}
