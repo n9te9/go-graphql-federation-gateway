@@ -51,7 +51,7 @@ type Comment
 
 type Post
   @join__type(graph: POSTS, key: "id")
-  @join__type(graph: COMMENTS, key: "id")
+  @join__type(graph: COMMENTS, key: "id", extension: true)
 {
   id: ID!
   title: String! @join__field(graph: POSTS)
@@ -64,8 +64,8 @@ type Post
 
 type User
   @join__type(graph: USERS, key: "id")
-  @join__type(graph: POSTS, key: "id")
-  @join__type(graph: COMMENTS, key: "id")
+  @join__type(graph: POSTS, key: "id", extension: true)
+  @join__type(graph: COMMENTS, key: "id", extension: true)
 {
   id: ID!
   name: String! @join__field(graph: USERS)

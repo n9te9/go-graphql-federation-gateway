@@ -52,7 +52,7 @@ type Mutation
 type Product
   @join__type(graph: PRODUCTS, key: "id")
   @join__type(graph: REVIEWS, key: "id", extension: true)
-  @join__type(graph: INVENTORY, key: "id")
+  @join__type(graph: INVENTORY, key: "id", extension: true)
 {
   id: ID! @join__field(graph: PRODUCTS) @join__field(graph: REVIEWS, external: true) @join__field(graph: INVENTORY, external: true)
   name: String! @join__field(graph: PRODUCTS)

@@ -64,6 +64,35 @@ wait_for_service() {
     return 0
 }
 
+# Wait for a gateway to be fully ready: federation query returns data without errors
+wait_for_federation_ready() {
+    local url=$1
+    local query=$2        # query JSON string (same as benchmark query)
+    local max_retries=30
+    local count=0
+
+    echo "$query" > /tmp/gql_federation_check.json
+    while true; do
+        local resp
+        resp=$(curl -s -X POST "${url}" \
+            -H "Content-Type: application/json" \
+            -d @/tmp/gql_federation_check.json 2>/dev/null) || true
+        local has_err
+        has_err=$(echo "$resp" | grep -c '"errors"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+        local has_data
+        has_data=$(echo "$resp" | grep -c '"data"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+        if [ "${has_data:-0}" -gt 0 ] && [ "${has_err:-0}" -eq 0 ]; then
+            return 0
+        fi
+        count=$((count + 1))
+        if [ $count -ge $max_retries ]; then
+            echo -e "${RED}Federation query not ready at ${url} (last response: ${resp})${NC}"
+            return 1
+        fi
+        sleep 2
+    done
+}
+
 # Function to run benchmark for a gateway
 run_gateway_benchmark() {
     local gateway_name=$1
@@ -77,15 +106,14 @@ run_gateway_benchmark() {
     local check_response
     check_response=$(curl -s -X POST "${gateway_url}" \
         -H "Content-Type: application/json" \
-        -d @/tmp/gql_query.json 2>/dev/null)
-    local has_errors
-    has_errors=$(echo "$check_response" | grep -c '"errors"' || true)
-    local has_data
-    has_data=$(echo "$check_response" | grep -c '"data"' || true)
-    if [ "$has_errors" -gt 0 ]; then
+        -d @/tmp/gql_query.json 2>/dev/null) || true
+    local has_errors has_data
+    has_errors=$(echo "$check_response" | grep -c '"errors"' 2>/dev/null | tr -d '[:space:]' || echo 0)
+    has_data=$(echo "$check_response"   | grep -c '"data"'   2>/dev/null | tr -d '[:space:]' || echo 0)
+    if [ "${has_errors:-0}" -gt 0 ] 2>/dev/null; then
         echo -e "${RED}  ⚠ Response contains 'errors' field${NC}"
         CORRECTNESS_FLAG="⚠ errors in response"
-    elif [ "$has_data" -eq 0 ]; then
+    elif [ "${has_data:-0}" -eq 0 ] 2>/dev/null; then
         echo -e "${RED}  ⚠ Response missing 'data' field${NC}"
         CORRECTNESS_FLAG="⚠ no data field"
     else
@@ -115,11 +143,11 @@ run_gateway_benchmark() {
         "${gateway_url}" 2>&1)
 
     # Parse results
-    REQ_SEC=$(echo "$RESULT" | grep "Requests/sec:" | awk '{print $2}')
-    AVG_LATENCY=$(echo "$RESULT" | grep "Average:" | awk '{print $2}')
-    P50_LATENCY=$(echo "$RESULT" | grep "50% in" | awk '{print $3}')
-    P95_LATENCY=$(echo "$RESULT" | grep "95% in" | awk '{print $3}')
-    P99_LATENCY=$(echo "$RESULT" | grep "99% in" | awk '{print $3}')
+    REQ_SEC=$(echo "$RESULT"     | grep "Requests/sec:" | awk '{print $2}')
+    AVG_LATENCY=$(echo "$RESULT" | grep "Average:"      | awk '{print $2}')
+    P50_LATENCY=$(echo "$RESULT" | grep "50%%" | awk '{print $3}')
+    P95_LATENCY=$(echo "$RESULT" | grep "95%%" | awk '{print $3}')
+    P99_LATENCY=$(echo "$RESULT" | grep "99%%" | awk '{print $3}')
 
     # Error rate: extract from hey's status code distribution
     TOTAL_REQ=$(echo "$RESULT" | grep "Total:" | awk '{print $2}')
@@ -143,9 +171,22 @@ cd "$DOMAIN" || { echo -e "${RED}Failed to cd to ${DOMAIN}${NC}"; exit 1; }
 # Initialize results file
 > "$RESULTS_FILE"
 
+# Kill any stray gateway process listening on port 9000 (from a previous run)
+STRAY_PID=$(lsof -ti :9000 2>/dev/null || true)
+if [ -n "$STRAY_PID" ]; then
+    echo -e "${YELLOW}Killing stray process on port 9000 (PID: ${STRAY_PID})...${NC}"
+    kill -9 $STRAY_PID 2>/dev/null || true
+    sleep 1
+fi
+
 # Start services
-echo -e "${CYAN}Building ${DOMAIN} subgraph images (no-cache)...${NC}"
-docker compose build --no-cache > /dev/null 2>&1
+echo -e "${CYAN}Building ${DOMAIN} subgraph images...${NC}"
+if ! docker compose build > /tmp/docker_build_${DOMAIN}.log 2>&1; then
+    echo -e "${RED}Subgraph build failed for ${DOMAIN}. Log:${NC}"
+    tail -20 /tmp/docker_build_${DOMAIN}.log >&2
+    cd ..
+    exit 1
+fi
 echo -e "${CYAN}Starting ${DOMAIN} subgraph services...${NC}"
 docker compose up -d > /dev/null 2>&1
 
@@ -181,7 +222,7 @@ echo -e "${CYAN}Checking subgraph services...${NC}"
 for port in $SUBGRAPH_PORTS; do
     if ! wait_for_service "http://localhost:${port}/query"; then
         echo -e "${RED}Subgraph on port ${port} failed${NC}"
-        docker compose down > /dev/null 2>&1
+        docker compose down --remove-orphans > /dev/null 2>&1 || true
         cd ..
         exit 1
     fi
@@ -189,33 +230,57 @@ done
 echo -e "${GREEN}✓ All subgraphs ready${NC}"
 
 # Start Apollo Router
-echo -e "${CYAN}Building Apollo Router image (no-cache)...${NC}"
-docker compose -f docker-compose.apollo.yaml build --no-cache > /dev/null 2>&1
 echo -e "${CYAN}Starting Apollo Router...${NC}"
 docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
 sleep 5
 
 if ! wait_for_service "http://localhost:${APOLLO_PORT}"; then
     echo -e "${RED}Apollo Router failed${NC}"
-    docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
-    docker compose down > /dev/null 2>&1
+    docker compose -f docker-compose.apollo.yaml down --remove-orphans > /dev/null 2>&1 || true
+    docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
+    cd ..
+    exit 1
+fi
+# Wait until federation query succeeds (subgraph connections established)
+echo -e "${CYAN}Waiting for Apollo Router federation to be ready...${NC}"
+if ! wait_for_federation_ready "http://localhost:${APOLLO_PORT}" "$QUERY"; then
+    echo -e "${RED}Apollo Router federation not ready${NC}"
+    docker compose -f docker-compose.apollo.yaml down --remove-orphans > /dev/null 2>&1 || true
+    docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
     cd ..
     exit 1
 fi
 echo -e "${GREEN}✓ Apollo Router ready${NC}"
 
 # Start Go Gateway
-echo -e "${CYAN}Building Go Gateway image (no-cache)...${NC}"
-docker compose -f docker-compose.gateway.yaml build --no-cache > /dev/null 2>&1
+echo -e "${CYAN}Building Go Gateway image...${NC}"
+if ! docker compose -f docker-compose.gateway.yaml build > /tmp/docker_build_${DOMAIN}_gw.log 2>&1; then
+    echo -e "${RED}Go Gateway build failed. Log:${NC}"
+    tail -20 /tmp/docker_build_${DOMAIN}_gw.log >&2
+    docker compose -f docker-compose.apollo.yaml down --remove-orphans > /dev/null 2>&1 || true
+    docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
+    cd ..
+    exit 1
+fi
 echo -e "${CYAN}Starting Go Gateway...${NC}"
 docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
 sleep 5
 
 if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
     echo -e "${RED}Go Gateway failed${NC}"
-    docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
-    docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
-    docker compose down > /dev/null 2>&1
+    docker compose -f docker-compose.gateway.yaml down --remove-orphans > /dev/null 2>&1 || true
+    docker compose -f docker-compose.apollo.yaml   down --remove-orphans > /dev/null 2>&1 || true
+    docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
+    cd ..
+    exit 1
+fi
+# Wait until federation query succeeds
+echo -e "${CYAN}Waiting for Go Gateway federation to be ready...${NC}"
+if ! wait_for_federation_ready "http://localhost:${GO_GATEWAY_PORT}/graphql" "$QUERY"; then
+    echo -e "${RED}Go Gateway federation not ready${NC}"
+    docker compose -f docker-compose.gateway.yaml down --remove-orphans > /dev/null 2>&1 || true
+    docker compose -f docker-compose.apollo.yaml   down --remove-orphans > /dev/null 2>&1 || true
+    docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
     cd ..
     exit 1
 fi
@@ -225,14 +290,24 @@ echo ""
 # Run benchmarks
 echo -e "${YELLOW}Running benchmarks...${NC}"
 run_gateway_benchmark "Go-Gateway" "http://localhost:${GO_GATEWAY_PORT}/graphql" "$QUERY"
+# Allow subgraphs to recover and re-verify Apollo Router before its benchmark
+echo -e "${CYAN}Waiting for subgraphs to recover (10s)...${NC}"
+sleep 10
+echo -e "${CYAN}Re-verifying Apollo Router federation...${NC}"
+if ! wait_for_federation_ready "http://localhost:${APOLLO_PORT}" "$QUERY"; then
+    echo -e "${RED}Apollo Router federation lost after Go-Gateway benchmark${NC}"
+    CORRECTNESS_FLAG="⚠ federation lost"
+fi
 run_gateway_benchmark "Apollo-Router" "http://localhost:${APOLLO_PORT}" "$QUERY"
 echo ""
 
 # Cleanup
 echo -e "${CYAN}Cleaning up ${DOMAIN}...${NC}"
-docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
-docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
-docker compose down > /dev/null 2>&1
+docker compose -f docker-compose.gateway.yaml down --remove-orphans > /dev/null 2>&1 || true
+docker compose -f docker-compose.apollo.yaml   down --remove-orphans > /dev/null 2>&1 || true
+docker compose                                 down --remove-orphans > /dev/null 2>&1 || true
+# Wait for ports to be fully released before the next domain starts
+sleep 3
 cd ..
 
 rm -f /tmp/gql_query.json

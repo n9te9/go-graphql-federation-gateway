@@ -53,6 +53,25 @@ if [ ! -f "$GATEWAY_BINARY" ]; then
 fi
 # ──────────────────────────────────────────────────────────────────────────
 
+# Wait for a GraphQL service to become ready
+wait_for_service() {
+    local url=$1
+    local max_retries=30
+    local count=0
+
+    while ! curl -s -f -X POST "${url}" \
+        -H "Content-Type: application/json" \
+        -d '{"query":"{ __typename }"}' > /dev/null 2>&1; do
+        count=$((count + 1))
+        if [ $count -ge $max_retries ]; then
+            echo -e "${RED}Service at ${url} failed to respond${NC}"
+            return 1
+        fi
+        sleep 1
+    done
+    return 0
+}
+
 echo -e "${BLUE}╔═══════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║  Federation Gateway Benchmark  (Go Gateway vs Apollo)    ║${NC}"
 echo -e "${BLUE}╚═══════════════════════════════════════════════════════════╝${NC}"
@@ -64,10 +83,21 @@ echo "  Requests:    ${TOTAL_REQUESTS} total, concurrency ${CONCURRENCY}"
 echo "  Warmup:      ${WARMUP_REQUESTS} requests × concurrency ${WARMUP_CONCURRENCY}, then ${WARMUP_SLEEP}s sleep (identical for both)"
 echo ""
 
-# Initial cleanup
-echo -e "${CYAN}Stopping any leftover containers...${NC}"
-docker ps -aq | xargs -r docker stop >/dev/null 2>&1 || true
-docker ps -aq | xargs -r docker rm  >/dev/null 2>&1 || true
+# Initial cleanup — stop only benchmark-related compose projects (avoids k8s containers)
+echo -e "${CYAN}Stopping any leftover benchmark containers...${NC}"
+for proj in ec fintech saas social travel; do
+    (cd "$SCRIPT_DIR/$proj" && \
+        docker compose -f docker-compose.gateway.yaml down --remove-orphans > /dev/null 2>&1 || true && \
+        docker compose -f docker-compose.apollo.yaml   down --remove-orphans > /dev/null 2>&1 || true && \
+        docker compose                                 down --remove-orphans > /dev/null 2>&1 || true)
+done
+# Kill any stray gateway process on port 9000
+STRAY_PID=$(lsof -ti :9000 2>/dev/null || true)
+if [ -n "$STRAY_PID" ]; then
+    echo -e "${YELLOW}Killing stray process on port 9000 (PID: ${STRAY_PID})...${NC}"
+    kill -9 $STRAY_PID 2>/dev/null || true
+    sleep 1
+fi
 sleep 2
 echo -e "${GREEN}✓ Clean${NC}"
 echo ""
@@ -92,106 +122,26 @@ for entry in "${DOMAINS[@]}"; do
     echo -e "${CYAN}Domain: ${domain^^}${NC}"
     echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
-    
-    # Change to domain directory
-    cd "$domain" || { echo "Failed to cd to $domain"; return 1; }
-    
-    # Start services
-    echo -e "${CYAN}Starting ${domain} subgraph services...${NC}"
-    
-    if [ ! -f "docker-compose.apollo.yaml" ]; then
-        echo -e "${RED}Error: Apollo Router setup not found for ${domain}${NC}"
-        cd ..
-        return 1
-    fi
-    
-    # Step 1: Pull images first to avoid timeout during startup
-    echo -e "${CYAN}Pulling Docker images...${NC}"
-    docker compose pull > /dev/null 2>&1
 
-    # Build subgraph images without cache
-    echo -e "${CYAN}Building subgraph images (no-cache)...${NC}"
-    docker compose build --no-cache > /dev/null 2>&1
+    # Delegate to domain_benchmark.sh; it handles startup, bench, and cleanup
+    if ! bash "$SCRIPT_DIR/domain_benchmark.sh" \
+            "$domain" "$apollo_port" "$query" "$test_name"; then
+        echo -e "${RED}Benchmark failed for domain: ${domain}${NC}"
+        FAILED_DOMAINS+=("$domain")
+        # Ensure containers are cleaned up even on failure
+        (cd "$SCRIPT_DIR/$domain" && \
+            docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1 || true && \
+            docker compose -f docker-compose.apollo.yaml   down > /dev/null 2>&1 || true && \
+            docker compose                                 down > /dev/null 2>&1 || true)
+        continue
+    fi
 
-    # Start subgraph services
-    docker compose up -d > /dev/null 2>&1
-    
-    # Wait for services to initialize (same as test_runner.sh)
-    echo -e "${CYAN}Waiting for subgraph services to initialize (30s)...${NC}"
-    sleep 30
-    
-    # Quick health check for subgraphs
-    echo -e "${CYAN}Checking subgraph services...${NC}"
-    case "$domain" in
-        "ec")
-            SUBGRAPH_PORTS="8101 8102 8103 8104"
-            ;;
-        "fintech")
-            SUBGRAPH_PORTS="8201 8202 8203"
-            ;;
-        "saas")
-            SUBGRAPH_PORTS="8501 8502 8503"
-            ;;
-        "social")
-            SUBGRAPH_PORTS="8301 8302 8303"
-            ;;
-        "travel")
-            SUBGRAPH_PORTS="8401 8402"
-            ;;
-        *)
-            echo -e "${RED}Unknown domain: ${domain}${NC}"
-            docker compose down > /dev/null 2>&1
-            cd ..
-            return 1
-            ;;
-    esac
-    
-    for port in $SUBGRAPH_PORTS; do
-        if ! wait_for_service "http://localhost:${port}/query"; then
-            echo -e "${RED}Subgraph on port ${port} failed to start${NC}"
-            docker compose down > /dev/null 2>&1
-            cd ..
-            return 1
-        fi
-    done
-    echo -e "${GREEN}✓ All subgraphs ready${NC}"
-    
-    # Step 2: Start Apollo Router
-    echo -e "${CYAN}Building Apollo Router image (no-cache)...${NC}"
-    docker compose -f docker-compose.apollo.yaml build --no-cache > /dev/null 2>&1
-    echo -e "${CYAN}Starting Apollo Router...${NC}"
-    docker compose -f docker-compose.apollo.yaml up -d > /dev/null 2>&1
-    sleep 5
-    
-    # Wait for Apollo Router
-    echo -e "${CYAN}Checking Apollo Router (port ${apollo_port})...${NC}"
-    if ! wait_for_service "http://localhost:${apollo_port}"; then
-        echo -e "${RED}Apollo Router failed to start for ${domain}${NC}"
-        docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
-        docker compose down > /dev/null 2>&1
-        cd ..
-        return 1
+    # Merge per-domain results into the combined file
+    DOMAIN_RESULTS="$SCRIPT_DIR/benchmark_${domain}_results.txt"
+    if [ -s "$DOMAIN_RESULTS" ]; then
+        cat "$DOMAIN_RESULTS" >> "$ALL_RESULTS"
     fi
-    echo -e "${GREEN}✓ Apollo Router ready${NC}"
-    
-    # Step 3: Start Go Gateway (Docker)
-    echo -e "${CYAN}Building Go Gateway image (no-cache)...${NC}"
-    docker compose -f docker-compose.gateway.yaml build --no-cache > /dev/null 2>&1
-    echo -e "${CYAN}Starting Go Gateway (Docker)...${NC}"
-    docker compose -f docker-compose.gateway.yaml up -d > /dev/null 2>&1
-    sleep 5
-    
-    # Wait for Go Gateway
-    echo -e "${CYAN}Checking Go Gateway...${NC}"
-    if ! wait_for_service "http://localhost:${GO_GATEWAY_PORT}/graphql"; then
-        echo -e "${RED}Go Gateway failed to start for ${domain}${NC}"
-        docker compose -f docker-compose.gateway.yaml down > /dev/null 2>&1
-        docker compose -f docker-compose.apollo.yaml down > /dev/null 2>&1
-        docker compose down > /dev/null 2>&1
-        cd ..
-        return 1
-    fi
-    echo -e "${GREEN}✓ Go Gateway ready${NC}"
+
     echo ""
 done
 

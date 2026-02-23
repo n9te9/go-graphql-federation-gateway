@@ -7,6 +7,9 @@ headers:
       - propagate:
           matching: .*
 
+include_subgraph_errors:
+  all: true
+
 telemetry:
   instrumentation:
     spans:

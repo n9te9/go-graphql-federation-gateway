@@ -50,8 +50,8 @@ type BillingInfo
 
 type Organization
   @join__type(graph: ORGANIZATIONS, key: "id")
-  @join__type(graph: PROJECTS, key: "id")
-  @join__type(graph: BILLING, key: "id")
+  @join__type(graph: PROJECTS, key: "id", extension: true)
+  @join__type(graph: BILLING, key: "id", extension: true)
 {
   id: ID!
   name: String! @join__field(graph: ORGANIZATIONS)
