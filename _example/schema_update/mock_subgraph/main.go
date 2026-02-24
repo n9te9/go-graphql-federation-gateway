@@ -141,10 +141,16 @@ func main() {
 			return
 		}
 		// Stub response for regular queries.
+		// Return product data reflecting the current SDL: include optional fields when they are defined.
+		currentSDL := srv.getSDL()
+		product := map[string]any{"id": "1", "name": "Widget", "price": 999}
+		if strings.Contains(currentSDL, "description") {
+			product["description"] = "A high-quality widget for all your needs."
+		}
 		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 			"data": map[string]any{
-				"product":  map[string]any{"id": "1", "name": "Widget", "price": 999},
-				"products": []map[string]any{{"id": "1", "name": "Widget", "price": 999}},
+				"product":  product,
+				"products": []map[string]any{product},
 				"reviews":  []map[string]any{{"id": "r1", "body": "Great product!", "productId": "1"}},
 			},
 		})
