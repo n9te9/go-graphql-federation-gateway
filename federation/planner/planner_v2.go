@@ -424,9 +424,23 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			// - Entity type
 			// - Parent step ID
 			// - Insertion path (not including individual child field names)
-			// Use currentPath (insertion path) + fieldName (boundary field) as the key
-			boundaryFieldPath := append(append([]string{}, currentPath...), fieldName)
-			stepKey := fmt.Sprintf("%s:%s:%d:%s", targetSubGraph.Name, entityTypeToResolve, parentStep.ID, strings.Join(boundaryFieldPath, "."))
+			//
+			// For entity extensions (entityTypeToResolve == parentType), multiple sibling
+			// fields on the same parent type may all go to the same target subgraph
+			// (e.g., `inStock` and `shippingCost` both in inventory for Product).
+			// In that case we must NOT include the fieldName in the key so they merge
+			// into a single entity fetch step.
+			// For entity references (entityTypeToResolve != parentType), each boundary
+			// field points to a different child entity instance, so we include fieldName.
+			var stepKey string
+			if entityTypeToResolve == parentType {
+				// Extension: key is subgraph + entityType + parentStep ID + currentPath (no fieldName)
+				stepKey = fmt.Sprintf("%s:%s:%d:ext:%s", targetSubGraph.Name, entityTypeToResolve, parentStep.ID, strings.Join(currentPath, "."))
+			} else {
+				// Reference: key includes fieldName to distinguish different child entity fields
+				boundaryFieldPath := append(append([]string{}, currentPath...), fieldName)
+				stepKey = fmt.Sprintf("%s:%s:%d:ref:%s", targetSubGraph.Name, entityTypeToResolve, parentStep.ID, strings.Join(boundaryFieldPath, "."))
+			}
 
 			existingStep, exists := entityStepsByKey[stepKey]
 			if exists {

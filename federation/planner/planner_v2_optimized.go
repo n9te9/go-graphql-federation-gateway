@@ -263,8 +263,18 @@ func (p *PlannerV2) findAndBuildEntityStepsOptimized(
 		}
 
 		isNestedEntity := (entityOwnerSubGraph != nil && entityOwnerSubGraph.Name == targetSubGraph.Name)
-		boundaryFieldPath := append(append([]string{}, currentPath...), fieldName)
-		stepKey := fmt.Sprintf("%s:%s:%d:%s", targetSubGraph.Name, entityTypeToResolve, parentStep.ID, joinPath(boundaryFieldPath))
+		// For entity extensions (entityTypeToResolve == parentType), multiple sibling
+		// fields on the same parent type going to the same subgraph must share one
+		// entity fetch step. Do NOT include fieldName in the key.
+		// For entity references (entityTypeToResolve != parentType), fieldName
+		// distinguishes different child entity fields.
+		var stepKey string
+		if entityTypeToResolve == parentType {
+			stepKey = fmt.Sprintf("%s:%s:%d:ext:%s", targetSubGraph.Name, entityTypeToResolve, parentStep.ID, joinPath(currentPath))
+		} else {
+			boundaryFieldPath := append(append([]string{}, currentPath...), fieldName)
+			stepKey = fmt.Sprintf("%s:%s:%d:ref:%s", targetSubGraph.Name, entityTypeToResolve, parentStep.ID, joinPath(boundaryFieldPath))
+		}
 
 		existingStep, exists := entityStepsByKey[stepKey]
 		if exists {
