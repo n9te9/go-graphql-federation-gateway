@@ -1,0 +1,26 @@
+services:
+  products:
+    build:
+      context: ./mock_subgraph
+    ports:
+      - "8501:8501"
+    command: ["--addr", ":8501", "--name", "products"]
+
+  reviews:
+    build:
+      context: ./mock_subgraph
+    ports:
+      - "8502:8502"
+    command: ["--addr", ":8502", "--name", "reviews"]
+
+  gateway:
+    build:
+      context: ../..
+      dockerfile: _example/Dockerfile.gateway
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./gateway.yaml:/app/gateway.yaml
+    depends_on:
+      - products
+      - reviews

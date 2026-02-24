@@ -1,0 +1,38 @@
+name: Schema Registry E2E Test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  schema-registry-e2e:
+    name: Schema Registry E2E
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Run Schema Registry E2E tests
+        working-directory: _example/schema_update
+        run: bash test_runner.sh
+
+      - name: Collect Docker logs on failure
+        if: failure()
+        working-directory: _example/schema_update
+        run: docker compose logs > docker-compose-logs.txt 2>&1 || true
+
+      - name: Upload Docker logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-registry-e2e-logs
+          path: _example/schema_update/docker-compose-logs.txt
+          retention-days: 7
