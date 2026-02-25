@@ -4,7 +4,7 @@ A robust, hackable, and high-performance **GraphQL Federation v2 Gateway** writt
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg?logo=go)
-![Version](https://img.shields.io/badge/version-v0.1.3-blue.svg)
+![Version](https://img.shields.io/badge/version-v0.1.4-blue.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
 ## 📖 Introduction
@@ -18,6 +18,22 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
 * **Hackable:** The Planner and Executor logic is modular, allowing for custom optimization strategies.
 * **Observable:** Built-in OpenTelemetry support for production-grade tracing.
 * **Performance Optimized:** Parallel benchmark workflow with comprehensive performance testing across multiple domains.
+
+## 🆕 What's New in v0.1.4
+
+### Query Planner Optimizations
+- **Dijkstra-based optimized planner (`PlanOptimized`):** New `PlanOptimized()` method using a weighted directed graph with Dijkstra's algorithm to find the minimum-cost execution plan across subgraphs. `@provides` shortcuts are modeled as zero-cost edges for optimal cross-service routing.
+- **`@shareable` subgraph preference:** Planner now preferentially selects the same subgraph as the parent step when a field is `@shareable` across multiple subgraphs, eliminating unnecessary entity fetches.
+- **Entity step deduplication fix:** Fixed a bug where sibling extension fields on the same entity type (e.g., `inStock` and `shippingCost` on an inventory-extended `Product`) were incorrectly generating separate `_entities` calls. These are now correctly merged into a single call — matching Apollo Router behavior and reducing subgraph round-trips.
+
+### Federation v2 Directive Improvements
+- **`@key(resolvable: false)` support:** Entities marked with `resolvable: false` are now correctly excluded from entity fetch origin selection. The planner skips them as resolution entry points while still allowing reference traversal.
+- **`@requires` dependency chaining:** Improved `@requires` field injection to correctly handle chained dependencies (e.g., `purchaseHistory → reviews → reviewCount`), ensuring required fields are injected in topological order.
+
+### Testing & Infrastructure
+- **78+ integration tests** across 5 production-like domains (up from 73+)
+- **Subgraph Docker images** now pre-compile at build time (`go build`) instead of `go run`, dramatically reducing container startup time and improving test reliability
+- **Regression test** added for entity step deduplication (`TestECBenchmarkQuery_PlanSteps`)
 
 ## 🆕 What's New in v0.1.3
 
@@ -45,8 +61,11 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
 * **Apollo Federation v2 Support:** Seamlessly composes subgraphs using v2 directives.
 * **Advanced Query Planning:**
   * Solves complex dependency graphs (DAGs).
-  * Handles **`@requires`** directives by automatically injecting required fields (e.g., `weight`) into upstream requests to compute dependent fields (e.g., `shippingEstimate`).
+  * **Optimized planner (`PlanOptimized`):** Uses Dijkstra's algorithm on a weighted directed graph to find the minimum-cost execution plan. `@provides` fields are modeled as zero-cost shortcuts.
+  * Handles **`@requires`** directives by automatically injecting required fields (e.g., `weight`) into upstream requests to compute dependent fields (e.g., `shippingEstimate`). Supports chained `@requires` dependencies.
   * Resolves **Deadlocks** and circular dependencies in schema definitions using strict `@external` checks.
+  * **`@shareable` preference:** Preferentially selects the parent's subgraph when a field is available in multiple subgraphs, eliminating unnecessary entity fetches.
+  * **Entity step deduplication:** Sibling extension fields on the same entity type are merged into a single `_entities` call, matching Apollo Router behavior.
 * **"Flattening" Execution Strategy:**
   * Avoids recursion hell by flattening entity requests.
   * Optimizes `_entities` queries by discarding unnecessary parent paths, ensuring compatibility with all subgraph implementations.
@@ -57,10 +76,10 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
   * Graceful degradation with continued execution when possible.
   * See [Partial Response Documentation](docs/partial-response.md) for details.
 * **Comprehensive Testing:** 
-  * **73+ integration tests** covering all Federation v2 features across 5 example domains (EC, Fintech, SaaS, Social, Travel).
+  * **78+ integration tests** covering all Federation v2 features across 5 example domains (EC, Fintech, SaaS, Social, Travel).
   * Variable-based query testing with multiple data types, nested queries, and composite keys.
   * Partial response tests validating graceful degradation scenarios.
-  * Tests validate `@key`, `@external`, `@requires`, `@provides`, `@shareable`, `@override`, `@inaccessible`, and `@tag` directives.
+  * Tests validate `@key`, `@external`, `@requires`, `@provides`, `@shareable`, `@override`, `@inaccessible`, `@tag`, and `@key(resolvable: false)` directives.
   * **Automated parallel benchmarking** comparing Go Gateway vs Apollo Router performance across all domains.
 * **Observability:**
   * Full **OpenTelemetry** support.
@@ -68,7 +87,7 @@ While existing solutions like Apollo Router (Rust) are excellent, extending them
 
 ## ⚠️ Schema Definition Best Practices
 
-Unlike Apollo Router, this gateway **does not currently support advanced reachability analysis**. The planner relies on explicit schema definitions to determine field ownership and dependency graphs.
+The planner relies on explicit schema definitions to determine field ownership and dependency graphs.
 
 To ensure correct planning and avoid deadlocks:
 * **Explicitly use `extend type`** for type extensions.
@@ -111,10 +130,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 | Directive | Status | Description |
 | :--- | :---: | :--- |
 | `@key` | ✅ | Entity resolution via `_entities`. Supports both simple and composite keys. |
+| `@key(resolvable: false)` | ✅ | Marks an entity as non-resolvable; excluded from entity fetch origin selection. |
 | `@external` | ✅ | Used to identify fields owned by other subgraphs. |
-| `@requires` | ✅ | Solves computed fields by injecting dependencies. |
-| `@provides` | ✅ | Optimization for pre-fetching fields from entities. |
-| `@shareable`| ✅ | Allows same field/type definition across multiple subgraphs. |
+| `@requires` | ✅ | Solves computed fields by injecting dependencies. Supports chained dependency graphs. |
+| `@provides` | ✅ | Optimization for pre-fetching fields from entities. Modeled as zero-cost edges in the optimized planner. |
+| `@shareable`| ✅ | Allows same field/type definition across multiple subgraphs. Planner prefers same-subgraph resolution. |
 
 ### Advanced Federation v2 Directives
 
@@ -129,10 +149,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 **Tested Features:**
 - ✅ Simple keys (`@key(fields: "id")`)
 - ✅ Composite keys (`@key(fields: "number departureDate")`)
+- ✅ Non-resolvable keys (`@key(fields: "id", resolvable: false)`)
 - ✅ Entity extensions with `@external` fields
-- ✅ Computed fields with `@requires` directive
+- ✅ Computed fields with `@requires` directive (including chained dependencies)
 - ✅ Field optimization with `@provides` directive  
-- ✅ Shareable fields and types across services
+- ✅ Shareable fields and types across services (with same-subgraph preference)
 - ✅ Field ownership migration with `@override` directive
 - ✅ Schema element hiding with `@inaccessible` directive
 - ✅ Metadata annotations with `@tag` directive
@@ -140,6 +161,7 @@ export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 - ✅ Circular/loopback references
 - ✅ Partial responses with graceful degradation
 - ✅ Variable-based queries with complex nested structures
+- ✅ Entity step deduplication (sibling extension fields merged into one `_entities` call)
 
 ## 🛠️ Getting Started
 
