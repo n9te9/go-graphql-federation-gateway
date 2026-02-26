@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
@@ -1514,5 +1516,379 @@ func TestExecutorV2_RequiresDependencyInjection(t *testing.T) {
 	}
 	if rep["weight"] != 2.5 {
 		t.Errorf("Expected weight=2.5 in representation, got: %v", rep["weight"])
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Error Handling tests (DesignDoc: improve-error-handling)
+// ---------------------------------------------------------------------------
+
+// TestExecutorV2_SubGraphTimeout verifies that when a subgraph exceeds the
+// configured timeout, a timeout error is recorded and a graceful partial
+// response (null field + errors entry) is returned rather than panicking or
+// hanging forever.
+func TestExecutorV2_SubGraphTimeout(t *testing.T) {
+	released := make(chan struct{})
+
+	slowServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Block until released or the client disconnects
+		select {
+		case <-released:
+		case <-r.Context().Done():
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer slowServer.Close()
+	defer close(released)
+
+	sg := createMockSubgraph("slow", slowServer.URL)
+
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: sg,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "slowField"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Query"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	// Use a very short per-subgraph timeout
+	exec := executor.NewExecutorV2WithTimeout(http.DefaultClient, nil, 50*time.Millisecond)
+
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute should not return a Go error for timeouts; got: %v", err)
+	}
+
+	// The response must carry an errors entry describing the timeout
+	errList, hasErr := result["errors"]
+	if !hasErr {
+		t.Fatal("Expected timeout error in response 'errors' field, but none found")
+	}
+	gqlErrors, ok := errList.([]executor.GraphQLError)
+	if !ok || len(gqlErrors) == 0 {
+		t.Fatalf("Expected []GraphQLError, got %T: %+v", errList, errList)
+	}
+	msg := gqlErrors[0].Message
+	if !strings.Contains(msg, "timeout") && !strings.Contains(msg, "deadline") && !strings.Contains(msg, "context") {
+		t.Errorf("Expected timeout-related error message, got: %q", msg)
+	}
+}
+
+// TestExecutorV2_InvalidJSON verifies that when a subgraph returns bytes that
+// cannot be decoded as JSON, an error is recorded in the response and the
+// field value is null.
+func TestExecutorV2_InvalidJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		// Return something that is NOT valid JSON
+		w.Write([]byte("this is not json {{{"))
+	}))
+	defer server.Close()
+
+	sg := createMockSubgraph("bad-json-service", server.URL)
+
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: sg,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "someField"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Query"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, nil)
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute should not return a Go error: %v", err)
+	}
+
+	// Errors must be present
+	if _, hasErr := result["errors"]; !hasErr {
+		t.Error("Expected errors in response for invalid JSON, but none found")
+	}
+}
+
+// TestExecutorV2_NetworkError verifies that when a subgraph is unreachable
+// (connection refused / network error), a graceful partial response is returned.
+func TestExecutorV2_NetworkError(t *testing.T) {
+	// Create a server and immediately close it so that the port is unreachable
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	serverURL := server.URL
+	server.Close() // Close immediately → connection refused
+
+	sg := createMockSubgraph("unreachable", serverURL)
+
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: sg,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "field"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Query"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, nil)
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute should not return a Go error for network errors: %v", err)
+	}
+
+	if _, hasErr := result["errors"]; !hasErr {
+		t.Error("Expected errors in response for network error, but none found")
+	}
+}
+
+// TestExecutorV2_HTTPError_StatusCode verifies that HTTP 4xx/5xx status codes
+// from a subgraph are treated as errors (resulting in null data + errors entry)
+// rather than silently ignored.
+func TestExecutorV2_HTTPError_StatusCode(t *testing.T) {
+	tests := []struct {
+		name       string
+		statusCode int
+	}{
+		{"HTTP 400 Bad Request", http.StatusBadRequest},
+		{"HTTP 401 Unauthorized", http.StatusUnauthorized},
+		{"HTTP 403 Forbidden", http.StatusForbidden},
+		{"HTTP 404 Not Found", http.StatusNotFound},
+		{"HTTP 500 Internal Server Error", http.StatusInternalServerError},
+		{"HTTP 502 Bad Gateway", http.StatusBadGateway},
+		{"HTTP 503 Service Unavailable", http.StatusServiceUnavailable},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "error from subgraph", tt.statusCode)
+			}))
+			defer server.Close()
+
+			sg := createMockSubgraph("error-service", server.URL)
+
+			plan := &planner.PlanV2{
+				Steps: []*planner.StepV2{
+					{
+						ID:       0,
+						StepType: planner.StepTypeQuery,
+						SubGraph: sg,
+						SelectionSet: []ast.Selection{
+							&ast.Field{
+								Name:         &ast.Name{Value: "someField"},
+								SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+							},
+						},
+						DependsOn: []int{},
+						Path:      []string{"Query"},
+					},
+				},
+				RootStepIndexes: []int{0},
+			}
+
+			exec := executor.NewExecutorV2(http.DefaultClient, nil)
+			result, err := exec.Execute(context.Background(), plan, nil)
+			if err != nil {
+				t.Fatalf("Execute should not return a Go error: %v", err)
+			}
+
+			// Must have errors
+			errList, hasErr := result["errors"]
+			if !hasErr {
+				t.Errorf("Expected errors in response for HTTP %d, but none found", tt.statusCode)
+				return
+			}
+			gqlErrors, ok := errList.([]executor.GraphQLError)
+			if !ok || len(gqlErrors) == 0 {
+				t.Errorf("Expected []GraphQLError, got: %T %+v", errList, errList)
+				return
+			}
+			// Error message should mention the HTTP status code
+			msg := gqlErrors[0].Message
+			statusStr := fmt.Sprintf("%d", tt.statusCode)
+			if !strings.Contains(msg, statusStr) && !strings.Contains(msg, "HTTP") {
+				t.Errorf("Expected HTTP status code in error message for %d, got: %q", tt.statusCode, msg)
+			}
+		})
+	}
+}
+
+// TestExecutorV2_ErrorPathAdjustment verifies that GraphQL errors coming from
+// an entity (_entities) subgraph have their path rewritten:
+// ["_entities", 0, "fieldName"] → ["parentField", "fieldName"]
+// This makes the path meaningful to the client (no internal "_entities" leak).
+func TestExecutorV2_ErrorPathAdjustment(t *testing.T) {
+	productSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+	reviewsSchema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			reviews: [Review]
+		}
+		type Review { body: String }
+	`
+
+	productServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"product": map[string]interface{}{
+					"__typename": "Product",
+					"id":         "p1",
+					"name":       "Widget",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer productServer.Close()
+
+	// Reviews service returns partial data with an error that has _entities path
+	reviewsServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"_entities": []interface{}{
+					map[string]interface{}{
+						"__typename": "Product",
+						"id":         "p1",
+						"reviews":    nil, // null due to error
+					},
+				},
+			},
+			"errors": []interface{}{
+				map[string]interface{}{
+					"message": "reviews database unavailable",
+					"path":    []interface{}{"_entities", float64(0), "reviews"},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer reviewsServer.Close()
+
+	productSG, err := graph.NewSubGraphV2("products", []byte(productSchema), productServer.URL)
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 (products) failed: %v", err)
+	}
+	reviewsSG, err := graph.NewSubGraphV2("reviews", []byte(reviewsSchema), reviewsServer.URL)
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 (reviews) failed: %v", err)
+	}
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productSG, reviewsSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: productSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name: &ast.Name{Value: "product"},
+						SelectionSet: []ast.Selection{
+							&ast.Field{Name: &ast.Name{Value: "__typename"}},
+							&ast.Field{Name: &ast.Name{Value: "id"}},
+							&ast.Field{Name: &ast.Name{Value: "name"}},
+						},
+					},
+				},
+				DependsOn:     []int{},
+				Path:          []string{"Query"},
+				InsertionPath: []string{},
+			},
+			{
+				ID:         1,
+				StepType:   planner.StepTypeEntity,
+				SubGraph:   reviewsSG,
+				ParentType: "Product",
+				SelectionSet: []ast.Selection{
+					&ast.Field{Name: &ast.Name{Value: "__typename"}},
+					&ast.Field{Name: &ast.Name{Value: "id"}},
+					&ast.Field{
+						Name:         &ast.Name{Value: "reviews"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "body"}}},
+					},
+				},
+				DependsOn:     []int{0},
+				Path:          []string{"Query", "product"},
+				InsertionPath: []string{"Query", "product"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, superGraph)
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Must have errors
+	errList, hasErr := result["errors"]
+	if !hasErr {
+		t.Fatal("Expected errors in response but none found")
+	}
+	gqlErrors, ok := errList.([]executor.GraphQLError)
+	if !ok || len(gqlErrors) == 0 {
+		t.Fatalf("Expected []GraphQLError, got %T: %+v", errList, errList)
+	}
+
+	// The error path must NOT contain "_entities" – it should be adjusted
+	for _, e := range gqlErrors {
+		for _, seg := range e.Path {
+			if seg == "_entities" {
+				t.Errorf("Error path must not contain '_entities', but got path: %v", e.Path)
+			}
+		}
+		// Should contain "product" (the field name, not the root type)
+		hasProduct := false
+		for _, seg := range e.Path {
+			if seg == "product" {
+				hasProduct = true
+			}
+		}
+		if !hasProduct {
+			t.Errorf("Expected 'product' in error path, got: %v", e.Path)
+		}
 	}
 }
