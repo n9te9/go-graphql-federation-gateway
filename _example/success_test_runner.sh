@@ -50,8 +50,10 @@ wait_for_service() {
 
 # 1. Start subgraphs (rebuild images to pick up any schema changes)
 echo "Starting subgraphs for ${DOMAIN}..."
-cd "${DOMAIN}" && docker compose up -d --build
+cd "${DOMAIN}" && docker compose up --build -d
 cd ..
+
+sleep 15 # Initial wait to allow subgraphs to start before checking readiness (adjust as needed)
 
 # 2. Wait for all subgraph services to be ready
 echo "Waiting for subgraph services to be ready..."
