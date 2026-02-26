@@ -1,12 +1,22 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@external"])
+        import: ["@key", "@external", "@interfaceObject", "@provides"])
 
-type Review {
+interface Node {
+  id: ID!
+}
+
+type User @key(fields: "id") {
+  id: ID! @external
+  username: String! @external
+}
+
+type Review implements Node {
   id: ID!
   body: String!
   authorName: String!
-  product: Product
+  author: User @provides(fields: "username")
+  product: Product @provides(fields: "name price")
 }
 
 type Product @key(fields: "id") {

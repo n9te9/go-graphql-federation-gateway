@@ -26,6 +26,21 @@ services:
   retry:
     attempts: 3
     timeout: "5s"
+- name: catalog
+  host: http://host.docker.internal:8105/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: products-v2
+  host: http://host.docker.internal:8106/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: search
+  host: http://host.docker.internal:8107/query
+  retry:
+    attempts: 3
+    timeout: "5s"
 opentelemetry:
   tracing:
     enable: true

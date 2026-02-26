@@ -1,0 +1,15 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@interfaceObject", "@key"])
+
+type Auditable @interfaceObject @key(fields: "auditId") {
+  auditId: ID!
+  createdAt: String!
+  modifiedAt: String!
+  modifiedBy: String!
+}
+
+type Query {
+  auditLog: [Auditable!]!
+  auditEntry(id: ID!): Auditable
+}

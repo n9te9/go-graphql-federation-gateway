@@ -7,14 +7,10 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/saas/projects/graph/model"
 )
-
-// FindOrganizationByID is the resolver for the findOrganizationByID field.
-func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
-	return &model.Organization{ID: id}, nil
-}
 
 // FindProjectByID is the resolver for the findProjectByID field.
 func (r *entityResolver) FindProjectByID(ctx context.Context, id string) (*model.Project, error) {
@@ -22,17 +18,38 @@ func (r *entityResolver) FindProjectByID(ctx context.Context, id string) (*model
 		return &model.Project{
 			ID:           id,
 			Name:         "Project Alpha",
-			Organization: &model.Organization{ID: "org1"},
+			Organization: &model.Organization{ID: "org1", Name: "Acme Corp", EmployeeCount: 50},
+			Owner:        "pm@acme.com",
+			CreatedAt:    "2024-01-01T00:00:00Z",
 		}, nil
 	}
 	return &model.Project{
 		ID:           id,
 		Name:         "Project " + id,
 		Organization: &model.Organization{ID: "unknown"},
+		Owner:        "pm@project.com",
+		CreatedAt:    "2024-01-01T00:00:00Z",
 	}, nil
+}
+
+// FindResourceByID is the resolver for the findResourceByID field.
+func (r *entityResolver) FindResourceByID(ctx context.Context, id string) (*model.Resource, error) {
+	panic(fmt.Errorf("not implemented: FindResourceByID - findResourceByID"))
 }
 
 // Entity returns EntityResolver implementation.
 func (r *Resolver) Entity() EntityResolver { return &entityResolver{r} }
 
 type entityResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error) {
+	return &model.Organization{ID: id}, nil
+}
+*/

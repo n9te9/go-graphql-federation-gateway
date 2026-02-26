@@ -1,0 +1,9 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external", "@override"])
+
+extend type Customer @key(fields: "id") {
+  id: ID! @external
+  tier: String! @override(from: "customers")
+  gdprConsent: Boolean!
+}

@@ -7,13 +7,24 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/customers/graph/model"
 )
 
+// FindAuditableByAuditID is the resolver for the findAuditableByAuditID field.
+func (r *entityResolver) FindAuditableByAuditID(ctx context.Context, auditID string) (*model.Auditable, error) {
+	panic(fmt.Errorf("not implemented: FindAuditableByAuditID - findAuditableByAuditID"))
+}
+
 // FindCustomerByID is the resolver for the findCustomerByID field.
 func (r *entityResolver) FindCustomerByID(ctx context.Context, id string) (*model.Customer, error) {
 	return &model.Customer{ID: id, Name: "Customer " + id}, nil
+}
+
+// FindCustomerByAuditID is the resolver for the findCustomerByAuditID field.
+func (r *entityResolver) FindCustomerByAuditID(ctx context.Context, auditID string) (*model.Customer, error) {
+	panic(fmt.Errorf("not implemented: FindCustomerByAuditID - findCustomerByAuditID"))
 }
 
 // Entity returns EntityResolver implementation.

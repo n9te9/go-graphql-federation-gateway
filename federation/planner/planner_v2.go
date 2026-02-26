@@ -212,9 +212,16 @@ func (p *PlannerV2) expandFragmentsInSelections(selections []ast.Selection, frag
 			}
 
 		case *ast.InlineFragment:
-			// Expand inline fragment - just inline its selections
-			expandedSelections := p.expandFragmentsInSelections(sel.SelectionSet, fragmentDefs)
-			result = append(result, expandedSelections...)
+			// Preserve inline fragment with its type condition while still expanding
+			// any nested fragment spreads within it.
+			// This keeps union/interface discriminators (e.g. "... on Product { id name }")
+			// intact so buildStepSelections can treat them as typed groups.
+			newInline := &ast.InlineFragment{
+				TypeCondition: sel.TypeCondition,
+				Directives:    sel.Directives,
+			}
+			newInline.SelectionSet = p.expandFragmentsInSelections(sel.SelectionSet, fragmentDefs)
+			result = append(result, newInline)
 
 		case *ast.FragmentSpread:
 			// Expand fragment spread by looking up the fragment definition
@@ -305,10 +312,24 @@ func (p *PlannerV2) buildStepSelections(selections []ast.Selection, subGraph *gr
 			result = append(result, newField)
 
 		case *ast.InlineFragment:
-			// Expand inline fragment selections
 			typeCondition := sel.TypeCondition.Name.String()
-			expandedSelections := p.buildStepSelections(sel.SelectionSet, subGraph, typeCondition, fragmentDefs)
-			result = append(result, expandedSelections...)
+			if typeCondition == parentType {
+				// Same-type inline fragment (e.g. "... on Product {}" inside a Product context):
+				// flatten fields and apply normal ownership rules.
+				flatSelections := p.buildStepSelections(sel.SelectionSet, subGraph, typeCondition, fragmentDefs)
+				result = append(result, flatSelections...)
+			} else {
+				// Different-type inline fragment — union/interface discriminator
+				// (e.g. "... on Product {}" inside a SearchResult union context).
+				// Preserve the fragment wrapper and include all fields that this
+				// subgraph declares (even @external), because the resolver can return them.
+				inlineSelections := p.buildUnionFragmentSelections(sel.SelectionSet, subGraph, typeCondition)
+				if len(inlineSelections) > 0 {
+					newFrag := &ast.InlineFragment{TypeCondition: sel.TypeCondition}
+					newFrag.SelectionSet = inlineSelections
+					result = append(result, newFrag)
+				}
+			}
 
 		case *ast.FragmentSpread:
 			// Expand fragment spread by looking up the fragment definition
@@ -357,6 +378,71 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 	entityStepsByKey := make(map[string]*StepV2)
 
 	for _, selection := range selections {
+		// Handle inline fragments: for same-type fragments, recurse into their fields
+		// for entity-boundary detection; for union/interface discriminators, skip
+		// (their fields are provided directly by the subgraph resolver).
+		if inlineFrag, ok := selection.(*ast.InlineFragment); ok {
+			typeCondition := inlineFrag.TypeCondition.Name.String()
+			if typeCondition == parentType {
+				p.findAndBuildEntitySteps(inlineFrag.SelectionSet, parentStep, plan, nextStepID, typeCondition, currentPath, fragmentDefs)
+			} else if p.SuperGraph.IsInterfaceObjectType(parentType) {
+				// @interfaceObject: the inline fragment specifies a concrete type that this
+				// @interfaceObject type represents. Create an entity step to resolve the
+				// concrete type's fields from the appropriate subgraph.
+				concreteType := typeCondition
+				entityOwnerSubGraph := p.SuperGraph.GetEntityOwnerSubGraph(concreteType)
+				if entityOwnerSubGraph != nil {
+					// Use currentPath as the insertion path (concrete type is at the same level as the interface)
+					fieldPath := currentPath
+
+					// Build a unique step key for this @interfaceObject concrete type resolution
+					stepKey := fmt.Sprintf("%s:%s:%d:io:%s", entityOwnerSubGraph.Name, concreteType, parentStep.ID, strings.Join(currentPath, "."))
+
+					existingStep, exists := entityStepsByKey[stepKey]
+					if exists {
+						existingStep.SelectionSet = p.mergeSelections(existingStep.SelectionSet, inlineFrag.SelectionSet, entityOwnerSubGraph, concreteType, fragmentDefs)
+					} else {
+						// Build entity selections from the inline fragment's fields
+						entitySelections := p.buildEntityStepSelections(inlineFrag.SelectionSet, entityOwnerSubGraph, concreteType, parentStep, concreteType, fragmentDefs)
+
+						newStep := &StepV2{
+							ID:            *nextStepID,
+							SubGraph:      entityOwnerSubGraph,
+							StepType:      StepTypeEntity,
+							ParentType:    concreteType,
+							SelectionSet:  entitySelections,
+							Path:          fieldPath,
+							DependsOn:     []int{parentStep.ID},
+							InsertionPath: currentPath,
+						}
+						plan.Steps = append(plan.Steps, newStep)
+						entityStepsByKey[stepKey] = newStep
+						*nextStepID++
+
+						// Inject key fields into the parent step so entity resolution can extract representations
+						var relativePathForParent []string
+						if len(parentStep.InsertionPath) == 0 {
+							if len(currentPath) > 0 && (currentPath[0] == "Query" || currentPath[0] == "Mutation" || currentPath[0] == "Subscription") {
+								relativePathForParent = currentPath[1:]
+							} else {
+								relativePathForParent = currentPath
+							}
+						} else {
+							relativePathForParent = currentPath[len(parentStep.InsertionPath):]
+						}
+						p.injectKeyFieldsIntoParentStep(parentStep, concreteType, entityOwnerSubGraph, relativePathForParent)
+
+						// Recursively find nested boundary fields within the inline fragment's fields
+						// (e.g., Product.name → products-v2 via @override)
+						p.findAndBuildEntitySteps(inlineFrag.SelectionSet, newStep, plan, nextStepID, concreteType, currentPath, fragmentDefs)
+					}
+				}
+			}
+			// Different-type (union discriminator) inline fragments are left as-is:
+			// the subgraph returns those fields directly; no extra entity steps needed.
+			continue
+		}
+
 		field, ok := selection.(*ast.Field)
 		if !ok {
 			continue
@@ -405,9 +491,14 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			// Case 1: Field is owned by a different subgraph
 			isBoundaryField = true
 		} else if entityOwnerSubGraph != nil && entityOwnerSubGraph.Name != parentStep.SubGraph.Name {
-			// Case 2: Field returns an entity type owned by a different subgraph
-			isBoundaryField = true
-			targetSubGraph = entityOwnerSubGraph
+			// Case 2: Field returns an entity type whose canonical owner is a different subgraph.
+			// However, if the field's own subgraph can ALSO directly resolve that entity
+			// (e.g., a root query field that directly returns an entity it owns), then no
+			// extra entity step is needed — the root step already provides the data.
+			if !p.SuperGraph.CanSubGraphResolveEntity(fieldSubGraph, fieldType) {
+				isBoundaryField = true
+				targetSubGraph = entityOwnerSubGraph
+			}
 		}
 
 		// If this field is owned by the parent step's subgraph, recursively process its children
@@ -506,9 +597,10 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 				// Then we need to inject into "product" field → relative path = [product]
 				var relativePathForParent []string
 				if len(parentStep.InsertionPath) == 0 {
-					// Root step: InsertionPath is empty, currentPath starts with Query
-					// Remove the "Query" prefix to get the path within the SelectionSet
-					if len(currentPath) > 0 && currentPath[0] == "Query" {
+					// Root step: InsertionPath is empty, currentPath starts with the
+					// operation type (Query / Mutation / Subscription).
+					// Remove that prefix to get the path within the SelectionSet.
+					if len(currentPath) > 0 && (currentPath[0] == "Query" || currentPath[0] == "Mutation" || currentPath[0] == "Subscription") {
 						relativePathForParent = currentPath[1:]
 					} else {
 						relativePathForParent = currentPath
@@ -543,6 +635,69 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			}
 		}
 	}
+}
+
+// buildUnionFragmentSelections builds the selection set for a union/interface
+// discriminator inline fragment (e.g. "... on Product { id name }" when the parent
+// field returns a union "SearchResult").  Unlike buildStepSelections it does NOT
+// filter out @external fields: the owning subgraph's resolver can return them even
+// if they are declared external, so we include every field that is declared in the
+// subgraph's schema for that concrete type.
+func (p *PlannerV2) buildUnionFragmentSelections(
+	selections []ast.Selection,
+	subGraph *graph.SubGraphV2,
+	typeCondition string,
+) []ast.Selection {
+	result := make([]ast.Selection, 0)
+	for _, sel := range selections {
+		switch s := sel.(type) {
+		case *ast.Field:
+			fieldName := s.Name.String()
+			if fieldName == "__typename" {
+				result = append(result, sel)
+				continue
+			}
+			// Include the field if this subgraph declares it (even if @external)
+			if p.fieldDeclaredInSubGraph(subGraph, typeCondition, fieldName) {
+				result = append(result, sel)
+			}
+		case *ast.InlineFragment:
+			// Preserve nested inline fragments the same way
+			inner := p.buildUnionFragmentSelections(s.SelectionSet, subGraph, s.TypeCondition.Name.String())
+			if len(inner) > 0 {
+				newFrag := &ast.InlineFragment{TypeCondition: s.TypeCondition}
+				newFrag.SelectionSet = inner
+				result = append(result, newFrag)
+			}
+		}
+	}
+	return result
+}
+
+// fieldDeclaredInSubGraph reports whether the given field is declared for typeName
+// in the subgraph's schema, regardless of whether it carries @external.
+func (p *PlannerV2) fieldDeclaredInSubGraph(subGraph *graph.SubGraphV2, typeName, fieldName string) bool {
+	for _, def := range subGraph.Schema.Definitions {
+		switch d := def.(type) {
+		case *ast.ObjectTypeDefinition:
+			if d.Name.String() == typeName {
+				for _, f := range d.Fields {
+					if f.Name.String() == fieldName {
+						return true
+					}
+				}
+			}
+		case *ast.ObjectTypeExtension:
+			if d.Name.String() == typeName {
+				for _, f := range d.Fields {
+					if f.Name.String() == fieldName {
+						return true
+					}
+				}
+			}
+		}
+	}
+	return false
 }
 
 // buildEntityStepSelections builds SelectionSet for entity resolution steps.

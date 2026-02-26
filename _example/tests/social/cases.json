@@ -59,7 +59,7 @@
             "comments": [
               {
                 "id": "comment1",
-                "body": "Great post!",
+                "body": "Moderated comment body for comment1",
                 "author": {
                   "id": "user2",
                   "name": "Bob"
@@ -88,7 +88,7 @@
             "comments": [
               {
                 "__typename": "Comment",
-                "body": "Great post!"
+                "body": "Moderated comment body for comment1"
               }
             ]
           }
@@ -231,7 +231,7 @@
             "comments": [
               {
                 "id": "comment1",
-                "body": "Great post!",
+                "body": "Moderated comment body for comment1",
                 "author": {
                   "name": "Bob"
                 }
@@ -239,6 +239,141 @@
             ]
           }
         ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Content Feed",
+    "description": "Verify @interfaceObject support for Content interface via feed query",
+    "query": "query { feed(userId: \"user1\") { id body } }",
+    "variables": {},
+    "expected": {
+      "feed": [
+        {
+          "id": "content1",
+          "body": "Hello from the feed! This is the first post."
+        },
+        {
+          "id": "content2",
+          "body": "GraphQL Federation is amazing!"
+        },
+        {
+          "id": "content3",
+          "body": "Latest content for user user1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @override - Post Moderation Status Override",
+    "description": "Verify @override directive overrides post moderation fields",
+    "query": "query { user(id: \"user1\") { posts { id title moderationStatus } } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "title": "My First Post",
+            "moderationStatus": "approved"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @override - Comment Moderation Override",
+    "description": "Verify @override applies to comments moderation as well",
+    "query": "query { user(id: \"user1\") { posts { id comments { id body moderationStatus } } } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "comments": [
+              {
+                "id": "comment1",
+                "body": "Moderated comment body for comment1",
+                "moderationStatus": "approved"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Notifications with LikeNotification",
+    "description": "Verify union type resolution for like interaction notifications",
+    "query": "query { notifications(userId: \"user1\") { ... on LikeNotification { id post { id } likedBy { id } } } }",
+    "variables": {},
+    "expected": {
+      "notifications": [
+        {
+          "id": "like1",
+          "post": { "id": "post1" },
+          "likedBy": { "id": "user2" }
+        },
+        {},
+        {}
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: Union - Notifications with CommentNotification",
+    "description": "Verify union type resolution for comment interaction notifications",
+    "query": "query { notifications(userId: \"user1\") { ... on CommentNotification { id comment { id } } } }",
+    "variables": {},
+    "expected": {
+      "notifications": [
+        {},
+        {
+          "id": "comment1",
+          "comment": { "id": "comment1" }
+        },
+        {}
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @provides - Comment with Author Name",
+    "description": "Verify @provides directive resolves author name from parent context",
+    "query": "query { user(id: \"user1\") { posts { id comments { id body author { id name } } } } }",
+    "variables": {},
+    "expected": {
+      "user": {
+        "posts": [
+          {
+            "id": "post1",
+            "comments": [
+              {
+                "id": "comment1",
+                "body": "Moderated comment body for comment1",
+                "author": {
+                  "id": "user2",
+                  "name": "Bob"
+                }
+              }
+            ]
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Multi-Service Query with Aliases",
+    "description": "Verify querying multiple users with aliases in one query",
+    "query": "query { u1: user(id: \"user1\") { id name } u2: user(id: \"user2\") { id name } }",
+    "variables": {},
+    "expected": {
+      "u1": {
+        "id": "user1",
+        "name": "Alice"
+      },
+      "u2": {
+        "id": "user2",
+        "name": "Bob"
       }
     }
   }

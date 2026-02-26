@@ -47,14 +47,21 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	Content struct {
+		ID func(childComplexity int) int
+	}
+
 	Entity struct {
-		FindPostByID func(childComplexity int, id string) int
-		FindUserByID func(childComplexity int, id string) int
+		FindContentByID func(childComplexity int, id string) int
+		FindPostByID    func(childComplexity int, id string) int
+		FindUserByID    func(childComplexity int, id string) int
 	}
 
 	Post struct {
 		Author    func(childComplexity int) int
+		Body      func(childComplexity int) int
 		Content   func(childComplexity int) int
+		CreatedAt func(childComplexity int) int
 		ID        func(childComplexity int) int
 		LikeCount func(childComplexity int) int
 		Title     func(childComplexity int) int
@@ -77,6 +84,7 @@ type ComplexityRoot struct {
 }
 
 type EntityResolver interface {
+	FindContentByID(ctx context.Context, id string) (*model.Content, error)
 	FindPostByID(ctx context.Context, id string) (*model.Post, error)
 	FindUserByID(ctx context.Context, id string) (*model.User, error)
 }
@@ -100,6 +108,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	_ = ec
 	switch typeName + "." + field {
 
+	case "Content.id":
+		if e.complexity.Content.ID == nil {
+			break
+		}
+
+		return e.complexity.Content.ID(childComplexity), true
+
+	case "Entity.findContentByID":
+		if e.complexity.Entity.FindContentByID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findContentByID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindContentByID(childComplexity, args["id"].(string)), true
 	case "Entity.findPostByID":
 		if e.complexity.Entity.FindPostByID == nil {
 			break
@@ -129,12 +155,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Post.Author(childComplexity), true
+	case "Post.body":
+		if e.complexity.Post.Body == nil {
+			break
+		}
+
+		return e.complexity.Post.Body(childComplexity), true
 	case "Post.content":
 		if e.complexity.Post.Content == nil {
 			break
 		}
 
 		return e.complexity.Post.Content(childComplexity), true
+	case "Post.createdAt":
+		if e.complexity.Post.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.Post.CreatedAt(childComplexity), true
 	case "Post.id":
 		if e.complexity.Post.ID == nil {
 			break
@@ -352,10 +390,11 @@ var sources = []*ast.Source{
 `, BuiltIn: true},
 	{Name: "../federation/entity.graphql", Input: `
 # a union of all types that use the @key directive
-union _Entity = Post | User
+union _Entity = Content | Post | User
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
+	findContentByID(id: ID!,): Content!
 	findPostByID(id: ID!,): Post!
 	findUserByID(id: ID!,): User!
 }
@@ -375,6 +414,17 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Entity_findContentByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
 
 func (ec *executionContext) field_Entity_findPostByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
@@ -472,6 +522,80 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 
 // region    **************************** field.gotpl *****************************
 
+func (ec *executionContext) _Content_id(ctx context.Context, field graphql.CollectedField, obj *model.Content) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Content_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Content_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Content",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findContentByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findContentByID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindContentByID(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		ec.marshalNContent2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋsocialᚋpostsᚋgraphᚋmodelᚐContent,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findContentByID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Content_id(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Content", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findContentByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Entity_findPostByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -503,10 +627,14 @@ func (ec *executionContext) fieldContext_Entity_findPostByID(ctx context.Context
 				return ec.fieldContext_Post_title(ctx, field)
 			case "content":
 				return ec.fieldContext_Post_content(ctx, field)
+			case "body":
+				return ec.fieldContext_Post_body(ctx, field)
 			case "likeCount":
 				return ec.fieldContext_Post_likeCount(ctx, field)
 			case "author":
 				return ec.fieldContext_Post_author(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Post_createdAt(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Post", field.Name)
 		},
@@ -661,6 +789,35 @@ func (ec *executionContext) fieldContext_Post_content(_ context.Context, field g
 	return fc, nil
 }
 
+func (ec *executionContext) _Post_body(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Post_body,
+		func(ctx context.Context) (any, error) {
+			return obj.Body, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Post_body(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Post",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Post_likeCount(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -722,6 +879,35 @@ func (ec *executionContext) fieldContext_Post_author(_ context.Context, field gr
 				return ec.fieldContext_User_posts(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type User", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Post_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Post) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Post_createdAt,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Post_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Post",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -997,10 +1183,14 @@ func (ec *executionContext) fieldContext_User_posts(_ context.Context, field gra
 				return ec.fieldContext_Post_title(ctx, field)
 			case "content":
 				return ec.fieldContext_Post_content(ctx, field)
+			case "body":
+				return ec.fieldContext_Post_body(ctx, field)
 			case "likeCount":
 				return ec.fieldContext_Post_likeCount(ctx, field)
 			case "author":
 				return ec.fieldContext_Post_author(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Post_createdAt(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Post", field.Name)
 		},
@@ -2505,6 +2695,13 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 			return graphql.Null
 		}
 		return ec._Post(ctx, sel, obj)
+	case model.Content:
+		return ec._Content(ctx, sel, &obj)
+	case *model.Content:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Content(ctx, sel, obj)
 	default:
 		if typedObj, ok := obj.(graphql.Marshaler); ok {
 			return typedObj
@@ -2517,6 +2714,45 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 // endregion ************************** interface.gotpl ***************************
 
 // region    **************************** object.gotpl ****************************
+
+var contentImplementors = []string{"Content", "_Entity"}
+
+func (ec *executionContext) _Content(ctx context.Context, sel ast.SelectionSet, obj *model.Content) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, contentImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Content")
+		case "id":
+			out.Values[i] = ec._Content_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
 
 var entityImplementors = []string{"Entity"}
 
@@ -2537,6 +2773,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Entity")
+		case "findContentByID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findContentByID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "findPostByID":
 			field := field
 
@@ -2630,6 +2888,11 @@ func (ec *executionContext) _Post(ctx context.Context, sel ast.SelectionSet, obj
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "body":
+			out.Values[i] = ec._Post_body(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "likeCount":
 			out.Values[i] = ec._Post_likeCount(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -2637,6 +2900,11 @@ func (ec *executionContext) _Post(ctx context.Context, sel ast.SelectionSet, obj
 			}
 		case "author":
 			out.Values[i] = ec._Post_author(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._Post_createdAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -3191,6 +3459,20 @@ func (ec *executionContext) marshalNBoolean2bool(ctx context.Context, sel ast.Se
 		}
 	}
 	return res
+}
+
+func (ec *executionContext) marshalNContent2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋsocialᚋpostsᚋgraphᚋmodelᚐContent(ctx context.Context, sel ast.SelectionSet, v model.Content) graphql.Marshaler {
+	return ec._Content(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNContent2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋsocialᚋpostsᚋgraphᚋmodelᚐContent(ctx context.Context, sel ast.SelectionSet, v *model.Content) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Content(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNFieldSet2string(ctx context.Context, v any) (string, error) {

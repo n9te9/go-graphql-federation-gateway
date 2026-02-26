@@ -2,12 +2,20 @@
 
 package model
 
+type Content struct {
+	ID string `json:"id"`
+}
+
+func (Content) IsEntity() {}
+
 type Post struct {
 	ID        string `json:"id"`
 	Title     string `json:"title"`
 	Content   string `json:"content"`
+	Body      string `json:"body"`
 	LikeCount int    `json:"likeCount"`
 	Author    *User  `json:"author"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func (Post) IsEntity() {}

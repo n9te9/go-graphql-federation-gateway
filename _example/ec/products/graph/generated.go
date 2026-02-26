@@ -58,10 +58,11 @@ type ComplexityRoot struct {
 	}
 
 	Product struct {
-		ID     func(childComplexity int) int
-		Name   func(childComplexity int) int
-		Price  func(childComplexity int) int
-		Weight func(childComplexity int) int
+		ID           func(childComplexity int) int
+		InternalCode func(childComplexity int) int
+		Name         func(childComplexity int) int
+		Price        func(childComplexity int) int
+		Weight       func(childComplexity int) int
 	}
 
 	Query struct {
@@ -134,6 +135,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Product.ID(childComplexity), true
+	case "Product.internalCode":
+		if e.complexity.Product.InternalCode == nil {
+			break
+		}
+
+		return e.complexity.Product.InternalCode(childComplexity), true
 	case "Product.name":
 		if e.complexity.Product.Name == nil {
 			break
@@ -526,6 +533,8 @@ func (ec *executionContext) fieldContext_Entity_findProductByID(ctx context.Cont
 				return ec.fieldContext_Product_price(ctx, field)
 			case "weight":
 				return ec.fieldContext_Product_weight(ctx, field)
+			case "internalCode":
+				return ec.fieldContext_Product_internalCode(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Product", field.Name)
 		},
@@ -577,6 +586,8 @@ func (ec *executionContext) fieldContext_Mutation_createProduct(ctx context.Cont
 				return ec.fieldContext_Product_price(ctx, field)
 			case "weight":
 				return ec.fieldContext_Product_weight(ctx, field)
+			case "internalCode":
+				return ec.fieldContext_Product_internalCode(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Product", field.Name)
 		},
@@ -711,6 +722,35 @@ func (ec *executionContext) fieldContext_Product_weight(_ context.Context, field
 	return fc, nil
 }
 
+func (ec *executionContext) _Product_internalCode(ctx context.Context, field graphql.CollectedField, obj *model.Product) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Product_internalCode,
+		func(ctx context.Context) (any, error) {
+			return obj.InternalCode, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Product_internalCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Product",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_product(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -744,6 +784,8 @@ func (ec *executionContext) fieldContext_Query_product(ctx context.Context, fiel
 				return ec.fieldContext_Product_price(ctx, field)
 			case "weight":
 				return ec.fieldContext_Product_weight(ctx, field)
+			case "internalCode":
+				return ec.fieldContext_Product_internalCode(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Product", field.Name)
 		},
@@ -2423,6 +2465,26 @@ func (ec *executionContext) fieldContext___Type_isOneOf(_ context.Context, field
 
 // region    ************************** interface.gotpl ***************************
 
+func (ec *executionContext) _Node(ctx context.Context, sel ast.SelectionSet, obj model.Node) graphql.Marshaler {
+	switch obj := (obj).(type) {
+	case nil:
+		return graphql.Null
+	case model.Product:
+		return ec._Product(ctx, sel, &obj)
+	case *model.Product:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Product(ctx, sel, obj)
+	default:
+		if typedObj, ok := obj.(graphql.Marshaler); ok {
+			return typedObj
+		} else {
+			panic(fmt.Errorf("unexpected type %T; non-generated variants of Node must implement graphql.Marshaler", obj))
+		}
+	}
+}
+
 func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, obj fedruntime.Entity) graphql.Marshaler {
 	switch obj := (obj).(type) {
 	case nil:
@@ -2557,7 +2619,7 @@ func (ec *executionContext) _Mutation(ctx context.Context, sel ast.SelectionSet)
 	return out
 }
 
-var productImplementors = []string{"Product", "_Entity"}
+var productImplementors = []string{"Product", "Node", "_Entity"}
 
 func (ec *executionContext) _Product(ctx context.Context, sel ast.SelectionSet, obj *model.Product) graphql.Marshaler {
 	fields := graphql.CollectFields(ec.OperationContext, sel, productImplementors)
@@ -2585,6 +2647,11 @@ func (ec *executionContext) _Product(ctx context.Context, sel ast.SelectionSet, 
 			}
 		case "weight":
 			out.Values[i] = ec._Product_weight(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "internalCode":
+			out.Values[i] = ec._Product_internalCode(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}

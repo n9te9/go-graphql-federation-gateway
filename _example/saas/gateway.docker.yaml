@@ -19,3 +19,18 @@ services:
   retry:
     attempts: 3
     timeout: "5s"
+- name: resources
+  host: http://host.docker.internal:8504/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: billing-v2
+  host: http://host.docker.internal:8505/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: events
+  host: http://host.docker.internal:8506/query
+  retry:
+    attempts: 3
+    timeout: "5s"

@@ -153,6 +153,25 @@ func (ec *executionContext) resolveEntity(
 	}()
 
 	switch typeName {
+	case "Content":
+		resolverName, err := entityResolverNameForContent(ctx, rep)
+		if err != nil {
+			return nil, fmt.Errorf(`finding resolver for Entity "Content": %w`, err)
+		}
+		switch resolverName {
+
+		case "findContentByID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["id"])
+			if err != nil {
+				return nil, fmt.Errorf(`unmarshalling param 0 for findContentByID(): %w`, err)
+			}
+			entity, err := ec.resolvers.Entity().FindContentByID(ctx, id0)
+			if err != nil {
+				return nil, fmt.Errorf(`resolving Entity "Content": %w`, err)
+			}
+
+			return entity, nil
+		}
 	case "Post":
 		resolverName, err := entityResolverNameForPost(ctx, rep)
 		if err != nil {
@@ -215,6 +234,41 @@ func (ec *executionContext) resolveManyEntities(
 	default:
 		return errors.New("unknown type: " + typeName)
 	}
+}
+
+func entityResolverNameForContent(ctx context.Context, rep EntityRepresentation) (string, error) {
+	// we collect errors because a later entity resolver may work fine
+	// when an entity has multiple keys
+	entityResolverErrs := []error{}
+	for {
+		var (
+			m   EntityRepresentation
+			val any
+			ok  bool
+		)
+		_ = val
+		// if all of the KeyFields values for this resolver are null,
+		// we shouldn't use use it
+		allNull := true
+		m = rep
+		val, ok = m["id"]
+		if !ok {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to missing Key Field \"id\" for Content", ErrTypeNotFound))
+			break
+		}
+		if allNull {
+			allNull = val == nil
+		}
+		if allNull {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to all null value KeyFields for Content", ErrTypeNotFound))
+			break
+		}
+		return "findContentByID", nil
+	}
+	return "", fmt.Errorf("%w for Content due to %v", ErrTypeNotFound,
+		errors.Join(entityResolverErrs...).Error())
 }
 
 func entityResolverNameForPost(ctx context.Context, rep EntityRepresentation) (string, error) {

@@ -8,3 +8,27 @@ services:
   comments:
     build: { context: ./comments, dockerfile: Dockerfile }
     ports: ["8303:8080"]
+  feed:
+    build:
+      context: ./feed
+      dockerfile: Dockerfile
+    ports:
+      - "8304:8080"
+    environment:
+      - PORT=8080
+  moderation:
+    build:
+      context: ./moderation
+      dockerfile: Dockerfile
+    ports:
+      - "8305:8080"
+    environment:
+      - PORT=8080
+  notifications:
+    build:
+      context: ./notifications
+      dockerfile: Dockerfile
+    ports:
+      - "8306:8080"
+    environment:
+      - PORT=8080

@@ -1,0 +1,12 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@interfaceObject", "@key"])
+
+type Node @interfaceObject @key(fields: "id") {
+  id: ID!
+}
+
+type Query {
+  node(id: ID!): Node
+  nodes(ids: [ID!]!): [Node!]!
+}

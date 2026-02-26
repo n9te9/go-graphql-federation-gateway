@@ -7,6 +7,12 @@ type Organization @key(fields: "id") @shareable {
   name: String! @tag(name: "public")
   employeeCount: Int! @shareable
   taxId: String! @inaccessible
+  owner: String!
+  createdAt: String!
+}
+
+extend type Resource @key(fields: "id") {
+  id: ID!
 }
 
 type Query {

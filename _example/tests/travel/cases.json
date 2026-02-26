@@ -153,7 +153,7 @@
         "departureDate": "2026-03-01",
         "origin": "SFO",
         "destination": "JFK",
-        "price": 500
+        "price": 450
       }
     }
   },
@@ -188,6 +188,133 @@
             }
           }
         ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Search Bookables",
+    "description": "Verify @interfaceObject support via searchBookables query",
+    "query": "query { searchBookables { id price availability } }",
+    "variables": {},
+    "expected": {
+      "searchBookables": [
+        {
+          "id": "flight-aa100",
+          "price": 500,
+          "availability": true
+        },
+        {
+          "id": "hotel-h1",
+          "price": 200,
+          "availability": true
+        },
+        {
+          "id": "hotel-h2",
+          "price": 350,
+          "availability": false
+        }
+      ]
+    }
+  },
+  {
+    "name": "Hotel Query (Single Service)",
+    "description": "Verify hotel query returns correct hotel data",
+    "query": "query { hotel(id: \"h1\") { id name location price availability } }",
+    "variables": {},
+    "expected": {
+      "hotel": {
+        "id": "h1",
+        "name": "Grand Plaza Hotel",
+        "location": "New York",
+        "price": 200,
+        "availability": true
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @override - Flight Dynamic Pricing",
+    "description": "Verify @override directive overrides price field based on dynamic pricing",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number price priceType discount } }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "price": 450,
+        "priceType": "early-bird",
+        "discount": 50
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Search Travel with Flight",
+    "description": "Verify union type resolution for flight travel options in searchTravel",
+    "query": "query { searchTravel(from: \"SFO\", to: \"JFK\") { ... on Flight { number departureDate } } }",
+    "variables": {},
+    "expected": {
+      "searchTravel": [
+        {
+          "number": "AA100",
+          "departureDate": "2026-03-01"
+        },
+        {},
+        {
+          "number": "BA200",
+          "departureDate": "2026-03-02"
+        },
+        {}
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: Union - Search Travel with Hotel",
+    "description": "Verify union type resolution for hotel travel options in searchTravel",
+    "query": "query { searchTravel(from: \"SFO\", to: \"JFK\") { ... on Hotel { id } } }",
+    "variables": {},
+    "expected": {
+      "searchTravel": [
+        {},
+        {
+          "id": "h1"
+        },
+        {},
+        {
+          "id": "h2"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @provides - Booking Flight Reference",
+    "description": "Verify flight bookings includes nested flight reference",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number bookings { id flight { number } } } }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "bookings": [
+          {
+            "id": "booking1",
+            "flight": {
+              "number": "AA100"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Multi-Service Query with Aliases",
+    "description": "Verify querying multiple resource types with aliases in one query",
+    "query": "query { fl: flight(number: \"AA100\", departureDate: \"2026-03-01\") { number origin } ht: hotel(id: \"h1\") { id name } }",
+    "variables": {},
+    "expected": {
+      "fl": {
+        "number": "AA100",
+        "origin": "SFO"
+      },
+      "ht": {
+        "id": "h1",
+        "name": "Grand Plaza Hotel"
       }
     }
   }

@@ -14,3 +14,27 @@ services:
   transactions:
     build: { context: ./transactions, dockerfile: Dockerfile }
     ports: ["8203:8080"]
+  audit:
+    build:
+      context: ./audit
+      dockerfile: Dockerfile
+    ports:
+      - "8204:8080"
+    environment:
+      - PORT=8080
+  customers-eu:
+    build:
+      context: ./customers-eu
+      dockerfile: Dockerfile
+    ports:
+      - "8205:8080"
+    environment:
+      - PORT=8080
+  activities:
+    build:
+      context: ./activities
+      dockerfile: Dockerfile
+    ports:
+      - "8206:8080"
+    environment:
+      - PORT=8080

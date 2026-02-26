@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/social/comments/graph/model"
 )
@@ -15,12 +16,18 @@ import (
 func (r *entityResolver) FindCommentByID(ctx context.Context, id string) (*model.Comment, error) {
 	if id == "comment1" {
 		return &model.Comment{
-			ID:     id,
-			Body:   "Great post!",
-			Author: &model.User{ID: "user2"},
+			ID:        id,
+			Body:      "Great post!",
+			Author:    &model.User{ID: "user2", Name: "Alice"},
+			CreatedAt: "2024-01-01T00:00:00Z",
 		}, nil
 	}
-	return &model.Comment{ID: id, Body: "Comment " + id, Author: &model.User{ID: "unknown"}}, nil
+	return &model.Comment{ID: id, Body: "Comment " + id, Author: &model.User{ID: "unknown", Name: "Unknown"}, CreatedAt: "2024-01-01T00:00:00Z"}, nil
+}
+
+// FindContentByID is the resolver for the findContentByID field.
+func (r *entityResolver) FindContentByID(ctx context.Context, id string) (*model.Content, error) {
+	panic(fmt.Errorf("not implemented: FindContentByID - findContentByID"))
 }
 
 // FindPostByID is the resolver for the findPostByID field.
@@ -37,9 +44,10 @@ func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Po
 			EngagementScore: engagementScore,
 			Comments: []*model.Comment{
 				{
-					ID:     "comment1",
-					Body:   "Great post!",
-					Author: &model.User{ID: "user2"},
+					ID:        "comment1",
+					Body:      "Great post!",
+					Author:    &model.User{ID: "user2", Name: "Alice"},
+					CreatedAt: "2024-01-01T00:00:00Z",
 				},
 			},
 		}, nil

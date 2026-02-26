@@ -8,3 +8,27 @@ services:
   billing:
     build: { context: ./billing, dockerfile: Dockerfile }
     ports: ["8503:8080"]
+  resources:
+    build:
+      context: ./resources
+      dockerfile: Dockerfile
+    ports:
+      - "8504:8080"
+    environment:
+      - PORT=8080
+  billing-v2:
+    build:
+      context: ./billing-v2
+      dockerfile: Dockerfile
+    ports:
+      - "8505:8080"
+    environment:
+      - PORT=8080
+  events:
+    build:
+      context: ./events
+      dockerfile: Dockerfile
+    ports:
+      - "8506:8080"
+    environment:
+      - PORT=8080

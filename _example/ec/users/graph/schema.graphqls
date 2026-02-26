@@ -1,8 +1,12 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@shareable"])
+        import: ["@key", "@shareable", "@interfaceObject"])
 
-type User @key(fields: "id") @key(fields: "username") @key(fields: "email") {
+interface Node {
+  id: ID!
+}
+
+type User implements Node @key(fields: "id") @key(fields: "username") @key(fields: "email") {
   id: ID!
   username: String! @shareable
   email: String!

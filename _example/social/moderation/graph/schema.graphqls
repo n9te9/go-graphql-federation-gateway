@@ -1,0 +1,15 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external", "@override"])
+
+extend type Post @key(fields: "id") {
+  id: ID! @external
+  content: String! @override(from: "posts")
+  moderationStatus: String!
+}
+
+extend type Comment @key(fields: "id") {
+  id: ID! @external
+  body: String! @override(from: "comments")
+  moderationStatus: String!
+}

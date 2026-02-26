@@ -50,18 +50,26 @@ type DirectiveRoot struct {
 type ComplexityRoot struct {
 	Entity struct {
 		FindOrganizationByID func(childComplexity int, id string) int
+		FindResourceByID     func(childComplexity int, id string) int
 	}
 
 	Organization struct {
+		CreatedAt     func(childComplexity int) int
 		EmployeeCount func(childComplexity int) int
 		ID            func(childComplexity int) int
 		Name          func(childComplexity int) int
+		Owner         func(childComplexity int) int
+		TaxID         func(childComplexity int) int
 	}
 
 	Query struct {
 		Organization       func(childComplexity int, id string) int
 		__resolve__service func(childComplexity int) int
 		__resolve_entities func(childComplexity int, representations []map[string]any) int
+	}
+
+	Resource struct {
+		ID func(childComplexity int) int
 	}
 
 	_Service struct {
@@ -71,6 +79,7 @@ type ComplexityRoot struct {
 
 type EntityResolver interface {
 	FindOrganizationByID(ctx context.Context, id string) (*model.Organization, error)
+	FindResourceByID(ctx context.Context, id string) (*model.Resource, error)
 }
 type QueryResolver interface {
 	Organization(ctx context.Context, id string) (*model.Organization, error)
@@ -106,7 +115,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Entity.FindOrganizationByID(childComplexity, args["id"].(string)), true
+	case "Entity.findResourceByID":
+		if e.complexity.Entity.FindResourceByID == nil {
+			break
+		}
 
+		args, err := ec.field_Entity_findResourceByID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindResourceByID(childComplexity, args["id"].(string)), true
+
+	case "Organization.createdAt":
+		if e.complexity.Organization.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.Organization.CreatedAt(childComplexity), true
 	case "Organization.employeeCount":
 		if e.complexity.Organization.EmployeeCount == nil {
 			break
@@ -125,6 +151,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Organization.Name(childComplexity), true
+	case "Organization.owner":
+		if e.complexity.Organization.Owner == nil {
+			break
+		}
+
+		return e.complexity.Organization.Owner(childComplexity), true
+	case "Organization.taxId":
+		if e.complexity.Organization.TaxID == nil {
+			break
+		}
+
+		return e.complexity.Organization.TaxID(childComplexity), true
 
 	case "Query.organization":
 		if e.complexity.Query.Organization == nil {
@@ -154,6 +192,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.__resolve_entities(childComplexity, args["representations"].([]map[string]any)), true
+
+	case "Resource.id":
+		if e.complexity.Resource.ID == nil {
+			break
+		}
+
+		return e.complexity.Resource.ID(childComplexity), true
 
 	case "_Service.sdl":
 		if e.complexity._Service.SDL == nil {
@@ -316,11 +361,12 @@ var sources = []*ast.Source{
 `, BuiltIn: true},
 	{Name: "../federation/entity.graphql", Input: `
 # a union of all types that use the @key directive
-union _Entity = Organization
+union _Entity = Organization | Resource
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
 	findOrganizationByID(id: ID!,): Organization!
+	findResourceByID(id: ID!,): Resource!
 }
 
 type _Service {
@@ -340,6 +386,17 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // region    ***************************** args.gotpl *****************************
 
 func (ec *executionContext) field_Entity_findOrganizationByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Entity_findResourceByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
 	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
@@ -466,6 +523,12 @@ func (ec *executionContext) fieldContext_Entity_findOrganizationByID(ctx context
 				return ec.fieldContext_Organization_name(ctx, field)
 			case "employeeCount":
 				return ec.fieldContext_Organization_employeeCount(ctx, field)
+			case "taxId":
+				return ec.fieldContext_Organization_taxId(ctx, field)
+			case "owner":
+				return ec.fieldContext_Organization_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Organization_createdAt(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Organization", field.Name)
 		},
@@ -478,6 +541,51 @@ func (ec *executionContext) fieldContext_Entity_findOrganizationByID(ctx context
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Entity_findOrganizationByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findResourceByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findResourceByID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindResourceByID(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		ec.marshalNResource2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋsaasᚋorganizationsᚋgraphᚋmodelᚐResource,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findResourceByID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Resource_id(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Resource", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findResourceByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -571,6 +679,93 @@ func (ec *executionContext) fieldContext_Organization_employeeCount(_ context.Co
 	return fc, nil
 }
 
+func (ec *executionContext) _Organization_taxId(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Organization_taxId,
+		func(ctx context.Context) (any, error) {
+			return obj.TaxID, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Organization_taxId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Organization",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Organization_owner(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Organization_owner,
+		func(ctx context.Context) (any, error) {
+			return obj.Owner, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Organization_owner(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Organization",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Organization_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Organization) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Organization_createdAt,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Organization_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Organization",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_organization(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -602,6 +797,12 @@ func (ec *executionContext) fieldContext_Query_organization(ctx context.Context,
 				return ec.fieldContext_Organization_name(ctx, field)
 			case "employeeCount":
 				return ec.fieldContext_Organization_employeeCount(ctx, field)
+			case "taxId":
+				return ec.fieldContext_Organization_taxId(ctx, field)
+			case "owner":
+				return ec.fieldContext_Organization_owner(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Organization_createdAt(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Organization", field.Name)
 		},
@@ -797,6 +998,35 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 				return ec.fieldContext___Schema_directives(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type __Schema", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Resource_id(ctx context.Context, field graphql.CollectedField, obj *model.Resource) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Resource_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Resource_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Resource",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
 		},
 	}
 	return fc, nil
@@ -2285,6 +2515,13 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 	switch obj := (obj).(type) {
 	case nil:
 		return graphql.Null
+	case model.Resource:
+		return ec._Resource(ctx, sel, &obj)
+	case *model.Resource:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Resource(ctx, sel, obj)
 	case model.Organization:
 		return ec._Organization(ctx, sel, &obj)
 	case *model.Organization:
@@ -2346,6 +2583,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findResourceByID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findResourceByID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -2392,6 +2651,21 @@ func (ec *executionContext) _Organization(ctx context.Context, sel ast.Selection
 			}
 		case "employeeCount":
 			out.Values[i] = ec._Organization_employeeCount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "taxId":
+			out.Values[i] = ec._Organization_taxId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "owner":
+			out.Values[i] = ec._Organization_owner(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._Organization_createdAt(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -2508,6 +2782,45 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___schema(ctx, field)
 			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var resourceImplementors = []string{"Resource", "_Entity"}
+
+func (ec *executionContext) _Resource(ctx context.Context, sel ast.SelectionSet, obj *model.Resource) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, resourceImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Resource")
+		case "id":
+			out.Values[i] = ec._Resource_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -2978,6 +3291,20 @@ func (ec *executionContext) marshalNOrganization2ᚖgithubᚗcomᚋn9te9ᚋgoᚑ
 		return graphql.Null
 	}
 	return ec._Organization(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNResource2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋsaasᚋorganizationsᚋgraphᚋmodelᚐResource(ctx context.Context, sel ast.SelectionSet, v model.Resource) graphql.Marshaler {
+	return ec._Resource(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNResource2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋsaasᚋorganizationsᚋgraphᚋmodelᚐResource(ctx context.Context, sel ast.SelectionSet, v *model.Resource) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Resource(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

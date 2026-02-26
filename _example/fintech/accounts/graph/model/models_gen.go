@@ -3,13 +3,23 @@
 package model
 
 type Account struct {
-	Iban     string    `json:"iban"`
-	ID       string    `json:"id"`
-	Balance  int       `json:"balance"`
-	Customer *Customer `json:"customer"`
+	Iban       string    `json:"iban"`
+	ID         string    `json:"id"`
+	Balance    int       `json:"balance"`
+	Customer   *Customer `json:"customer"`
+	AuditID    string    `json:"auditId"`
+	CreatedAt  string    `json:"createdAt"`
+	ModifiedAt string    `json:"modifiedAt"`
+	ModifiedBy string    `json:"modifiedBy"`
 }
 
 func (Account) IsEntity() {}
+
+type Auditable struct {
+	AuditID string `json:"auditId"`
+}
+
+func (Auditable) IsEntity() {}
 
 type Customer struct {
 	ID       string     `json:"id"`

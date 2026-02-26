@@ -1,0 +1,18 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external"])
+
+union TravelOption = Flight | Hotel
+
+extend type Flight @key(fields: "number departureDate") {
+  number: String! @external
+  departureDate: String! @external
+}
+
+extend type Hotel @key(fields: "id") {
+  id: ID! @external
+}
+
+type Query {
+  searchTravel(from: String!, to: String!): [TravelOption!]!
+}

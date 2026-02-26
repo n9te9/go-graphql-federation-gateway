@@ -1,6 +1,6 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@shareable"])
+        import: ["@key", "@shareable", "@provides", "@external"])
 
 type Query {
   project(id: ID!): Project
@@ -9,9 +9,17 @@ type Query {
 type Project @key(fields: "id") {
   id: ID!
   name: String!
-  organization: Organization!
+  organization: Organization! @provides(fields: "name employeeCount")
+  owner: String!
+  createdAt: String!
+}
+
+extend type Resource @key(fields: "id") {
+  id: ID!
 }
 
 extend type Organization @key(fields: "id") @shareable {
-  id: ID!
+  id: ID! @external
+  name: String! @external
+  employeeCount: Int! @external
 }

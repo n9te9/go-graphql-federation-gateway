@@ -2,11 +2,19 @@ extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
         import: ["@key", "@external", "@shareable"])
 
-type Account @key(fields: "iban") {
+type Account @key(fields: "iban") @key(fields: "auditId") {
   iban: ID!
   id: ID!
   balance: Int! @shareable
   customer: Customer!
+  auditId: ID!
+  createdAt: String!
+  modifiedAt: String!
+  modifiedBy: String!
+}
+
+extend type Auditable @key(fields: "auditId") {
+  auditId: ID!
 }
 
 extend type Customer @key(fields: "id") {

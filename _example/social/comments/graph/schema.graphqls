@@ -1,11 +1,16 @@
 extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
-        import: ["@key", "@external", "@requires"])
+        import: ["@key", "@external", "@requires", "@provides"])
 
 type Comment @key(fields: "id") {
   id: ID!
   body: String!
-  author: User!
+  author: User! @provides(fields: "name")
+  createdAt: String!
+}
+
+extend type Content @key(fields: "id") {
+  id: ID!
 }
 
 extend type Post @key(fields: "id") {

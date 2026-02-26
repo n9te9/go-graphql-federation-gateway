@@ -1,0 +1,19 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@interfaceObject", "@key", "@external"])
+
+type Content @interfaceObject @key(fields: "id") {
+  id: ID!
+  body: String!
+  author: User!
+  createdAt: String!
+}
+
+type Query {
+  feed(userId: ID!): [Content!]!
+  content(id: ID!): Content
+}
+
+extend type User @key(fields: "id") {
+  id: ID! @external
+}

@@ -1,0 +1,28 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external"])
+
+union FinancialActivity = Transaction | AccountOpening | TierUpgrade
+
+type AccountOpening {
+  id: ID!
+  customerId: ID!
+  timestamp: String!
+  accountType: String!
+}
+
+type TierUpgrade {
+  id: ID!
+  customerId: ID!
+  oldTier: String!
+  newTier: String!
+  timestamp: String!
+}
+
+extend type Transaction @key(fields: "id") {
+  id: ID! @external
+}
+
+type Query {
+  customerActivity(customerId: ID!): [FinancialActivity!]!
+}

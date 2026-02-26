@@ -54,9 +54,15 @@ type ComplexityRoot struct {
 		Transactions func(childComplexity int) int
 	}
 
+	Auditable struct {
+		AuditID func(childComplexity int) int
+	}
+
 	Entity struct {
-		FindAccountByIban   func(childComplexity int, iban string) int
-		FindTransactionByID func(childComplexity int, id string) int
+		FindAccountByIban        func(childComplexity int, iban string) int
+		FindAuditableByAuditID   func(childComplexity int, auditID string) int
+		FindTransactionByAuditID func(childComplexity int, auditID string) int
+		FindTransactionByID      func(childComplexity int, id string) int
 	}
 
 	Query struct {
@@ -65,8 +71,12 @@ type ComplexityRoot struct {
 	}
 
 	Transaction struct {
-		Amount func(childComplexity int) int
-		ID     func(childComplexity int) int
+		Amount     func(childComplexity int) int
+		AuditID    func(childComplexity int) int
+		CreatedAt  func(childComplexity int) int
+		ID         func(childComplexity int) int
+		ModifiedAt func(childComplexity int) int
+		ModifiedBy func(childComplexity int) int
 	}
 
 	_Service struct {
@@ -76,7 +86,9 @@ type ComplexityRoot struct {
 
 type EntityResolver interface {
 	FindAccountByIban(ctx context.Context, iban string) (*model.Account, error)
+	FindAuditableByAuditID(ctx context.Context, auditID string) (*model.Auditable, error)
 	FindTransactionByID(ctx context.Context, id string) (*model.Transaction, error)
+	FindTransactionByAuditID(ctx context.Context, auditID string) (*model.Transaction, error)
 }
 
 type executableSchema struct {
@@ -123,6 +135,13 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Account.Transactions(childComplexity), true
 
+	case "Auditable.auditId":
+		if e.complexity.Auditable.AuditID == nil {
+			break
+		}
+
+		return e.complexity.Auditable.AuditID(childComplexity), true
+
 	case "Entity.findAccountByIban":
 		if e.complexity.Entity.FindAccountByIban == nil {
 			break
@@ -134,6 +153,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Entity.FindAccountByIban(childComplexity, args["iban"].(string)), true
+	case "Entity.findAuditableByAuditID":
+		if e.complexity.Entity.FindAuditableByAuditID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findAuditableByAuditID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindAuditableByAuditID(childComplexity, args["auditID"].(string)), true
+	case "Entity.findTransactionByAuditID":
+		if e.complexity.Entity.FindTransactionByAuditID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findTransactionByAuditID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindTransactionByAuditID(childComplexity, args["auditID"].(string)), true
 	case "Entity.findTransactionByID":
 		if e.complexity.Entity.FindTransactionByID == nil {
 			break
@@ -170,12 +211,36 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Transaction.Amount(childComplexity), true
+	case "Transaction.auditId":
+		if e.complexity.Transaction.AuditID == nil {
+			break
+		}
+
+		return e.complexity.Transaction.AuditID(childComplexity), true
+	case "Transaction.createdAt":
+		if e.complexity.Transaction.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.Transaction.CreatedAt(childComplexity), true
 	case "Transaction.id":
 		if e.complexity.Transaction.ID == nil {
 			break
 		}
 
 		return e.complexity.Transaction.ID(childComplexity), true
+	case "Transaction.modifiedAt":
+		if e.complexity.Transaction.ModifiedAt == nil {
+			break
+		}
+
+		return e.complexity.Transaction.ModifiedAt(childComplexity), true
+	case "Transaction.modifiedBy":
+		if e.complexity.Transaction.ModifiedBy == nil {
+			break
+		}
+
+		return e.complexity.Transaction.ModifiedBy(childComplexity), true
 
 	case "_Service.sdl":
 		if e.complexity._Service.SDL == nil {
@@ -338,12 +403,14 @@ var sources = []*ast.Source{
 `, BuiltIn: true},
 	{Name: "../federation/entity.graphql", Input: `
 # a union of all types that use the @key directive
-union _Entity = Account | Transaction
+union _Entity = Account | Auditable | Transaction
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
 	findAccountByIban(iban: ID!,): Account!
+	findAuditableByAuditID(auditID: ID!,): Auditable!
 	findTransactionByID(id: ID!,): Transaction!
+	findTransactionByAuditID(auditID: ID!,): Transaction!
 }
 
 type _Service {
@@ -370,6 +437,28 @@ func (ec *executionContext) field_Entity_findAccountByIban_args(ctx context.Cont
 		return nil, err
 	}
 	args["iban"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Entity_findAuditableByAuditID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "auditID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["auditID"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Entity_findTransactionByAuditID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "auditID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["auditID"] = arg0
 	return args, nil
 }
 
@@ -544,6 +633,14 @@ func (ec *executionContext) fieldContext_Account_transactions(_ context.Context,
 				return ec.fieldContext_Transaction_id(ctx, field)
 			case "amount":
 				return ec.fieldContext_Transaction_amount(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Transaction_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Transaction_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Transaction_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Transaction_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Transaction", field.Name)
 		},
@@ -575,6 +672,35 @@ func (ec *executionContext) fieldContext_Account_riskScore(_ context.Context, fi
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Auditable_auditId(ctx context.Context, field graphql.CollectedField, obj *model.Auditable) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Auditable_auditId,
+		func(ctx context.Context) (any, error) {
+			return obj.AuditID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Auditable_auditId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Auditable",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
 		},
 	}
 	return fc, nil
@@ -631,6 +757,51 @@ func (ec *executionContext) fieldContext_Entity_findAccountByIban(ctx context.Co
 	return fc, nil
 }
 
+func (ec *executionContext) _Entity_findAuditableByAuditID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findAuditableByAuditID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindAuditableByAuditID(ctx, fc.Args["auditID"].(string))
+		},
+		nil,
+		ec.marshalNAuditable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋtransactionsᚋgraphᚋmodelᚐAuditable,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findAuditableByAuditID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "auditId":
+				return ec.fieldContext_Auditable_auditId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Auditable", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findAuditableByAuditID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Entity_findTransactionByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -660,6 +831,14 @@ func (ec *executionContext) fieldContext_Entity_findTransactionByID(ctx context.
 				return ec.fieldContext_Transaction_id(ctx, field)
 			case "amount":
 				return ec.fieldContext_Transaction_amount(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Transaction_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Transaction_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Transaction_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Transaction_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Transaction", field.Name)
 		},
@@ -672,6 +851,61 @@ func (ec *executionContext) fieldContext_Entity_findTransactionByID(ctx context.
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Entity_findTransactionByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findTransactionByAuditID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findTransactionByAuditID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindTransactionByAuditID(ctx, fc.Args["auditID"].(string))
+		},
+		nil,
+		ec.marshalNTransaction2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋtransactionsᚋgraphᚋmodelᚐTransaction,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findTransactionByAuditID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Transaction_id(ctx, field)
+			case "amount":
+				return ec.fieldContext_Transaction_amount(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Transaction_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Transaction_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Transaction_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Transaction_modifiedBy(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Transaction", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findTransactionByAuditID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -913,6 +1147,122 @@ func (ec *executionContext) fieldContext_Transaction_amount(_ context.Context, f
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Int does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Transaction_auditId(ctx context.Context, field graphql.CollectedField, obj *model.Transaction) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Transaction_auditId,
+		func(ctx context.Context) (any, error) {
+			return obj.AuditID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Transaction_auditId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Transaction",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Transaction_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Transaction) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Transaction_createdAt,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Transaction_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Transaction",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Transaction_modifiedAt(ctx context.Context, field graphql.CollectedField, obj *model.Transaction) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Transaction_modifiedAt,
+		func(ctx context.Context) (any, error) {
+			return obj.ModifiedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Transaction_modifiedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Transaction",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Transaction_modifiedBy(ctx context.Context, field graphql.CollectedField, obj *model.Transaction) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Transaction_modifiedBy,
+		func(ctx context.Context) (any, error) {
+			return obj.ModifiedBy, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Transaction_modifiedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Transaction",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -2408,6 +2758,13 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 			return graphql.Null
 		}
 		return ec._Transaction(ctx, sel, obj)
+	case model.Auditable:
+		return ec._Auditable(ctx, sel, &obj)
+	case *model.Auditable:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Auditable(ctx, sel, obj)
 	case model.Account:
 		return ec._Account(ctx, sel, &obj)
 	case *model.Account:
@@ -2482,6 +2839,45 @@ func (ec *executionContext) _Account(ctx context.Context, sel ast.SelectionSet, 
 	return out
 }
 
+var auditableImplementors = []string{"Auditable", "_Entity"}
+
+func (ec *executionContext) _Auditable(ctx context.Context, sel ast.SelectionSet, obj *model.Auditable) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, auditableImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Auditable")
+		case "auditId":
+			out.Values[i] = ec._Auditable_auditId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
 var entityImplementors = []string{"Entity"}
 
 func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) graphql.Marshaler {
@@ -2523,6 +2919,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 			}
 
 			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findAuditableByAuditID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findAuditableByAuditID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "findTransactionByID":
 			field := field
 
@@ -2533,6 +2951,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 					}
 				}()
 				res = ec._Entity_findTransactionByID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findTransactionByAuditID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findTransactionByAuditID(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -2680,6 +3120,26 @@ func (ec *executionContext) _Transaction(ctx context.Context, sel ast.SelectionS
 			}
 		case "amount":
 			out.Values[i] = ec._Transaction_amount(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "auditId":
+			out.Values[i] = ec._Transaction_auditId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._Transaction_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "modifiedAt":
+			out.Values[i] = ec._Transaction_modifiedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "modifiedBy":
+			out.Values[i] = ec._Transaction_modifiedBy(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -3089,6 +3549,20 @@ func (ec *executionContext) marshalNAccount2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraph
 		return graphql.Null
 	}
 	return ec._Account(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAuditable2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋtransactionsᚋgraphᚋmodelᚐAuditable(ctx context.Context, sel ast.SelectionSet, v model.Auditable) graphql.Marshaler {
+	return ec._Auditable(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAuditable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋtransactionsᚋgraphᚋmodelᚐAuditable(ctx context.Context, sel ast.SelectionSet, v *model.Auditable) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Auditable(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {

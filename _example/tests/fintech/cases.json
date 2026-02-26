@@ -110,7 +110,7 @@
       "customer": {
         "id": "1",
         "name": "Customer 1",
-        "tier": "Premium"
+        "tier": "GDPR-Compliant"
       }
     }
   },
@@ -139,7 +139,170 @@
       "customer": {
         "id": "2",
         "name": "Customer 2",
-        "tier": "Premium"
+        "tier": "GDPR-Compliant"
+      }
+    }
+  },
+  {
+    "name": "@interfaceObject - Auditable Interface for Customer",
+    "description": "Verify @interfaceObject support for Auditable interface on Customer entity",
+    "query": "query GetCustomerAudit($id: ID!) { customer(id: $id) { id auditId createdAt modifiedAt modifiedBy } }",
+    "variables": { "id": "1" },
+    "expected": {
+      "customer": {
+        "id": "1",
+        "auditId": "audit-1",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "modifiedAt": "2024-01-01T00:00:00Z",
+        "modifiedBy": "system"
+      }
+    }
+  },
+  {
+    "name": "@interfaceObject - Auditable Interface for Account",
+    "description": "Verify @interfaceObject support for Auditable interface on Account entity",
+    "query": "query GetAccountAudit($iban: String!) { account(iban: $iban) { iban auditId createdAt modifiedAt modifiedBy } }",
+    "variables": { "iban": "IBAN 1" },
+    "expected": {
+      "account": {
+        "iban": "IBAN 1",
+        "auditId": "audit-IBAN 1",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "modifiedAt": "2024-01-01T00:00:00Z",
+        "modifiedBy": "system"
+      }
+    }
+  },
+  {
+    "name": "Audit Log Query with Mixed Types",
+    "description": "Verify auditLog query returns multiple Auditable implementations across different entity types",
+    "query": "query AuditLogMixed { auditLog { auditId createdAt modifiedAt modifiedBy } }",
+    "variables": {},
+    "expected": {
+      "auditLog": [
+        {
+          "auditId": "audit-001",
+          "createdAt": "2024-01-01T10:00:00Z",
+          "modifiedAt": "2024-01-01T10:00:00Z",
+          "modifiedBy": "admin"
+        },
+        {
+          "auditId": "audit-002",
+          "createdAt": "2024-01-02T11:00:00Z",
+          "modifiedAt": "2024-01-02T15:00:00Z",
+          "modifiedBy": "system"
+        }
+      ]
+    }
+  },
+  {
+    "name": "@override - EU Customer Tier Override",
+    "description": "Verify @override directive for Customer.tier field in EU region",
+    "query": "query GetEUCustomerTier($id: ID!) { customer(id: $id) { id tier } }",
+    "variables": { "id": "2" },
+    "expected": {
+      "customer": {
+        "id": "2",
+        "tier": "GDPR-Compliant"
+      }
+    }
+  },
+  {
+    "name": "@override - GDPR Consent Field",
+    "description": "Verify @override directive supports GDPR consent field in EU customer extension",
+    "query": "query GetGDPRConsent($id: ID!) { customer(id: $id) { id gdprConsent } }",
+    "variables": { "id": "2" },
+    "expected": {
+      "customer": {
+        "id": "2",
+        "gdprConsent": true
+      }
+    }
+  },
+  {
+    "name": "Union - FinancialActivity with Transactions",
+    "description": "Verify union type FinancialActivity can return Transaction objects",
+    "query": "query GetActivityWithTransaction($customerId: ID!) { customerActivity(customerId: $customerId) { ... on Transaction { id } } }",
+    "variables": { "customerId": "1" },
+    "expected": {
+      "customerActivity": [
+        {
+          "id": "txn-1-001"
+        },
+        {},
+        {}
+      ]
+    }
+  },
+  {
+    "name": "Union - FinancialActivity with AccountOpening",
+    "description": "Verify union type FinancialActivity can return AccountOpening objects",
+    "query": "query GetActivityWithAccountOpening($customerId: ID!) { customerActivity(customerId: $customerId) { ... on AccountOpening { id customerId accountType timestamp } } }",
+    "variables": { "customerId": "1" },
+    "expected": {
+      "customerActivity": [
+        {},
+        {
+          "id": "acc-1-001",
+          "customerId": "1",
+          "accountType": "Savings",
+          "timestamp": "2024-01-05T10:00:00Z"
+        },
+        {}
+      ]
+    }
+  },
+  {
+    "name": "Union - Mixed Financial Activity Events",
+    "description": "Verify union type FinancialActivity with __typename to distinguish mixed event types",
+    "query": "query GetMixedActivity($customerId: ID!) { customerActivity(customerId: $customerId) { __typename ... on Transaction { id amount } ... on TierUpgrade { id oldTier newTier } ... on AccountOpening { id accountType } } }",
+    "variables": { "customerId": "1" },
+    "expected": {
+      "customerActivity": [
+        {
+          "__typename": "Transaction",
+          "id": "txn-1-001"
+        },
+        {
+          "__typename": "AccountOpening",
+          "accountType": "Savings",
+          "id": "acc-1-001"
+        },
+        {
+          "__typename": "TierUpgrade",
+          "id": "tier-1-001",
+          "oldTier": "Standard",
+          "newTier": "Premium"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Edge Case: Multiple @key Fields with Federated Queries",
+    "description": "Verify customer can be resolved via multiple @key definitions (id and auditId)",
+    "query": "query GetCustomerByMultipleKeys($id: ID!) { customer(id: $id) { id name tier auditId } }",
+    "variables": { "id": "1" },
+    "expected": {
+      "customer": {
+        "id": "1",
+        "name": "Customer 1",
+        "tier": "GDPR-Compliant",
+        "auditId": "audit-1"
+      }
+    }
+  },
+  {
+    "name": "Edge Case: Nested Auditable with Fragment Spread",
+    "description": "Verify nested Auditable fields work with fragment spreads across federation boundaries",
+    "query": "query GetAccountWithAuditFragment($iban: String!) { account(iban: $iban) { ...AccountAuditFields } } fragment AccountAuditFields on Account { iban balance auditId createdAt modifiedAt }",
+    "variables": { "iban": "IBAN 1" },
+    "expected": {
+      "account": {
+        "iban": "IBAN 1",
+        "balance": 1000,
+        "auditId": "audit-IBAN 1",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "modifiedAt": "2024-01-01T00:00:00Z"
       }
     }
   }

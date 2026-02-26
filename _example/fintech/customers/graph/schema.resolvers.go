@@ -14,10 +14,14 @@ import (
 // Customer is the resolver for the customer field.
 func (r *queryResolver) Customer(ctx context.Context, id string) (*model.Customer, error) {
 	return &model.Customer{
-		ID:   id,
-		Name: "Customer " + id,
-		Tier: "Premium",
-		Ssn:  "XXX-XX-" + id,
+		ID:         id,
+		Name:       "Customer " + id,
+		Tier:       "Premium",
+		Ssn:        "XXX-XX-" + id,
+		AuditID:    "audit-" + id,
+		CreatedAt:  "2024-01-01T00:00:00Z",
+		ModifiedAt: "2024-01-01T00:00:00Z",
+		ModifiedBy: "system",
 	}, nil
 }
 

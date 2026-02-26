@@ -1,0 +1,13 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@interfaceObject", "@key"])
+
+type Bookable @interfaceObject @key(fields: "id") {
+  id: ID!
+  price: Float!
+  availability: Boolean!
+}
+
+type Query {
+  searchBookables(from: String, to: String): [Bookable!]!
+}
