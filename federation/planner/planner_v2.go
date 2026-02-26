@@ -73,6 +73,12 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 		return nil, err
 	}
 
+	// Validate that no @inaccessible fields are queried.
+	// This must run before the planning pass so clients receive a clear error.
+	if err := p.validateQueryForInaccessible(op.SelectionSet, rootTypeName, fragmentDefs); err != nil {
+		return nil, err
+	}
+
 	// Initialize plan
 	plan := &PlanV2{
 		Steps:            make([]*StepV2, 0),
@@ -980,4 +986,58 @@ func subGraphContains(subGraphs []*graph.SubGraphV2, name string) bool {
 		}
 	}
 	return false
+}
+
+// validateQueryForInaccessible recursively walks the query selection set and returns an error
+// if any field is marked @inaccessible in the subgraphs. This provides clear error messages
+// to clients that attempt to query hidden (inaccessible) fields.
+func (p *PlannerV2) validateQueryForInaccessible(
+	selections []ast.Selection,
+	parentTypeName string,
+	fragmentDefs map[string]*ast.FragmentDefinition,
+) error {
+	for _, selection := range selections {
+		switch sel := selection.(type) {
+		case *ast.Field:
+			fieldName := sel.Name.String()
+			// Skip GraphQL meta-fields
+			if fieldName == "__typename" || fieldName == "__schema" || fieldName == "__type" {
+				continue
+			}
+			// Return a descriptive error if the field is @inaccessible
+			if p.SuperGraph.IsFieldInaccessible(parentTypeName, fieldName) {
+				return fmt.Errorf(
+					"field '%s.%s' is marked @inaccessible and cannot be queried",
+					parentTypeName, fieldName,
+				)
+			}
+			// Recursively validate child selections
+			if len(sel.SelectionSet) > 0 {
+				fieldType, err := p.getFieldTypeName(parentTypeName, fieldName)
+				if err == nil && fieldType != "" {
+					if err := p.validateQueryForInaccessible(sel.SelectionSet, fieldType, fragmentDefs); err != nil {
+						return err
+					}
+				}
+			}
+
+		case *ast.InlineFragment:
+			typeCondition := sel.TypeCondition.Name.String()
+			if err := p.validateQueryForInaccessible(sel.SelectionSet, typeCondition, fragmentDefs); err != nil {
+				return err
+			}
+
+		case *ast.FragmentSpread:
+			fragName := sel.Name.String()
+			fragDef, ok := fragmentDefs[fragName]
+			if !ok {
+				continue
+			}
+			typeCondition := fragDef.TypeCondition.Name.String()
+			if err := p.validateQueryForInaccessible(fragDef.SelectionSet, typeCondition, fragmentDefs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

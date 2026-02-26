@@ -259,6 +259,68 @@ func TestNewSubGraphV2_WithInaccessible(t *testing.T) {
 	}
 }
 
+func TestNewSubGraphV2_TypeLevelInaccessible(t *testing.T) {
+	schema := `
+		type InternalData @key(fields: "id") @inaccessible {
+			id: ID!
+			secret: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("internal", []byte(schema), "http://internal.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	entity, ok := entities["InternalData"]
+	if !ok {
+		t.Fatal("InternalData entity not found")
+	}
+
+	if !entity.IsInaccessible() {
+		t.Error("expected InternalData entity to be marked @inaccessible at type level")
+	}
+}
+
+func TestNewSubGraphV2_TypeLevelInaccessible_RegularType(t *testing.T) {
+	// A non-entity type can also be @inaccessible (no @key needed)
+	schema := `
+		type PublicProduct @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+
+		type InternalMetadata @key(fields: "id") @inaccessible {
+			id: ID!
+			internalField: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("service", []byte(schema), "http://service.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	// PublicProduct should NOT be inaccessible
+	publicEntity, ok := sg.GetEntities()["PublicProduct"]
+	if !ok {
+		t.Fatal("PublicProduct entity not found")
+	}
+	if publicEntity.IsInaccessible() {
+		t.Error("expected PublicProduct to be accessible")
+	}
+
+	// InternalMetadata SHOULD be inaccessible
+	internalEntity, ok := sg.GetEntities()["InternalMetadata"]
+	if !ok {
+		t.Fatal("InternalMetadata entity not found")
+	}
+	if !internalEntity.IsInaccessible() {
+		t.Error("expected InternalMetadata to be inaccessible")
+	}
+}
+
 func TestNewSubGraphV2_WithTag(t *testing.T) {
 	schema := `
 		type Product @key(fields: "id") {

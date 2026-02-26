@@ -1154,3 +1154,226 @@ func TestSuperGraphV2_TagMetadata_HasFieldTag(t *testing.T) {
 		t.Error("expected HasFieldTag for non-existent field to be false")
 	}
 }
+
+// --- @inaccessible tests ---
+
+func TestNewSuperGraphV2_Inaccessible_FieldExcludedFromSchema(t *testing.T) {
+	userSchema := `
+		type User @key(fields: "id") {
+			id: ID!
+			name: String!
+			internalId: ID! @inaccessible
+		}
+
+		type Query {
+			user(id: ID!): User
+		}
+	`
+
+	userSG, err := graph.NewSubGraphV2("users", []byte(userSchema), "http://users.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{userSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Find User type in composed schema
+	var userType *ast.ObjectTypeDefinition
+	for _, def := range superGraph.Schema.Definitions {
+		if objDef, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if objDef.Name.String() == "User" {
+				userType = objDef
+				break
+			}
+		}
+	}
+	if userType == nil {
+		t.Fatal("User type not found in composed schema")
+	}
+
+	// id and name should be present
+	var fieldNames []string
+	for _, field := range userType.Fields {
+		fieldNames = append(fieldNames, field.Name.String())
+		if field.Name.String() == "internalId" {
+			t.Error("internalId should be excluded from the composed schema (@inaccessible)")
+		}
+	}
+
+	// Verify accessible fields are still present
+	hasID := false
+	hasName := false
+	for _, f := range fieldNames {
+		if f == "id" {
+			hasID = true
+		}
+		if f == "name" {
+			hasName = true
+		}
+	}
+	if !hasID {
+		t.Error("expected 'id' field to be present in composed schema")
+	}
+	if !hasName {
+		t.Error("expected 'name' field to be present in composed schema")
+	}
+}
+
+func TestNewSuperGraphV2_Inaccessible_FieldNotInOwnershipMap(t *testing.T) {
+	userSchema := `
+		type User @key(fields: "id") {
+			id: ID!
+			name: String!
+			internalId: ID! @inaccessible
+		}
+
+		type Query {
+			user(id: ID!): User
+		}
+	`
+
+	userSG, err := graph.NewSubGraphV2("users", []byte(userSchema), "http://users.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{userSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// @inaccessible field should have no owners
+	owners := superGraph.GetSubGraphsForField("User", "internalId")
+	if len(owners) != 0 {
+		t.Errorf("expected no owner for @inaccessible field User.internalId, got %d", len(owners))
+	}
+
+	// Accessible fields should still be owned
+	idOwners := superGraph.GetSubGraphsForField("User", "id")
+	if len(idOwners) == 0 {
+		t.Error("expected User.id to have an owner")
+	}
+}
+
+func TestNewSuperGraphV2_Inaccessible_TypeExcludedFromSchema(t *testing.T) {
+	schema := `
+		type PublicProduct @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+
+		type InternalAuditLog @key(fields: "id") @inaccessible {
+			id: ID!
+			action: String!
+			timestamp: String!
+		}
+
+		type Query {
+			publicProduct(id: ID!): PublicProduct
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("service", []byte(schema), "http://service.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sg})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// InternalAuditLog should NOT be in the composed schema
+	for _, def := range superGraph.Schema.Definitions {
+		if objDef, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if objDef.Name.String() == "InternalAuditLog" {
+				t.Error("InternalAuditLog should be excluded from composed schema (@inaccessible type)")
+			}
+		}
+	}
+
+	// PublicProduct should still be present
+	var foundPublicProduct bool
+	for _, def := range superGraph.Schema.Definitions {
+		if objDef, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if objDef.Name.String() == "PublicProduct" {
+				foundPublicProduct = true
+				break
+			}
+		}
+	}
+	if !foundPublicProduct {
+		t.Error("expected PublicProduct to be present in composed schema")
+	}
+}
+
+func TestNewSuperGraphV2_Inaccessible_ExtensionFieldExcluded(t *testing.T) {
+	// @inaccessible on a field in an extension type should also be excluded
+	baseSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	extSchema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			internalScore: Float! @inaccessible
+			publicRating: Float!
+		}
+	`
+
+	baseSG, err := graph.NewSubGraphV2("products", []byte(baseSchema), "http://products.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+	}
+
+	extSG, err := graph.NewSubGraphV2("ratings", []byte(extSchema), "http://ratings.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for ratings: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{baseSG, extSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Find Product type
+	var productType *ast.ObjectTypeDefinition
+	for _, def := range superGraph.Schema.Definitions {
+		if objDef, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if objDef.Name.String() == "Product" {
+				productType = objDef
+				break
+			}
+		}
+	}
+	if productType == nil {
+		t.Fatal("Product type not found in composed schema")
+	}
+
+	for _, field := range productType.Fields {
+		if field.Name.String() == "internalScore" {
+			t.Error("internalScore should be excluded from composed schema (@inaccessible)")
+		}
+	}
+
+	// publicRating should be present
+	var hasPublicRating bool
+	for _, field := range productType.Fields {
+		if field.Name.String() == "publicRating" {
+			hasPublicRating = true
+		}
+	}
+	if !hasPublicRating {
+		t.Error("expected publicRating field to be present in composed schema")
+	}
+}
