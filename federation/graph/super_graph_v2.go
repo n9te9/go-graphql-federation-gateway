@@ -118,14 +118,34 @@ func (sg *SuperGraphV2) mergeSchemaDeepPass1(newSchema *ast.Document) {
 	}
 }
 
-// mergeSchemaDeepPass2 merges ObjectTypeExtension definitions only.
+// mergeSchemaDeepPass2 merges extension type definitions only.
 // This is the second pass of the two-pass composition strategy, run after
 // all base types have been merged so extensions can always find their target.
 func (sg *SuperGraphV2) mergeSchemaDeepPass2(newSchema *ast.Document) {
 	for _, newDef := range newSchema.Definitions {
-		if newExt, ok := newDef.(*ast.ObjectTypeExtension); ok {
-			sg.mergeObjectTypeExtensionDeep(newExt)
+		switch newTypeDef := newDef.(type) {
+		case *ast.ObjectTypeExtension:
+			sg.mergeObjectTypeExtensionDeep(newTypeDef)
+		case *ast.InterfaceTypeExtension:
+			sg.mergeInterfaceTypeExtension(newTypeDef)
 		}
+	}
+}
+
+// mergeInterfaceTypeExtension merges an InterfaceTypeExtension into an existing InterfaceTypeDefinition.
+func (sg *SuperGraphV2) mergeInterfaceTypeExtension(newExt *ast.InterfaceTypeExtension) {
+	var existingDef *ast.InterfaceTypeDefinition
+	for _, def := range sg.Schema.Definitions {
+		if intDef, ok := def.(*ast.InterfaceTypeDefinition); ok {
+			if intDef.Name.String() == newExt.Name.String() {
+				existingDef = intDef
+				break
+			}
+		}
+	}
+
+	if existingDef != nil {
+		mergeIntoDefinition(&existingDef.Fields, &existingDef.Directives, newExt.Fields, newExt.Directives)
 	}
 }
 
@@ -143,11 +163,7 @@ func (sg *SuperGraphV2) mergeObjectTypeDefinitionDeep(newDef *ast.ObjectTypeDefi
 	}
 
 	if existingDef != nil {
-		// Copy and merge fields (avoid duplicates)
-		newFields := copyFields(newDef.Fields)
-		existingDef.Fields = mergeFields(existingDef.Fields, newFields)
-		// Also copy directives
-		existingDef.Directives = append(existingDef.Directives, copyDirectives(newDef.Directives)...)
+		mergeIntoDefinition(&existingDef.Fields, &existingDef.Directives, newDef.Fields, newDef.Directives)
 	} else {
 		// Create a new definition (with copied fields)
 		copiedDef := &ast.ObjectTypeDefinition{
@@ -174,12 +190,15 @@ func (sg *SuperGraphV2) mergeObjectTypeExtensionDeep(newExt *ast.ObjectTypeExten
 	}
 
 	if existingDef != nil {
-		// Copy and merge fields (avoid duplicates)
-		newFields := copyFields(newExt.Fields)
-		existingDef.Fields = mergeFields(existingDef.Fields, newFields)
-		// Also copy directives
-		existingDef.Directives = append(existingDef.Directives, copyDirectives(newExt.Directives)...)
+		mergeIntoDefinition(&existingDef.Fields, &existingDef.Directives, newExt.Fields, newExt.Directives)
 	}
+}
+
+// mergeIntoDefinition merges fields and directives into an existing type definition's field/directive slices.
+// This consolidates the common merge body shared by all mergeXxxTypeYyy functions.
+func mergeIntoDefinition(existingFields *[]*ast.FieldDefinition, existingDirectives *[]*ast.Directive, newFields []*ast.FieldDefinition, newDirectives []*ast.Directive) {
+	*existingFields = mergeFields(*existingFields, copyFields(newFields))
+	*existingDirectives = append(*existingDirectives, copyDirectives(newDirectives)...)
 }
 
 // copyFields creates a deep copy of a field definition list.
@@ -239,7 +258,7 @@ func mergeFields(existing, new []*ast.FieldDefinition) []*ast.FieldDefinition {
 	return result
 }
 
-// mergeInterfaceTypeDefinition merges an InterfaceTypeDefinition.
+// mergeInterfaceTypeDefinition merges an InterfaceTypeDefinition using deep copy.
 func (sg *SuperGraphV2) mergeInterfaceTypeDefinition(newDef *ast.InterfaceTypeDefinition) {
 	var existingDef *ast.InterfaceTypeDefinition
 	for _, def := range sg.Schema.Definitions {
@@ -252,10 +271,16 @@ func (sg *SuperGraphV2) mergeInterfaceTypeDefinition(newDef *ast.InterfaceTypeDe
 	}
 
 	if existingDef != nil {
-		existingDef.Fields = append(existingDef.Fields, newDef.Fields...)
-		existingDef.Directives = append(existingDef.Directives, newDef.Directives...)
+		mergeIntoDefinition(&existingDef.Fields, &existingDef.Directives, newDef.Fields, newDef.Directives)
 	} else {
-		sg.Schema.Definitions = append(sg.Schema.Definitions, newDef)
+		// Deep copy to avoid mutating the source subgraph schema when Pass 2 merges extend fields
+		copiedDef := &ast.InterfaceTypeDefinition{
+			Name:       newDef.Name,
+			Interfaces: newDef.Interfaces,
+			Fields:     copyFields(newDef.Fields),
+			Directives: copyDirectives(newDef.Directives),
+		}
+		sg.Schema.Definitions = append(sg.Schema.Definitions, copiedDef)
 	}
 }
 
@@ -423,18 +448,26 @@ func isTypeEqual(a, b ast.Type) bool {
 
 // buildOwnershipMap constructs the ownership map.
 // It determines which subgraphs can resolve each field in the composed schema.
+// It handles both ObjectTypeDefinition and InterfaceTypeDefinition (for @interfaceObject entities).
 func (sg *SuperGraphV2) buildOwnershipMap() error {
 	// Traverse all type definitions in the composed schema
 	for _, def := range sg.Schema.Definitions {
-		objDef, ok := def.(*ast.ObjectTypeDefinition)
-		if !ok {
+		var typeName string
+		var fields []*ast.FieldDefinition
+
+		switch typeDef := def.(type) {
+		case *ast.ObjectTypeDefinition:
+			typeName = typeDef.Name.String()
+			fields = typeDef.Fields
+		case *ast.InterfaceTypeDefinition:
+			typeName = typeDef.Name.String()
+			fields = typeDef.Fields
+		default:
 			continue
 		}
 
-		typeName := objDef.Name.String()
-
 		// Traverse all fields of the type
-		for _, field := range objDef.Fields {
+		for _, field := range fields {
 			fieldName := field.Name.String()
 			key := fmt.Sprintf("%s.%s", typeName, fieldName)
 
@@ -487,6 +520,7 @@ func (sg *SuperGraphV2) buildOwnershipMap() error {
 
 // canResolveField checks if the specified subgraph can resolve the specified field.
 // It returns false if the field has an @external directive.
+// Handles ObjectTypeDefinition, ObjectTypeExtension, InterfaceTypeDefinition, and InterfaceTypeExtension.
 func (sg *SuperGraphV2) canResolveField(subGraph *SubGraphV2, typeName, fieldName string) bool {
 	foundType := false
 	// Search for the corresponding type in the subgraph's schema
@@ -508,11 +542,27 @@ func (sg *SuperGraphV2) canResolveField(subGraph *SubGraphV2, typeName, fieldNam
 				return false
 			}
 		}
+		// Check InterfaceTypeDefinition (for @interfaceObject entities)
+		if intfDef, ok := def.(*ast.InterfaceTypeDefinition); ok {
+			if intfDef.Name.String() == typeName {
+				foundType = true
+				for _, field := range intfDef.Fields {
+					if field.Name.String() == fieldName {
+						if hasDirective(field.Directives, "external") {
+							return false
+						}
+						return true
+					}
+				}
+				return false
+			}
+		}
 	}
 
-	// If ObjectTypeDefinition not found, check ObjectTypeExtension
+	// If definition not found, check extension types
 	if !foundType {
 		for _, def := range subGraph.Schema.Definitions {
+			// Check ObjectTypeExtension
 			if objExt, ok := def.(*ast.ObjectTypeExtension); ok {
 				if objExt.Name.String() == typeName {
 					for _, field := range objExt.Fields {
@@ -525,6 +575,20 @@ func (sg *SuperGraphV2) canResolveField(subGraph *SubGraphV2, typeName, fieldNam
 						}
 					}
 					// Cannot resolve if field not found
+					return false
+				}
+			}
+			// Check InterfaceTypeExtension (for @interfaceObject entity extensions)
+			if intfExt, ok := def.(*ast.InterfaceTypeExtension); ok {
+				if intfExt.Name.String() == typeName {
+					for _, field := range intfExt.Fields {
+						if field.Name.String() == fieldName {
+							if hasDirective(field.Directives, "external") {
+								return false
+							}
+							return true
+						}
+					}
 					return false
 				}
 			}

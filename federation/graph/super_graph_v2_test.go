@@ -655,3 +655,224 @@ func TestNewSuperGraphV2_NoComposeDirectives_EmptyDefinitions(t *testing.T) {
 		t.Errorf("expected 0 directive definitions, got %d", len(superGraph.DirectiveDefinitions))
 	}
 }
+
+// TestNewSuperGraphV2_InterfaceObject_Ownership tests that @interfaceObject entity fields
+// are registered in the ownership map, allowing the planner to route correctly.
+func TestNewSuperGraphV2_InterfaceObject_Ownership(t *testing.T) {
+	// CoreService defines Node as interface entity (base definition)
+	coreSchema := `
+		interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	// MetadataService extends Node with additional fields
+	metadataSchema := `
+		extend interface Node @interfaceObject @key(fields: "id") {
+			id: ID! @external
+			metadata: String!
+		}
+	`
+
+	coreSG, err := graph.NewSubGraphV2("core", []byte(coreSchema), "http://core.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for core: %v", err)
+	}
+
+	metadataSG, err := graph.NewSubGraphV2("metadata", []byte(metadataSchema), "http://metadata.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for metadata: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{coreSG, metadataSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Node.id should be owned by core
+	nodeIDOwners := superGraph.GetSubGraphsForField("Node", "id")
+	if len(nodeIDOwners) == 0 {
+		t.Fatal("expected Node.id to have an owner, got none")
+	}
+	if nodeIDOwners[0].Name != "core" {
+		t.Errorf("expected Node.id to be owned by 'core', got '%s'", nodeIDOwners[0].Name)
+	}
+
+	// Node.metadata should be owned by metadata service
+	nodeMetaOwners := superGraph.GetSubGraphsForField("Node", "metadata")
+	if len(nodeMetaOwners) == 0 {
+		t.Fatal("expected Node.metadata to have an owner, got none")
+	}
+	if nodeMetaOwners[0].Name != "metadata" {
+		t.Errorf("expected Node.metadata to be owned by 'metadata', got '%s'", nodeMetaOwners[0].Name)
+	}
+}
+
+// TestNewSuperGraphV2_InterfaceObject_EntityOwner tests that GetEntityOwnerSubGraph
+// works correctly for interface entities.
+func TestNewSuperGraphV2_InterfaceObject_EntityOwner(t *testing.T) {
+	// CoreService defines Node as interface entity
+	coreSchema := `
+		interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	// MetadataService extends Node (as interface extension with @interfaceObject)
+	metadataSchema := `
+		extend interface Node @interfaceObject @key(fields: "id") {
+			id: ID! @external
+			metadata: String!
+		}
+	`
+
+	coreSG, err := graph.NewSubGraphV2("core", []byte(coreSchema), "http://core.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for core: %v", err)
+	}
+
+	metadataSG, err := graph.NewSubGraphV2("metadata", []byte(metadataSchema), "http://metadata.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for metadata: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{coreSG, metadataSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// GetEntityOwnerSubGraph should return core for Node
+	owner := superGraph.GetEntityOwnerSubGraph("Node")
+	if owner == nil {
+		t.Fatal("expected Node to have an entity owner, got nil")
+	}
+	if owner.Name != "core" {
+		t.Errorf("expected Node entity owner to be 'core', got '%s'", owner.Name)
+	}
+
+	// IsEntityType should return true for Node
+	if !superGraph.IsEntityType("Node") {
+		t.Error("expected Node to be an entity type")
+	}
+}
+
+// TestNewSuperGraphV2_InterfaceObject_FieldMerge tests that fields from multiple subgraphs
+// are correctly merged for an interface entity.
+func TestNewSuperGraphV2_InterfaceObject_FieldMerge(t *testing.T) {
+	// SubgraphA defines interface Node with base fields
+	subgraphASchema := `
+		interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	// SubgraphB extends Node with timestamps
+	subgraphBSchema := `
+		extend interface Node @interfaceObject @key(fields: "id") {
+			id: ID! @external
+			createdAt: String!
+			updatedAt: String!
+		}
+	`
+
+	sgA, err := graph.NewSubGraphV2("sgA", []byte(subgraphASchema), "http://sga.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for sgA: %v", err)
+	}
+
+	sgB, err := graph.NewSubGraphV2("sgB", []byte(subgraphBSchema), "http://sgb.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for sgB: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sgA, sgB})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// createdAt should be owned by sgB
+	createdAtOwners := superGraph.GetSubGraphsForField("Node", "createdAt")
+	if len(createdAtOwners) == 0 {
+		t.Fatal("expected Node.createdAt to have an owner, got none")
+	}
+	if createdAtOwners[0].Name != "sgB" {
+		t.Errorf("expected Node.createdAt to be owned by 'sgB', got '%s'", createdAtOwners[0].Name)
+	}
+
+	// updatedAt should be owned by sgB
+	updatedAtOwners := superGraph.GetSubGraphsForField("Node", "updatedAt")
+	if len(updatedAtOwners) == 0 {
+		t.Fatal("expected Node.updatedAt to have an owner, got none")
+	}
+	if updatedAtOwners[0].Name != "sgB" {
+		t.Errorf("expected Node.updatedAt to be owned by 'sgB', got '%s'", updatedAtOwners[0].Name)
+	}
+}
+
+// TestNewSuperGraphV2_InterfaceObject_WithObjectTypeInterfaceObject tests the case
+// where @interfaceObject is on an object type (existing pattern) to ensure backward compat.
+func TestNewSuperGraphV2_InterfaceObject_WithObjectTypeInterfaceObject(t *testing.T) {
+	// CoreService: Node is defined as an object type with @interfaceObject
+	coreSchema := `
+		type Node @key(fields: "id") @interfaceObject {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	// ReviewsService: Node is extended as object type with @interfaceObject
+	reviewsSchema := `
+		extend type Node @key(fields: "id") @interfaceObject {
+			id: ID! @external
+			reviewCount: Int!
+		}
+	`
+
+	coreSG, err := graph.NewSubGraphV2("core", []byte(coreSchema), "http://core.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for core: %v", err)
+	}
+
+	reviewsSG, err := graph.NewSubGraphV2("reviews", []byte(reviewsSchema), "http://reviews.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for reviews: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{coreSG, reviewsSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Node.id should be owned by core
+	idOwners := superGraph.GetSubGraphsForField("Node", "id")
+	if len(idOwners) == 0 {
+		t.Fatal("expected Node.id to have an owner")
+	}
+	if idOwners[0].Name != "core" {
+		t.Errorf("expected Node.id owned by 'core', got '%s'", idOwners[0].Name)
+	}
+
+	// Node.reviewCount should be owned by reviews
+	reviewCountOwners := superGraph.GetSubGraphsForField("Node", "reviewCount")
+	if len(reviewCountOwners) == 0 {
+		t.Fatal("expected Node.reviewCount to have an owner")
+	}
+	if reviewCountOwners[0].Name != "reviews" {
+		t.Errorf("expected Node.reviewCount owned by 'reviews', got '%s'", reviewCountOwners[0].Name)
+	}
+}

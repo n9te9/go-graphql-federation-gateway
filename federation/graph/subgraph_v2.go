@@ -80,41 +80,24 @@ func NewSubGraphV2(name string, src []byte, host string) (*SubGraphV2, error) {
 
 	// Traverse all type definitions
 	for _, def := range doc.Definitions {
-		// Process ObjectTypeDefinition
-		if objType, ok := def.(*ast.ObjectTypeDefinition); ok {
-			if isEntity(objType.Directives) {
-				entity := &Entity{
-					Keys:              parseEntityKeys(objType.Directives),
-					isExtension:       false,
-					Fields:            make(map[string]*Field),
-					isInterfaceObject: hasDirective(objType.Directives, "interfaceObject"),
-				}
-
-				// Traverse all fields
-				for _, field := range objType.Fields {
-					entity.Fields[field.Name.String()] = parseField(field)
-				}
-
-				sg.entities[objType.Name.String()] = entity
+		switch typeDef := def.(type) {
+		case *ast.ObjectTypeDefinition:
+			if isEntity(typeDef.Directives) {
+				sg.entities[typeDef.Name.String()] = buildEntity(typeDef.Directives, false, typeDef.Fields)
 			}
-		}
-
-		// Process ObjectTypeExtension
-		if objExt, ok := def.(*ast.ObjectTypeExtension); ok {
-			if isEntity(objExt.Directives) {
-				entity := &Entity{
-					Keys:              parseEntityKeys(objExt.Directives),
-					isExtension:       true,
-					Fields:            make(map[string]*Field),
-					isInterfaceObject: hasDirective(objExt.Directives, "interfaceObject"),
-				}
-
-				// Traverse all fields
-				for _, field := range objExt.Fields {
-					entity.Fields[field.Name.String()] = parseField(field)
-				}
-
-				sg.entities[objExt.Name.String()] = entity
+		case *ast.ObjectTypeExtension:
+			if isEntity(typeDef.Directives) {
+				sg.entities[typeDef.Name.String()] = buildEntity(typeDef.Directives, true, typeDef.Fields)
+			}
+		case *ast.InterfaceTypeDefinition:
+			// @interfaceObject: interface type treated as entity
+			if isEntity(typeDef.Directives) {
+				sg.entities[typeDef.Name.String()] = buildEntity(typeDef.Directives, false, typeDef.Fields)
+			}
+		case *ast.InterfaceTypeExtension:
+			// @interfaceObject: interface extension treated as entity
+			if isEntity(typeDef.Directives) {
+				sg.entities[typeDef.Name.String()] = buildEntity(typeDef.Directives, true, typeDef.Fields)
 			}
 		}
 	}
@@ -226,6 +209,22 @@ func parseField(field *ast.FieldDefinition) *Field {
 	}
 
 	return f
+}
+
+// buildEntity creates an Entity from directives, isExtension flag, and field definitions.
+// This consolidates the common entity-parsing logic shared across ObjectType, ObjectTypeExtension,
+// InterfaceTypeDefinition, and InterfaceTypeExtension.
+func buildEntity(directives []*ast.Directive, isExtension bool, fields []*ast.FieldDefinition) *Entity {
+	entity := &Entity{
+		Keys:              parseEntityKeys(directives),
+		isExtension:       isExtension,
+		Fields:            make(map[string]*Field),
+		isInterfaceObject: hasDirective(directives, "interfaceObject"),
+	}
+	for _, field := range fields {
+		entity.Fields[field.Name.String()] = parseField(field)
+	}
+	return entity
 }
 
 // IsShareable returns whether the field has @shareable directive.

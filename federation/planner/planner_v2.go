@@ -787,13 +787,26 @@ func (p *PlannerV2) getRootTypeName(op *ast.OperationDefinition) (string, error)
 }
 
 // getFieldTypeName returns the type name of a field.
+// It checks both ObjectTypeDefinition and InterfaceTypeDefinition to support
+// @interfaceObject entities defined as interface types.
 func (p *PlannerV2) getFieldTypeName(parentTypeName, fieldName string) (string, error) {
 	if fieldName == "__typename" {
 		return "String", nil
 	}
 
 	for _, def := range p.SuperGraph.Schema.Definitions {
+		// Check ObjectTypeDefinition
 		if td, ok := def.(*ast.ObjectTypeDefinition); ok {
+			if td.Name.String() == parentTypeName {
+				for _, field := range td.Fields {
+					if field.Name.String() == fieldName {
+						return p.getNamedType(field.Type), nil
+					}
+				}
+			}
+		}
+		// Also check InterfaceTypeDefinition (for @interfaceObject entities defined as interface types)
+		if td, ok := def.(*ast.InterfaceTypeDefinition); ok {
 			if td.Name.String() == parentTypeName {
 				for _, field := range td.Fields {
 					if field.Name.String() == fieldName {
