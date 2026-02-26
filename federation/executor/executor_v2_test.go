@@ -698,6 +698,325 @@ func jsonEqual(a, b interface{}) bool {
 	return string(aJSON) == string(bJSON)
 }
 
+// TestExecutorV2_InterfaceObject_RepresentationTypename tests that the executor
+// uses the correct __typename in entity representations for @interfaceObject entities.
+// For @interfaceObject, __typename in the representation must match the interface
+// entity type name (e.g. "Node"), not the concrete type.
+func TestExecutorV2_InterfaceObject_RepresentationTypename(t *testing.T) {
+	// Core service: provides node query, returns Node objects
+	coreSchema := `
+		type Node @key(fields: "id") @interfaceObject {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	// Metadata service: extends Node with @interfaceObject
+	metadataSchema := `
+		extend type Node @key(fields: "id") @interfaceObject {
+			id: ID! @external
+			metadata: String!
+		}
+	`
+
+	var capturedRepresentations []map[string]interface{}
+
+	// Setup core mock server
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"data": map[string]interface{}{
+				"node": map[string]interface{}{
+					"__typename": "Node",
+					"id":         "123",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer coreServer.Close()
+
+	// Setup metadata mock server: capture the representations
+	metadataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err == nil {
+			if vars, ok := reqBody["variables"].(map[string]interface{}); ok {
+				if reps, ok := vars["representations"].([]interface{}); ok {
+					for _, rep := range reps {
+						if repMap, ok := rep.(map[string]interface{}); ok {
+							capturedRepresentations = append(capturedRepresentations, repMap)
+						}
+					}
+				}
+			}
+		}
+
+		response := map[string]interface{}{
+			"data": map[string]interface{}{
+				"_entities": []interface{}{
+					map[string]interface{}{
+						"__typename": "Node",
+						"id":         "123",
+						"metadata":   "some metadata",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer metadataServer.Close()
+
+	coreSG, err := graph.NewSubGraphV2("core", []byte(coreSchema), coreServer.URL)
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for core: %v", err)
+	}
+
+	metadataSG, err := graph.NewSubGraphV2("metadata", []byte(metadataSchema), metadataServer.URL)
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for metadata: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{coreSG, metadataSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, superGraph)
+
+	// Build a plan manually simulating what the planner would generate
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: coreSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name: &ast.Name{Value: "node"},
+						Arguments: []*ast.Argument{
+							{Name: &ast.Name{Value: "id"}, Value: &ast.StringValue{Value: "123"}},
+						},
+						SelectionSet: []ast.Selection{
+							&ast.Field{Name: &ast.Name{Value: "__typename"}},
+							&ast.Field{Name: &ast.Name{Value: "id"}},
+						},
+					},
+				},
+				DependsOn:     []int{},
+				Path:          []string{"Query"},
+				InsertionPath: []string{},
+			},
+			{
+				ID:         1,
+				StepType:   planner.StepTypeEntity,
+				SubGraph:   metadataSG,
+				ParentType: "Node",
+				SelectionSet: []ast.Selection{
+					&ast.Field{Name: &ast.Name{Value: "__typename"}},
+					&ast.Field{Name: &ast.Name{Value: "id"}},
+					&ast.Field{Name: &ast.Name{Value: "metadata"}},
+				},
+				DependsOn:     []int{0},
+				Path:          []string{"Query", "node"},
+				InsertionPath: []string{"Query", "node"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	ctx := context.Background()
+	result, err := exec.Execute(ctx, plan, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Verify the response has data
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data in result, got: %+v", result)
+	}
+
+	nodeData, ok := data["node"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected 'node' in data, got: %+v", data)
+	}
+
+	if nodeData["metadata"] != "some metadata" {
+		t.Errorf("Expected metadata='some metadata', got: %v", nodeData["metadata"])
+	}
+
+	// Key assertion: the representation sent to metadata service must use __typename: "Node"
+	if len(capturedRepresentations) == 0 {
+		t.Fatal("Expected metadata service to be called with representations")
+	}
+
+	rep := capturedRepresentations[0]
+	if rep["__typename"] != "Node" {
+		t.Errorf("Expected __typename='Node' in representation (interfaceObject), got: %v", rep["__typename"])
+	}
+
+	if rep["id"] != "123" {
+		t.Errorf("Expected id='123' in representation, got: %v", rep["id"])
+	}
+}
+
+// TestExecutorV2_InterfaceObject_InterfaceTypeEntity tests that entity resolution
+// works correctly when the entity is defined as an interface type with @interfaceObject.
+func TestExecutorV2_InterfaceObject_InterfaceTypeEntity(t *testing.T) {
+	// Core service: interface Node @interfaceObject (interface type, not object type)
+	coreSchema := `
+		interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	// Metadata service: extends Node with interface extension
+	metadataSchema := `
+		extend interface Node @interfaceObject @key(fields: "id") {
+			id: ID! @external
+			createdAt: String!
+		}
+	`
+
+	var capturedTypename string
+
+	coreServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		response := map[string]interface{}{
+			"data": map[string]interface{}{
+				"node": map[string]interface{}{
+					"__typename": "Node",
+					"id":         "abc",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer coreServer.Close()
+
+	metadataServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		if err := json.NewDecoder(r.Body).Decode(&reqBody); err == nil {
+			if vars, ok := reqBody["variables"].(map[string]interface{}); ok {
+				if reps, ok := vars["representations"].([]interface{}); ok {
+					if len(reps) > 0 {
+						if repMap, ok := reps[0].(map[string]interface{}); ok {
+							if tn, ok := repMap["__typename"].(string); ok {
+								capturedTypename = tn
+							}
+						}
+					}
+				}
+			}
+		}
+
+		response := map[string]interface{}{
+			"data": map[string]interface{}{
+				"_entities": []interface{}{
+					map[string]interface{}{
+						"__typename": "Node",
+						"id":         "abc",
+						"createdAt":  "2024-01-01",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(response)
+	}))
+	defer metadataServer.Close()
+
+	coreSG, err := graph.NewSubGraphV2("core", []byte(coreSchema), coreServer.URL)
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for core: %v", err)
+	}
+
+	metadataSG, err := graph.NewSubGraphV2("metadata", []byte(metadataSchema), metadataServer.URL)
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for metadata: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{coreSG, metadataSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, superGraph)
+
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: coreSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name: &ast.Name{Value: "node"},
+						Arguments: []*ast.Argument{
+							{Name: &ast.Name{Value: "id"}, Value: &ast.StringValue{Value: "abc"}},
+						},
+						SelectionSet: []ast.Selection{
+							&ast.Field{Name: &ast.Name{Value: "__typename"}},
+							&ast.Field{Name: &ast.Name{Value: "id"}},
+						},
+					},
+				},
+				DependsOn:     []int{},
+				Path:          []string{"Query"},
+				InsertionPath: []string{},
+			},
+			{
+				ID:         1,
+				StepType:   planner.StepTypeEntity,
+				SubGraph:   metadataSG,
+				ParentType: "Node",
+				SelectionSet: []ast.Selection{
+					&ast.Field{Name: &ast.Name{Value: "__typename"}},
+					&ast.Field{Name: &ast.Name{Value: "id"}},
+					&ast.Field{Name: &ast.Name{Value: "createdAt"}},
+				},
+				DependsOn:     []int{0},
+				Path:          []string{"Query", "node"},
+				InsertionPath: []string{"Query", "node"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	ctx := context.Background()
+	result, err := exec.Execute(ctx, plan, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data in result, got: %+v", result)
+	}
+
+	nodeData, ok := data["node"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected 'node' in data, got: %+v", data)
+	}
+
+	if nodeData["createdAt"] != "2024-01-01" {
+		t.Errorf("Expected createdAt='2024-01-01', got: %v", nodeData["createdAt"])
+	}
+
+	// Verify that the representation used __typename: "Node" (interface entity type)
+	if capturedTypename != "Node" {
+		t.Errorf("Expected __typename='Node' in representation sent to metadata, got: '%s'", capturedTypename)
+	}
+}
+
 // TestExecutorV2_RequiresDependencyInjection tests that @requires fields are included
 // in entity representations sent to subgraphs.
 func TestExecutorV2_RequiresDependencyInjection(t *testing.T) {

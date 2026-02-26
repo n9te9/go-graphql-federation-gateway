@@ -486,3 +486,164 @@ func TestNewSubGraphV2_NoComposeDirective_EmptyDefinitions(t *testing.T) {
 		t.Errorf("expected 0 directive definitions, got %d", len(defs))
 	}
 }
+
+// TestNewSubGraphV2_InterfaceTypeDefinition_WithInterfaceObject tests that
+// InterfaceTypeDefinition with @interfaceObject and @key is parsed as an entity.
+func TestNewSubGraphV2_InterfaceTypeDefinition_WithInterfaceObject(t *testing.T) {
+	schema := `
+		interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+		}
+
+		type Query {
+			node(id: ID!): Node
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("core", []byte(schema), "http://core.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	nodeEntity, ok := entities["Node"]
+	if !ok {
+		t.Fatal("Node entity not found")
+	}
+
+	if !nodeEntity.IsInterfaceObject() {
+		t.Error("expected Node entity to be an interface object")
+	}
+
+	if len(nodeEntity.Keys) != 1 {
+		t.Fatalf("expected 1 key, got %d", len(nodeEntity.Keys))
+	}
+
+	if nodeEntity.Keys[0].FieldSet != "id" {
+		t.Errorf("expected key field 'id', got '%s'", nodeEntity.Keys[0].FieldSet)
+	}
+
+	if !nodeEntity.Keys[0].Resolvable {
+		t.Error("expected key to be resolvable")
+	}
+
+	if nodeEntity.IsExtension() {
+		t.Error("expected Node entity to not be an extension")
+	}
+
+	idField, ok := nodeEntity.Fields["id"]
+	if !ok {
+		t.Fatal("id field not found in Node entity")
+	}
+
+	if idField.Name != "id" {
+		t.Errorf("expected field name 'id', got '%s'", idField.Name)
+	}
+}
+
+// TestNewSubGraphV2_InterfaceTypeDefinition_WithKeyOnly tests that
+// InterfaceTypeDefinition with only @key (no @interfaceObject) is parsed as an entity.
+func TestNewSubGraphV2_InterfaceTypeDefinition_WithKeyOnly(t *testing.T) {
+	schema := `
+		interface Media @key(fields: "id") {
+			id: ID!
+			title: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("media", []byte(schema), "http://media.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	mediaEntity, ok := entities["Media"]
+	if !ok {
+		t.Fatal("Media entity not found")
+	}
+
+	// @key only, no @interfaceObject → isInterfaceObject should be false
+	if mediaEntity.IsInterfaceObject() {
+		t.Error("expected Media entity to NOT be an interface object (no @interfaceObject directive)")
+	}
+
+	if len(mediaEntity.Keys) != 1 || mediaEntity.Keys[0].FieldSet != "id" {
+		t.Errorf("expected key 'id', got %v", mediaEntity.Keys)
+	}
+}
+
+// TestNewSubGraphV2_InterfaceTypeExtension_WithInterfaceObject tests that
+// InterfaceTypeExtension with @interfaceObject and @key is parsed as an entity extension.
+func TestNewSubGraphV2_InterfaceTypeExtension_WithInterfaceObject(t *testing.T) {
+	schema := `
+		extend interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+			metadata: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("metadata", []byte(schema), "http://metadata.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	nodeEntity, ok := entities["Node"]
+	if !ok {
+		t.Fatal("Node entity not found")
+	}
+
+	if !nodeEntity.IsInterfaceObject() {
+		t.Error("expected Node entity to be an interface object")
+	}
+
+	if !nodeEntity.IsExtension() {
+		t.Error("expected Node entity to be an extension")
+	}
+
+	if len(nodeEntity.Keys) != 1 || nodeEntity.Keys[0].FieldSet != "id" {
+		t.Errorf("expected key 'id', got %v", nodeEntity.Keys)
+	}
+
+	metaField, ok := nodeEntity.Fields["metadata"]
+	if !ok {
+		t.Fatal("metadata field not found in Node entity")
+	}
+
+	if metaField.Name != "metadata" {
+		t.Errorf("expected field name 'metadata', got '%s'", metaField.Name)
+	}
+}
+
+// TestNewSubGraphV2_InterfaceTypeDefinition_MultipleFields tests that all fields
+// of an interface entity are properly parsed.
+func TestNewSubGraphV2_InterfaceTypeDefinition_MultipleFields(t *testing.T) {
+	schema := `
+		interface Node @interfaceObject @key(fields: "id") {
+			id: ID!
+			createdAt: String!
+			updatedAt: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("timestamps", []byte(schema), "http://timestamps.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	nodeEntity, ok := entities["Node"]
+	if !ok {
+		t.Fatal("Node entity not found")
+	}
+
+	if len(nodeEntity.Fields) != 3 {
+		t.Errorf("expected 3 fields (id, createdAt, updatedAt), got %d", len(nodeEntity.Fields))
+	}
+
+	for _, fieldName := range []string{"id", "createdAt", "updatedAt"} {
+		if _, ok := nodeEntity.Fields[fieldName]; !ok {
+			t.Errorf("field '%s' not found in Node entity", fieldName)
+		}
+	}
+}
