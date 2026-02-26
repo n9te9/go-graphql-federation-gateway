@@ -93,8 +93,12 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 	// Expand fragments in the root SelectionSet
 	expandedSelections := p.expandFragmentsInSelections(op.SelectionSet, fragmentDefs)
 
-	// Group root fields by responsible subgraph
+	// Group root fields by responsible subgraph.
+	// rootSubGraphOrder preserves the order in which subgraphs are first encountered
+	// so that RootStepIndexes reflects the original field definition order.
+	// This is required for mutation execution which must respect field order.
 	rootFieldsBySubGraph := make(map[*graph.SubGraphV2][]ast.Selection)
+	rootSubGraphOrder := make([]*graph.SubGraphV2, 0) // insertion-ordered subgraph list
 
 	for _, selection := range expandedSelections {
 		field, ok := selection.(*ast.Field)
@@ -118,11 +122,16 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 		// For @shareable fields there may be multiple subgraphs; prefer the first match for root queries
 		// (no parent step at root level, so pass "" to fall back to subGraphs[0]).
 		subGraph := selectSubGraphForField(subGraphs, "")
+		if _, exists := rootFieldsBySubGraph[subGraph]; !exists {
+			// First time we see this subgraph: record its position in definition order
+			rootSubGraphOrder = append(rootSubGraphOrder, subGraph)
+		}
 		rootFieldsBySubGraph[subGraph] = append(rootFieldsBySubGraph[subGraph], selection)
 	}
 
-	// Create root steps with filtered SelectionSets
-	for subGraph, selections := range rootFieldsBySubGraph {
+	// Create root steps in field-definition order (determined by rootSubGraphOrder).
+	for _, subGraph := range rootSubGraphOrder {
+		selections := rootFieldsBySubGraph[subGraph]
 		// Build SelectionSet containing only fields owned by this subgraph
 		filteredSelections := p.buildStepSelections(selections, subGraph, rootTypeName, fragmentDefs)
 

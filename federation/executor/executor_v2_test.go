@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
@@ -696,6 +697,337 @@ func jsonEqual(a, b interface{}) bool {
 	aJSON, _ := json.Marshal(a)
 	bJSON, _ := json.Marshal(b)
 	return string(aJSON) == string(bJSON)
+}
+
+// TestExecutorV2_MutationSequentialExecution verifies that mutation steps are executed
+// in the order they are defined in the plan (not in parallel).
+func TestExecutorV2_MutationSequentialExecution(t *testing.T) {
+	// Track the order in which services receive requests
+	var mu sync.Mutex
+	requestOrder := make([]string, 0, 2)
+
+	// userService is slower but must execute first
+	userServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestOrder = append(requestOrder, "users")
+		mu.Unlock()
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"createUser": map[string]interface{}{
+					"id":   "u123",
+					"name": "Alice",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer userServer.Close()
+
+	postServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		requestOrder = append(requestOrder, "posts")
+		mu.Unlock()
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"createPost": map[string]interface{}{
+					"id":    "p456",
+					"title": "Hello",
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer postServer.Close()
+
+	userSG := createMockSubgraph("users", userServer.URL)
+	postSG := createMockSubgraph("posts", postServer.URL)
+
+	plan := &planner.PlanV2{
+		OperationType: "mutation",
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: userSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name: &ast.Name{Value: "createUser"},
+						SelectionSet: []ast.Selection{
+							&ast.Field{Name: &ast.Name{Value: "id"}},
+							&ast.Field{Name: &ast.Name{Value: "name"}},
+						},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Mutation"},
+			},
+			{
+				ID:       1,
+				StepType: planner.StepTypeQuery,
+				SubGraph: postSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name: &ast.Name{Value: "createPost"},
+						SelectionSet: []ast.Selection{
+							&ast.Field{Name: &ast.Name{Value: "id"}},
+							&ast.Field{Name: &ast.Name{Value: "title"}},
+						},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Mutation"},
+			},
+		},
+		RootStepIndexes: []int{0, 1},
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, nil)
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	// Verify both mutations returned data
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data in result, got: %+v", result)
+	}
+	if data["createUser"] == nil {
+		t.Error("Expected createUser result")
+	}
+	if data["createPost"] == nil {
+		t.Error("Expected createPost result")
+	}
+
+	// Verify the execution order: users must come before posts
+	mu.Lock()
+	defer mu.Unlock()
+	if len(requestOrder) != 2 {
+		t.Fatalf("Expected 2 requests, got %d", len(requestOrder))
+	}
+	if requestOrder[0] != "users" {
+		t.Errorf("Expected first request to 'users', got '%s'", requestOrder[0])
+	}
+	if requestOrder[1] != "posts" {
+		t.Errorf("Expected second request to 'posts', got '%s'", requestOrder[1])
+	}
+}
+
+// TestExecutorV2_MutationErrorHandling verifies that when a mutation step fails,
+// subsequent mutation steps are NOT executed.
+func TestExecutorV2_MutationErrorHandling(t *testing.T) {
+	var mu sync.Mutex
+	calledServices := make([]string, 0, 3)
+
+	// First mutation: succeeds
+	aServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calledServices = append(calledServices, "serviceA")
+		mu.Unlock()
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"mutationA": map[string]interface{}{"id": "a1"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer aServer.Close()
+
+	// Second mutation: fails
+	bServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calledServices = append(calledServices, "serviceB")
+		mu.Unlock()
+
+		// Return a 500 error
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte("Internal Server Error"))
+	}))
+	defer bServer.Close()
+
+	// Third mutation: must NOT be called
+	cServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		calledServices = append(calledServices, "serviceC")
+		mu.Unlock()
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"mutationC": map[string]interface{}{"id": "c1"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer cServer.Close()
+
+	aSG := createMockSubgraph("serviceA", aServer.URL)
+	bSG := createMockSubgraph("serviceB", bServer.URL)
+	cSG := createMockSubgraph("serviceC", cServer.URL)
+
+	plan := &planner.PlanV2{
+		OperationType: "mutation",
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: aSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "mutationA"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Mutation"},
+			},
+			{
+				ID:       1,
+				StepType: planner.StepTypeQuery,
+				SubGraph: bSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "mutationB"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Mutation"},
+			},
+			{
+				ID:       2,
+				StepType: planner.StepTypeQuery,
+				SubGraph: cSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "mutationC"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Mutation"},
+			},
+		},
+		RootStepIndexes: []int{0, 1, 2},
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, nil)
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute returned unexpected error: %v", err)
+	}
+
+	// Verify execution stopped after the failure: only A and B should have been called
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calledServices) != 2 {
+		t.Errorf("Expected exactly 2 services to be called (A and B), but got %d: %v", len(calledServices), calledServices)
+	}
+	if len(calledServices) >= 1 && calledServices[0] != "serviceA" {
+		t.Errorf("Expected first call to 'serviceA', got '%s'", calledServices[0])
+	}
+	if len(calledServices) >= 2 && calledServices[1] != "serviceB" {
+		t.Errorf("Expected second call to 'serviceB', got '%s'", calledServices[1])
+	}
+
+	// Verify errors are present in response
+	if _, hasErr := result["errors"]; !hasErr {
+		t.Error("Expected errors in response after mutation failure")
+	}
+}
+
+// TestExecutorV2_QueryParallelExecution verifies that query steps still execute in parallel.
+func TestExecutorV2_QueryParallelExecution(t *testing.T) {
+	// Use channels to coordinate parallel execution detection
+	aStarted := make(chan struct{})
+	bStarted := make(chan struct{})
+
+	aServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(aStarted) // signal that A started
+		<-bStarted      // wait until B also starts (proves parallel execution)
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"queryA": map[string]interface{}{"id": "a1"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer aServer.Close()
+
+	bServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		close(bStarted) // signal that B started
+		<-aStarted      // wait until A also started (proves parallel)
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"queryB": map[string]interface{}{"id": "b1"},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer bServer.Close()
+
+	aSG := createMockSubgraph("serviceA", aServer.URL)
+	bSG := createMockSubgraph("serviceB", bServer.URL)
+
+	plan := &planner.PlanV2{
+		OperationType: "query",
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: aSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "queryA"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Query"},
+			},
+			{
+				ID:       1,
+				StepType: planner.StepTypeQuery,
+				SubGraph: bSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name:         &ast.Name{Value: "queryB"},
+						SelectionSet: []ast.Selection{&ast.Field{Name: &ast.Name{Value: "id"}}},
+					},
+				},
+				DependsOn: []int{},
+				Path:      []string{"Query"},
+			},
+		},
+		RootStepIndexes: []int{0, 1},
+	}
+
+	exec := executor.NewExecutorV2(http.DefaultClient, nil)
+	result, err := exec.Execute(context.Background(), plan, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data in result")
+	}
+	if data["queryA"] == nil {
+		t.Error("Expected queryA result")
+	}
+	if data["queryB"] == nil {
+		t.Error("Expected queryB result")
+	}
 }
 
 // TestExecutorV2_InterfaceObject_RepresentationTypename tests that the executor

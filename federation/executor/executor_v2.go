@@ -96,7 +96,11 @@ func (e *ExecutorV2) Execute(
 	execCtx.errors = execCtx.errors[:0]
 
 	// Execute root steps (don't fail on error, collect them)
-	_ = e.executeSteps(execCtx, plan.RootStepIndexes, variables)
+	if plan.OperationType == "mutation" {
+		_ = e.executeMutationSequentially(execCtx, variables)
+	} else {
+		_ = e.executeSteps(execCtx, plan.RootStepIndexes, variables)
+	}
 
 	// Build final response from root step results
 	response := make(map[string]interface{})
@@ -212,6 +216,70 @@ func (e *ExecutorV2) executeSteps(
 	}
 
 	return nil
+}
+
+// executeMutationSequentially executes mutation root steps one-by-one in order.
+// After each root step completes its entity-resolution dependents are also run
+// (sequentially) before proceeding to the next root mutation field.
+// If a root step (or its entity resolution) records an error the remaining root
+// steps are skipped, implementing "fail-fast / stop-on-first-error" semantics
+// required by the GraphQL specification for mutations.
+func (e *ExecutorV2) executeMutationSequentially(
+	execCtx *ExecutionContext,
+	variables map[string]interface{},
+) error {
+	for _, rootStepIdx := range execCtx.plan.RootStepIndexes {
+		step := execCtx.plan.Steps[rootStepIdx]
+
+		// Execute this mutation field
+		if err := e.processStep(execCtx.ctx, execCtx, step, variables); err != nil {
+			return err
+		}
+
+		// Stop if the step recorded any errors (e.g. HTTP failure)
+		execCtx.mu.RLock()
+		hasErrors := len(execCtx.errors) > 0
+		execCtx.mu.RUnlock()
+		if hasErrors {
+			return nil // errors are already in execCtx, just stop
+		}
+
+		// Execute entity-resolution steps that are now ready (sequentially)
+		if err := e.executeDependentsSequentially(execCtx, variables); err != nil {
+			return err
+		}
+
+		// Stop if entity resolution produced errors
+		execCtx.mu.RLock()
+		hasErrors = len(execCtx.errors) > 0
+		execCtx.mu.RUnlock()
+		if hasErrors {
+			return nil
+		}
+	}
+	return nil
+}
+
+// executeDependentsSequentially repeatedly finds steps whose dependencies are now
+// all satisfied and executes them one-by-one until no more are found.
+// This is used after each root mutation step to drain entity-resolution work
+// before moving on to the next mutation field.
+func (e *ExecutorV2) executeDependentsSequentially(
+	execCtx *ExecutionContext,
+	variables map[string]interface{},
+) error {
+	for {
+		ready := e.findReadySteps(execCtx)
+		if len(ready) == 0 {
+			return nil
+		}
+		for _, stepIdx := range ready {
+			step := execCtx.plan.Steps[stepIdx]
+			if err := e.processStep(execCtx.ctx, execCtx, step, variables); err != nil {
+				return err
+			}
+		}
+	}
 }
 
 // findReadySteps finds steps whose dependencies have all been completed.
