@@ -615,6 +615,157 @@ func TestNewSubGraphV2_InterfaceTypeExtension_WithInterfaceObject(t *testing.T) 
 	}
 }
 
+// TestNewSubGraphV2_Tag_FieldLevel tests that @tag directives on fields are parsed correctly.
+func TestNewSubGraphV2_Tag_FieldLevel(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String! @tag(name: "public")
+			internalCost: Float! @tag(name: "internal")
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	nameField, ok := productEntity.Fields["name"]
+	if !ok {
+		t.Fatal("name field not found")
+	}
+	if len(nameField.GetTags()) != 1 || nameField.GetTags()[0] != "public" {
+		t.Errorf("expected name field tags ['public'], got %v", nameField.GetTags())
+	}
+
+	costField, ok := productEntity.Fields["internalCost"]
+	if !ok {
+		t.Fatal("internalCost field not found")
+	}
+	if len(costField.GetTags()) != 1 || costField.GetTags()[0] != "internal" {
+		t.Errorf("expected internalCost field tags ['internal'], got %v", costField.GetTags())
+	}
+
+	idField, ok := productEntity.Fields["id"]
+	if !ok {
+		t.Fatal("id field not found")
+	}
+	if len(idField.GetTags()) != 0 {
+		t.Errorf("expected id field to have no tags, got %v", idField.GetTags())
+	}
+}
+
+// TestNewSubGraphV2_Tag_TypeLevel tests that @tag directives on types are parsed correctly.
+func TestNewSubGraphV2_Tag_TypeLevel(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") @tag(name: "public") {
+			id: ID!
+			name: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	if len(productEntity.GetTags()) != 1 || productEntity.GetTags()[0] != "public" {
+		t.Errorf("expected Product entity tags ['public'], got %v", productEntity.GetTags())
+	}
+}
+
+// TestNewSubGraphV2_Tag_MultipleTags tests parsing of multiple @tag directives on a type and its fields.
+func TestNewSubGraphV2_Tag_MultipleTags(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") @tag(name: "public") @tag(name: "ecommerce") {
+			id: ID!
+			name: String! @tag(name: "public") @tag(name: "search")
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	typeTags := productEntity.GetTags()
+	if len(typeTags) != 2 {
+		t.Errorf("expected 2 type tags, got %d: %v", len(typeTags), typeTags)
+	}
+	typeTagSet := make(map[string]bool)
+	for _, tag := range typeTags {
+		typeTagSet[tag] = true
+	}
+	if !typeTagSet["public"] || !typeTagSet["ecommerce"] {
+		t.Errorf("expected type tags ['public', 'ecommerce'], got %v", typeTags)
+	}
+
+	nameField, ok := productEntity.Fields["name"]
+	if !ok {
+		t.Fatal("name field not found")
+	}
+	fieldTags := nameField.GetTags()
+	if len(fieldTags) != 2 {
+		t.Errorf("expected 2 field tags, got %d: %v", len(fieldTags), fieldTags)
+	}
+	fieldTagSet := make(map[string]bool)
+	for _, tag := range fieldTags {
+		fieldTagSet[tag] = true
+	}
+	if !fieldTagSet["public"] || !fieldTagSet["search"] {
+		t.Errorf("expected field tags ['public', 'search'], got %v", fieldTags)
+	}
+}
+
+// TestNewSubGraphV2_Tag_NoTags tests that entities and fields without @tag have empty tag slices.
+func TestNewSubGraphV2_Tag_NoTags(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	entities := sg.GetEntities()
+	productEntity, ok := entities["Product"]
+	if !ok {
+		t.Fatal("Product entity not found")
+	}
+
+	if len(productEntity.GetTags()) != 0 {
+		t.Errorf("expected no type tags, got %v", productEntity.GetTags())
+	}
+
+	for _, field := range productEntity.Fields {
+		if len(field.GetTags()) != 0 {
+			t.Errorf("expected no field tags for '%s', got %v", field.Name, field.GetTags())
+		}
+	}
+}
+
 // TestNewSubGraphV2_InterfaceTypeDefinition_MultipleFields tests that all fields
 // of an interface entity are properly parsed.
 func TestNewSubGraphV2_InterfaceTypeDefinition_MultipleFields(t *testing.T) {

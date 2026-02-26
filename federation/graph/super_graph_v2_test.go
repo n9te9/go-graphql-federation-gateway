@@ -876,3 +876,281 @@ func TestNewSuperGraphV2_InterfaceObject_WithObjectTypeInterfaceObject(t *testin
 		t.Errorf("expected Node.reviewCount owned by 'reviews', got '%s'", reviewCountOwners[0].Name)
 	}
 }
+
+// TestSuperGraphV2_TagMetadata_GetTypeTags tests GetTypeTags returns tags for a type.
+func TestSuperGraphV2_TagMetadata_GetTypeTags(t *testing.T) {
+	productSchema := `
+		type Product @key(fields: "id") @tag(name: "public") {
+			id: ID!
+			name: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(productSchema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sg})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	tags := superGraph.GetTypeTags("Product")
+	if len(tags) != 1 || tags[0] != "public" {
+		t.Errorf("expected ['public'], got %v", tags)
+	}
+
+	emptyTags := superGraph.GetTypeTags("Query")
+	if len(emptyTags) != 0 {
+		t.Errorf("expected no tags for Query, got %v", emptyTags)
+	}
+}
+
+// TestSuperGraphV2_TagMetadata_GetFieldTags tests GetFieldTags returns tags for a field.
+func TestSuperGraphV2_TagMetadata_GetFieldTags(t *testing.T) {
+	productSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String! @tag(name: "public")
+			internalCost: Float! @tag(name: "internal")
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(productSchema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sg})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	nameTags := superGraph.GetFieldTags("Product", "name")
+	if len(nameTags) != 1 || nameTags[0] != "public" {
+		t.Errorf("expected ['public'] for Product.name, got %v", nameTags)
+	}
+
+	costTags := superGraph.GetFieldTags("Product", "internalCost")
+	if len(costTags) != 1 || costTags[0] != "internal" {
+		t.Errorf("expected ['internal'] for Product.internalCost, got %v", costTags)
+	}
+
+	idTags := superGraph.GetFieldTags("Product", "id")
+	if len(idTags) != 0 {
+		t.Errorf("expected no tags for Product.id, got %v", idTags)
+	}
+
+	nilTags := superGraph.GetFieldTags("Product", "nonexistent")
+	if nilTags != nil {
+		t.Errorf("expected nil for nonexistent field, got %v", nilTags)
+	}
+}
+
+// TestSuperGraphV2_TagMetadata_MergeFromMultipleSubgraphs tests that tags from multiple
+// subgraphs are merged correctly.
+func TestSuperGraphV2_TagMetadata_MergeFromMultipleSubgraphs(t *testing.T) {
+	productSchema := `
+		type Product @key(fields: "id") @tag(name: "public") {
+			id: ID!
+			name: String! @tag(name: "public")
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	reviewSchema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			internalCost: Float! @tag(name: "internal")
+		}
+	`
+
+	productSG, err := graph.NewSubGraphV2("product", []byte(productSchema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for product: %v", err)
+	}
+
+	reviewSG, err := graph.NewSubGraphV2("review", []byte(reviewSchema), "http://review.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for review: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productSG, reviewSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Type tags from product subgraph
+	productTypeTags := superGraph.GetTypeTags("Product")
+	if len(productTypeTags) != 1 || productTypeTags[0] != "public" {
+		t.Errorf("expected Product type tags ['public'], got %v", productTypeTags)
+	}
+
+	// Field tags from product subgraph
+	nameTags := superGraph.GetFieldTags("Product", "name")
+	if len(nameTags) != 1 || nameTags[0] != "public" {
+		t.Errorf("expected Product.name tags ['public'], got %v", nameTags)
+	}
+
+	// Field tags from review subgraph
+	costTags := superGraph.GetFieldTags("Product", "internalCost")
+	if len(costTags) != 1 || costTags[0] != "internal" {
+		t.Errorf("expected Product.internalCost tags ['internal'], got %v", costTags)
+	}
+}
+
+// TestSuperGraphV2_TagMetadata_Deduplication tests that duplicate tags from multiple
+// subgraphs are deduplicated.
+func TestSuperGraphV2_TagMetadata_Deduplication(t *testing.T) {
+	schemaA := `
+		type Product @key(fields: "id") @tag(name: "public") {
+			id: ID!
+			name: String! @tag(name: "public") @tag(name: "search")
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	schemaB := `
+		extend type Product @key(fields: "id") @tag(name: "public") {
+			id: ID! @external
+			description: String! @tag(name: "public") @tag(name: "catalog")
+		}
+	`
+
+	sgA, err := graph.NewSubGraphV2("sgA", []byte(schemaA), "http://a.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for sgA: %v", err)
+	}
+
+	sgB, err := graph.NewSubGraphV2("sgB", []byte(schemaB), "http://b.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for sgB: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sgA, sgB})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Type tags: "public" should appear only once
+	typeTags := superGraph.GetTypeTags("Product")
+	if len(typeTags) != 1 || typeTags[0] != "public" {
+		t.Errorf("expected deduplicated type tags ['public'], got %v", typeTags)
+	}
+
+	// Field tags for name: "public" and "search"
+	nameTags := superGraph.GetFieldTags("Product", "name")
+	if len(nameTags) != 2 {
+		t.Errorf("expected 2 tags for Product.name, got %d: %v", len(nameTags), nameTags)
+	}
+	nameTagSet := make(map[string]bool)
+	for _, tag := range nameTags {
+		nameTagSet[tag] = true
+	}
+	if !nameTagSet["public"] || !nameTagSet["search"] {
+		t.Errorf("expected ['public', 'search'] for Product.name, got %v", nameTags)
+	}
+
+	// Field tags for description: "public" and "catalog"
+	descTags := superGraph.GetFieldTags("Product", "description")
+	if len(descTags) != 2 {
+		t.Errorf("expected 2 tags for Product.description, got %d: %v", len(descTags), descTags)
+	}
+	descTagSet := make(map[string]bool)
+	for _, tag := range descTags {
+		descTagSet[tag] = true
+	}
+	if !descTagSet["public"] || !descTagSet["catalog"] {
+		t.Errorf("expected ['public', 'catalog'] for Product.description, got %v", descTags)
+	}
+}
+
+// TestSuperGraphV2_TagMetadata_HasTypeTag tests HasTypeTag returns correct boolean.
+func TestSuperGraphV2_TagMetadata_HasTypeTag(t *testing.T) {
+	productSchema := `
+		type Product @key(fields: "id") @tag(name: "public") {
+			id: ID!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(productSchema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sg})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	if !superGraph.HasTypeTag("Product", "public") {
+		t.Error("expected HasTypeTag('Product', 'public') to be true")
+	}
+
+	if superGraph.HasTypeTag("Product", "internal") {
+		t.Error("expected HasTypeTag('Product', 'internal') to be false")
+	}
+
+	if superGraph.HasTypeTag("NonExistent", "public") {
+		t.Error("expected HasTypeTag for non-existent type to be false")
+	}
+}
+
+// TestSuperGraphV2_TagMetadata_HasFieldTag tests HasFieldTag returns correct boolean.
+func TestSuperGraphV2_TagMetadata_HasFieldTag(t *testing.T) {
+	productSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String! @tag(name: "public")
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(productSchema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sg})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	if !superGraph.HasFieldTag("Product", "name", "public") {
+		t.Error("expected HasFieldTag('Product', 'name', 'public') to be true")
+	}
+
+	if superGraph.HasFieldTag("Product", "name", "internal") {
+		t.Error("expected HasFieldTag('Product', 'name', 'internal') to be false")
+	}
+
+	if superGraph.HasFieldTag("Product", "id", "public") {
+		t.Error("expected HasFieldTag('Product', 'id', 'public') to be false")
+	}
+
+	if superGraph.HasFieldTag("Product", "nonexistent", "public") {
+		t.Error("expected HasFieldTag for non-existent field to be false")
+	}
+}

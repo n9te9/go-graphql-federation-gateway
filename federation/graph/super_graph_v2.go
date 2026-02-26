@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	"sort"
 
 	"github.com/n9te9/graphql-parser/ast"
 )
@@ -13,6 +14,10 @@ type SuperGraphV2 struct {
 	Ownership            map[string][]*SubGraphV2            // Field ownership map (e.g., "Product.id" -> [SubGraph])
 	Graph                *WeightedDirectedGraph              // Weighted directed graph for Dijkstra-based plan optimization
 	DirectiveDefinitions map[string]*ast.DirectiveDefinition // Custom directive definitions merged from @composeDirective
+
+	// Tag metadata
+	TypeTags  map[string][]string            // typeName -> merged tags
+	FieldTags map[string]map[string][]string // typeName -> fieldName -> merged tags
 }
 
 // NewSuperGraphV2 creates a super graph from a list of SubGraphV2 instances.
@@ -40,6 +45,9 @@ func NewSuperGraphV2(subGraphs []*SubGraphV2) (*SuperGraphV2, error) {
 	// Build weighted directed graph for Dijkstra-based query plan optimization.
 	// This is computed once at startup to avoid per-request overhead.
 	sg.Graph = BuildGraph(subGraphs)
+
+	// Build tag metadata from all subgraphs.
+	sg.buildTagMetadata()
 
 	return sg, nil
 }
@@ -651,4 +659,83 @@ func (sg *SuperGraphV2) GetFieldOwnerSubGraph(typeName, fieldName string) *SubGr
 		return owners[0]
 	}
 	return nil
+}
+
+// buildTagMetadata collects and merges @tag directives from all subgraphs into TypeTags and FieldTags.
+func (sg *SuperGraphV2) buildTagMetadata() {
+	sg.TypeTags = make(map[string][]string)
+	sg.FieldTags = make(map[string]map[string][]string)
+
+	for _, subGraph := range sg.SubGraphs {
+		for typeName, entity := range subGraph.GetEntities() {
+			// Merge type-level tags
+			if len(entity.Tags) > 0 {
+				sg.TypeTags[typeName] = mergeUniqueTags(sg.TypeTags[typeName], entity.Tags)
+			}
+
+			// Merge field-level tags
+			if sg.FieldTags[typeName] == nil {
+				sg.FieldTags[typeName] = make(map[string][]string)
+			}
+			for fieldName, field := range entity.Fields {
+				if len(field.Tags) > 0 {
+					sg.FieldTags[typeName][fieldName] = mergeUniqueTags(
+						sg.FieldTags[typeName][fieldName],
+						field.Tags,
+					)
+				}
+			}
+		}
+	}
+}
+
+// mergeUniqueTags merges two tag slices, deduplicating and sorting for consistency.
+func mergeUniqueTags(existing, newTags []string) []string {
+	tagSet := make(map[string]bool)
+	for _, tag := range existing {
+		tagSet[tag] = true
+	}
+	for _, tag := range newTags {
+		tagSet[tag] = true
+	}
+
+	result := make([]string, 0, len(tagSet))
+	for tag := range tagSet {
+		result = append(result, tag)
+	}
+	sort.Strings(result)
+	return result
+}
+
+// GetTypeTags returns the merged @tag names for the given type.
+func (sg *SuperGraphV2) GetTypeTags(typeName string) []string {
+	return sg.TypeTags[typeName]
+}
+
+// GetFieldTags returns the merged @tag names for the given field.
+func (sg *SuperGraphV2) GetFieldTags(typeName, fieldName string) []string {
+	if fieldMap, ok := sg.FieldTags[typeName]; ok {
+		return fieldMap[fieldName]
+	}
+	return nil
+}
+
+// HasTypeTag reports whether the given type carries the specified tag.
+func (sg *SuperGraphV2) HasTypeTag(typeName, tag string) bool {
+	for _, t := range sg.GetTypeTags(typeName) {
+		if t == tag {
+			return true
+		}
+	}
+	return false
+}
+
+// HasFieldTag reports whether the given field carries the specified tag.
+func (sg *SuperGraphV2) HasFieldTag(typeName, fieldName, tag string) bool {
+	for _, t := range sg.GetFieldTags(typeName, fieldName) {
+		if t == tag {
+			return true
+		}
+	}
+	return false
 }
