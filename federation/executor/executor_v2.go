@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/goccy/go-json"
 
@@ -26,16 +27,29 @@ type GraphQLError struct {
 
 // ExecutorV2 executes a query plan by orchestrating requests to subgraphs.
 type ExecutorV2 struct {
-	httpClient   *http.Client
-	pool         sync.Pool
-	queryBuilder *QueryBuilderV2
-	superGraph   *graph.SuperGraphV2
+	httpClient      *http.Client
+	pool            sync.Pool
+	queryBuilder    *QueryBuilderV2
+	superGraph      *graph.SuperGraphV2
+	subgraphTimeout time.Duration // per-subgraph request timeout; 0 means no extra timeout
 }
 
 // NewExecutorV2 creates a new ExecutorV2 instance.
 func NewExecutorV2(httpClient *http.Client, superGraph *graph.SuperGraphV2) *ExecutorV2 {
+	return newExecutorV2(httpClient, superGraph, 0)
+}
+
+// NewExecutorV2WithTimeout creates a new ExecutorV2 instance with a per-subgraph
+// request timeout. When a subgraph does not respond within the given duration,
+// the request is cancelled and a timeout error is recorded in the response.
+func NewExecutorV2WithTimeout(httpClient *http.Client, superGraph *graph.SuperGraphV2, timeout time.Duration) *ExecutorV2 {
+	return newExecutorV2(httpClient, superGraph, timeout)
+}
+
+func newExecutorV2(httpClient *http.Client, superGraph *graph.SuperGraphV2, timeout time.Duration) *ExecutorV2 {
 	return &ExecutorV2{
-		httpClient: httpClient,
+		httpClient:      httpClient,
+		subgraphTimeout: timeout,
 		pool: sync.Pool{
 			New: func() interface{} {
 				return &ExecutionContext{
@@ -458,10 +472,13 @@ func (e *ExecutorV2) recordSubgraphErrors(execCtx *ExecutionContext, step *plann
 			message = "Unknown error from subgraph"
 		}
 
-		// Build path by combining step path with error path from subgraph
+		// Build path by combining step path with error path from subgraph.
+		// For entity (_entities) responses the subgraph path starts with
+		// ["_entities", <arrayIndex>, ...] which is an internal detail.
+		// We strip that prefix so clients see the Gateway-level field path.
 		path := e.buildErrorPath(step)
 		if errPath, hasPath := errMap["path"].([]interface{}); hasPath {
-			path = append(path, errPath...)
+			path = append(path, adjustEntityErrorPath(errPath)...)
 		}
 
 		graphqlErr := GraphQLError{
@@ -505,6 +522,28 @@ func (e *ExecutorV2) buildErrorPath(step *planner.StepV2) []interface{} {
 	}
 
 	return path
+}
+
+// adjustEntityErrorPath strips the internal ["_entities", <index>, ...] prefix
+// from a subgraph entity-query error path, returning only the meaningful tail.
+// For example ["_entities", 0, "reviews"] → ["reviews"].
+// Non-entity paths (no "_entities" prefix) are returned unchanged.
+func adjustEntityErrorPath(errPath []interface{}) []interface{} {
+	if len(errPath) == 0 {
+		return errPath
+	}
+	s, ok := errPath[0].(string)
+	if !ok || s != "_entities" {
+		return errPath
+	}
+	// Skip "_entities" and the immediately following array index (float64 from JSON)
+	skip := 1
+	if len(errPath) > 1 {
+		if _, isNum := errPath[1].(float64); isNum {
+			skip = 2
+		}
+	}
+	return errPath[skip:]
 }
 
 // setNullForFailedStep sets null for the fields that failed to resolve.
@@ -1072,6 +1111,13 @@ func (e *ExecutorV2) sendRequest(
 	query string,
 	variables map[string]interface{},
 ) (map[string]interface{}, error) {
+	// Apply per-subgraph timeout if configured
+	if e.subgraphTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, e.subgraphTimeout)
+		defer cancel()
+	}
+
 	// Build request body
 	reqBody := map[string]interface{}{
 		"query": query,
@@ -1096,20 +1142,29 @@ func (e *ExecutorV2) sendRequest(
 	// Send request
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
+		// Distinguish timeout from other network errors
+		if ctx.Err() == context.DeadlineExceeded {
+			return nil, fmt.Errorf("subgraph request timeout after %v: %w", e.subgraphTimeout, ctx.Err())
+		}
 		return nil, fmt.Errorf("failed to send request: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Read response
+	// Read response body
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, fmt.Errorf("failed to read response body: %w", err)
 	}
 
-	// Parse response
+	// Treat HTTP 4xx / 5xx as errors
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("subgraph returned HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(respBody)))
+	}
+
+	// Parse response JSON
 	var result map[string]interface{}
 	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal response (invalid JSON): %w", err)
 	}
 
 	return result, nil
