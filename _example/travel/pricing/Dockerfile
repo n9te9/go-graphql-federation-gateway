@@ -1,6 +1,7 @@
-FROM golang:1.23-alpine
+FROM golang:1.24-alpine
 WORKDIR /app
-COPY . .
+COPY go.mod go.sum ./
 RUN go mod download
-RUN go build -o pricing
-CMD ["./pricing"]
+COPY . .
+RUN go build -o server .
+CMD ["./server"]

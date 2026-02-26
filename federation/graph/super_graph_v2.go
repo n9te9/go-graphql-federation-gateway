@@ -3,6 +3,7 @@ package graph
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/n9te9/graphql-parser/ast"
 )
@@ -640,20 +641,36 @@ func (sg *SuperGraphV2) GetSubGraphsForField(typeName, fieldName string) []*SubG
 
 // GetEntityOwnerSubGraph returns the subgraph that owns the entity (defines it with @key directive, not extends it).
 // Filters out subgraphs with @key(resolvable: false) - these are stubs that cannot resolve entities.
+// Also filters out subgraphs where the entity's key field is @external (i.e., stub references used for @provides).
 // For entities defined in multiple resolvable subgraphs, it returns the first non-extension.
 // Returns nil if the type is not an entity or has no resolvable owners.
 func (sg *SuperGraphV2) GetEntityOwnerSubGraph(typeName string) *SubGraphV2 {
 	// First pass: look for non-extension definitions with resolvable keys
+	// where the key field itself is not @external (genuine owners, not stubs)
 	for _, subGraph := range sg.SubGraphs {
 		if entity, exists := subGraph.GetEntity(typeName); exists && !entity.IsExtension() && entity.IsResolvable() {
-			return subGraph
+			// Verify that the key field can be resolved (not @external) in this subgraph.
+			// If the key is @external, this subgraph is a stub reference (e.g., for @provides),
+			// not the true owner of the entity.
+			if len(entity.Keys) > 0 {
+				keyFieldNames := strings.Fields(entity.Keys[0].FieldSet)
+				if len(keyFieldNames) > 0 && sg.canResolveField(subGraph, typeName, keyFieldNames[0]) {
+					return subGraph
+				}
+			}
 		}
 	}
 
-	// Second pass: if only extensions exist, return the first resolvable one
+	// Second pass: if only extensions (or stubs with @external keys) exist, return the first resolvable one
+	// that can actually resolve its key field.
 	for _, subGraph := range sg.SubGraphs {
 		if entity, exists := subGraph.GetEntity(typeName); exists && entity.IsResolvable() {
-			return subGraph
+			if len(entity.Keys) > 0 {
+				keyFieldNames := strings.Fields(entity.Keys[0].FieldSet)
+				if len(keyFieldNames) > 0 && sg.canResolveField(subGraph, typeName, keyFieldNames[0]) {
+					return subGraph
+				}
+			}
 		}
 	}
 
@@ -663,6 +680,38 @@ func (sg *SuperGraphV2) GetEntityOwnerSubGraph(typeName string) *SubGraphV2 {
 // IsEntityType checks if a type is an entity (has @key directive in any subgraph).
 func (sg *SuperGraphV2) IsEntityType(typeName string) bool {
 	return sg.GetEntityOwnerSubGraph(typeName) != nil
+}
+
+// CanSubGraphResolveEntity reports whether the given subgraph can directly resolve
+// entities of the specified type (i.e., it has a resolvable @key where the key field
+// itself is not @external). This is used to avoid false entity-step boundaries for
+// fields whose owning subgraph also happens to provide the entity type (e.g., a root
+// query field that directly returns an entity).
+func (sg *SuperGraphV2) CanSubGraphResolveEntity(subGraph *SubGraphV2, typeName string) bool {
+	entity, exists := subGraph.GetEntity(typeName)
+	if !exists || !entity.IsResolvable() {
+		return false
+	}
+	if len(entity.Keys) == 0 {
+		return false
+	}
+	keyFieldNames := strings.Fields(entity.Keys[0].FieldSet)
+	if len(keyFieldNames) == 0 {
+		return false
+	}
+	return sg.canResolveField(subGraph, typeName, keyFieldNames[0])
+}
+
+// IsInterfaceObjectType checks if a type is defined with @interfaceObject directive in any subgraph.
+func (sg *SuperGraphV2) IsInterfaceObjectType(typeName string) bool {
+	for _, subGraph := range sg.SubGraphs {
+		if entity, exists := subGraph.GetEntity(typeName); exists {
+			if entity.IsInterfaceObject() {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // GetFieldOwnerSubGraph returns the subgraph that owns a specific field.

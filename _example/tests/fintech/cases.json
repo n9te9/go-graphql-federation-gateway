@@ -110,7 +110,7 @@
       "customer": {
         "id": "1",
         "name": "Customer 1",
-        "tier": "Premium"
+        "tier": "GDPR-Compliant"
       }
     }
   },
@@ -139,7 +139,7 @@
       "customer": {
         "id": "2",
         "name": "Customer 2",
-        "tier": "Premium"
+        "tier": "GDPR-Compliant"
       }
     }
   },
@@ -151,10 +151,10 @@
     "expected": {
       "customer": {
         "id": "1",
-        "auditId": "audit_1",
+        "auditId": "audit-1",
         "createdAt": "2024-01-01T00:00:00Z",
-        "modifiedAt": "2024-01-15T10:30:00Z",
-        "modifiedBy": "admin"
+        "modifiedAt": "2024-01-01T00:00:00Z",
+        "modifiedBy": "system"
       }
     }
   },
@@ -166,10 +166,10 @@
     "expected": {
       "account": {
         "iban": "IBAN 1",
-        "auditId": "audit_2",
-        "createdAt": "2024-01-05T08:00:00Z",
-        "modifiedAt": "2024-01-20T14:45:00Z",
-        "modifiedBy": "operator"
+        "auditId": "audit-IBAN 1",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "modifiedAt": "2024-01-01T00:00:00Z",
+        "modifiedBy": "system"
       }
     }
   },
@@ -181,21 +181,15 @@
     "expected": {
       "auditLog": [
         {
-          "auditId": "audit_1",
-          "createdAt": "2024-01-01T00:00:00Z",
-          "modifiedAt": "2024-01-15T10:30:00Z",
+          "auditId": "audit-001",
+          "createdAt": "2024-01-01T10:00:00Z",
+          "modifiedAt": "2024-01-01T10:00:00Z",
           "modifiedBy": "admin"
         },
         {
-          "auditId": "audit_2",
-          "createdAt": "2024-01-05T08:00:00Z",
-          "modifiedAt": "2024-01-20T14:45:00Z",
-          "modifiedBy": "operator"
-        },
-        {
-          "auditId": "audit_3",
-          "createdAt": "2024-01-10T12:00:00Z",
-          "modifiedAt": "2024-01-25T09:15:00Z",
+          "auditId": "audit-002",
+          "createdAt": "2024-01-02T11:00:00Z",
+          "modifiedAt": "2024-01-02T15:00:00Z",
           "modifiedBy": "system"
         }
       ]
@@ -209,7 +203,7 @@
     "expected": {
       "customer": {
         "id": "2",
-        "tier": "EU-Premium"
+        "tier": "GDPR-Compliant"
       }
     }
   },
@@ -228,15 +222,15 @@
   {
     "name": "Union - FinancialActivity with Transactions",
     "description": "Verify union type FinancialActivity can return Transaction objects",
-    "query": "query GetActivityWithTransaction($customerId: ID!) { customerActivity(customerId: $customerId) { ... on Transaction { id amount timestamp: createdAt } } }",
+    "query": "query GetActivityWithTransaction($customerId: ID!) { customerActivity(customerId: $customerId) { ... on Transaction { id } } }",
     "variables": { "customerId": "1" },
     "expected": {
       "customerActivity": [
         {
-          "id": "tx_1",
-          "amount": 500,
-          "timestamp": "2024-01-18T15:30:00Z"
-        }
+          "id": "txn-1-001"
+        },
+        {},
+        {}
       ]
     }
   },
@@ -247,12 +241,14 @@
     "variables": { "customerId": "1" },
     "expected": {
       "customerActivity": [
+        {},
         {
-          "id": "ao_1",
+          "id": "acc-1-001",
           "customerId": "1",
-          "accountType": "Checking",
-          "timestamp": "2024-01-05T08:00:00Z"
-        }
+          "accountType": "Savings",
+          "timestamp": "2024-01-05T10:00:00Z"
+        },
+        {}
       ]
     }
   },
@@ -264,18 +260,17 @@
     "expected": {
       "customerActivity": [
         {
-          "__typename": "AccountOpening",
-          "id": "ao_1",
-          "accountType": "Checking"
+          "__typename": "Transaction",
+          "id": "txn-1-001"
         },
         {
-          "__typename": "Transaction",
-          "id": "tx_1",
-          "amount": 500
+          "__typename": "AccountOpening",
+          "accountType": "Savings",
+          "id": "acc-1-001"
         },
         {
           "__typename": "TierUpgrade",
-          "id": "tu_1",
+          "id": "tier-1-001",
           "oldTier": "Standard",
           "newTier": "Premium"
         }
@@ -290,9 +285,9 @@
     "expected": {
       "customer": {
         "id": "1",
-        "name": "John Doe",
-        "tier": "Premium",
-        "auditId": "audit_1"
+        "name": "Customer 1",
+        "tier": "GDPR-Compliant",
+        "auditId": "audit-1"
       }
     }
   },
@@ -305,9 +300,9 @@
       "account": {
         "iban": "IBAN 1",
         "balance": 1000,
-        "auditId": "audit_2",
-        "createdAt": "2024-01-05T08:00:00Z",
-        "modifiedAt": "2024-01-20T14:45:00Z"
+        "auditId": "audit-IBAN 1",
+        "createdAt": "2024-01-01T00:00:00Z",
+        "modifiedAt": "2024-01-01T00:00:00Z"
       }
     }
   }

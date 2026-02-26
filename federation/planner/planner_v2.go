@@ -385,6 +385,58 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			typeCondition := inlineFrag.TypeCondition.Name.String()
 			if typeCondition == parentType {
 				p.findAndBuildEntitySteps(inlineFrag.SelectionSet, parentStep, plan, nextStepID, typeCondition, currentPath, fragmentDefs)
+			} else if p.SuperGraph.IsInterfaceObjectType(parentType) {
+				// @interfaceObject: the inline fragment specifies a concrete type that this
+				// @interfaceObject type represents. Create an entity step to resolve the
+				// concrete type's fields from the appropriate subgraph.
+				concreteType := typeCondition
+				entityOwnerSubGraph := p.SuperGraph.GetEntityOwnerSubGraph(concreteType)
+				if entityOwnerSubGraph != nil {
+					// Use currentPath as the insertion path (concrete type is at the same level as the interface)
+					fieldPath := currentPath
+
+					// Build a unique step key for this @interfaceObject concrete type resolution
+					stepKey := fmt.Sprintf("%s:%s:%d:io:%s", entityOwnerSubGraph.Name, concreteType, parentStep.ID, strings.Join(currentPath, "."))
+
+					existingStep, exists := entityStepsByKey[stepKey]
+					if exists {
+						existingStep.SelectionSet = p.mergeSelections(existingStep.SelectionSet, inlineFrag.SelectionSet, entityOwnerSubGraph, concreteType, fragmentDefs)
+					} else {
+						// Build entity selections from the inline fragment's fields
+						entitySelections := p.buildEntityStepSelections(inlineFrag.SelectionSet, entityOwnerSubGraph, concreteType, parentStep, concreteType, fragmentDefs)
+
+						newStep := &StepV2{
+							ID:            *nextStepID,
+							SubGraph:      entityOwnerSubGraph,
+							StepType:      StepTypeEntity,
+							ParentType:    concreteType,
+							SelectionSet:  entitySelections,
+							Path:          fieldPath,
+							DependsOn:     []int{parentStep.ID},
+							InsertionPath: currentPath,
+						}
+						plan.Steps = append(plan.Steps, newStep)
+						entityStepsByKey[stepKey] = newStep
+						*nextStepID++
+
+						// Inject key fields into the parent step so entity resolution can extract representations
+						var relativePathForParent []string
+						if len(parentStep.InsertionPath) == 0 {
+							if len(currentPath) > 0 && (currentPath[0] == "Query" || currentPath[0] == "Mutation" || currentPath[0] == "Subscription") {
+								relativePathForParent = currentPath[1:]
+							} else {
+								relativePathForParent = currentPath
+							}
+						} else {
+							relativePathForParent = currentPath[len(parentStep.InsertionPath):]
+						}
+						p.injectKeyFieldsIntoParentStep(parentStep, concreteType, entityOwnerSubGraph, relativePathForParent)
+
+						// Recursively find nested boundary fields within the inline fragment's fields
+						// (e.g., Product.name → products-v2 via @override)
+						p.findAndBuildEntitySteps(inlineFrag.SelectionSet, newStep, plan, nextStepID, concreteType, currentPath, fragmentDefs)
+					}
+				}
 			}
 			// Different-type (union discriminator) inline fragments are left as-is:
 			// the subgraph returns those fields directly; no extra entity steps needed.
@@ -439,9 +491,14 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			// Case 1: Field is owned by a different subgraph
 			isBoundaryField = true
 		} else if entityOwnerSubGraph != nil && entityOwnerSubGraph.Name != parentStep.SubGraph.Name {
-			// Case 2: Field returns an entity type owned by a different subgraph
-			isBoundaryField = true
-			targetSubGraph = entityOwnerSubGraph
+			// Case 2: Field returns an entity type whose canonical owner is a different subgraph.
+			// However, if the field's own subgraph can ALSO directly resolve that entity
+			// (e.g., a root query field that directly returns an entity it owns), then no
+			// extra entity step is needed — the root step already provides the data.
+			if !p.SuperGraph.CanSubGraphResolveEntity(fieldSubGraph, fieldType) {
+				isBoundaryField = true
+				targetSubGraph = entityOwnerSubGraph
+			}
 		}
 
 		// If this field is owned by the parent step's subgraph, recursively process its children

@@ -1216,30 +1216,64 @@ func (e *ExecutorV2) pruneObject(obj interface{}, selections []ast.Selection) in
 	case map[string]interface{}:
 		result := make(map[string]interface{})
 		for _, sel := range selections {
-			field, ok := sel.(*ast.Field)
-			if !ok {
-				continue
-			}
+			switch s := sel.(type) {
+			case *ast.Field:
+				field := s
+				fieldName := field.Name.String()
+				lookupKey := fieldName
+				if field.Alias != nil {
+					lookupKey = field.Alias.String()
+				}
 
-			fieldName := field.Name.String()
-			lookupKey := fieldName
-			if field.Alias != nil {
-				lookupKey = field.Alias.String()
-			}
+				value, exists := v[fieldName]
+				if !exists && lookupKey != fieldName {
+					value, exists = v[lookupKey]
+				}
+				if !exists {
+					continue
+				}
 
-			value, exists := v[fieldName]
-			if !exists && lookupKey != fieldName {
-				value, exists = v[lookupKey]
-			}
-			if !exists {
-				continue
-			}
+				// Recursively prune child selections
+				if len(field.SelectionSet) > 0 {
+					result[lookupKey] = e.pruneObject(value, field.SelectionSet)
+				} else {
+					result[lookupKey] = value
+				}
 
-			// Recursively prune child selections
-			if len(field.SelectionSet) > 0 {
-				result[lookupKey] = e.pruneObject(value, field.SelectionSet)
-			} else {
-				result[lookupKey] = value
+			case *ast.InlineFragment:
+				// Handle inline fragments: include fields if __typename matches type condition
+				if s.TypeCondition == nil {
+					continue
+				}
+				typeCondition := s.TypeCondition.Name.String()
+				objTypeName, hasTypename := v["__typename"].(string)
+				if !hasTypename || objTypeName != typeCondition {
+					continue
+				}
+				// __typename matches: include fields from this fragment
+				for _, childSel := range s.SelectionSet {
+					childField, ok := childSel.(*ast.Field)
+					if !ok {
+						continue
+					}
+					fieldName := childField.Name.String()
+					lookupKey := fieldName
+					if childField.Alias != nil {
+						lookupKey = childField.Alias.String()
+					}
+					value, exists := v[fieldName]
+					if !exists && lookupKey != fieldName {
+						value, exists = v[lookupKey]
+					}
+					if !exists {
+						continue
+					}
+					if len(childField.SelectionSet) > 0 {
+						result[lookupKey] = e.pruneObject(value, childField.SelectionSet)
+					} else {
+						result[lookupKey] = value
+					}
+				}
 			}
 		}
 		return result

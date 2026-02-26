@@ -6,10 +6,16 @@ interface Node {
   id: ID!
 }
 
+type User @key(fields: "id") {
+  id: ID! @external
+  username: String! @external
+}
+
 type Review implements Node {
   id: ID!
   body: String!
   authorName: String!
+  author: User @provides(fields: "username")
   product: Product @provides(fields: "name price")
 }
 

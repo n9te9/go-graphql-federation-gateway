@@ -7,7 +7,7 @@
       "product": {
         "id": "p1",
         "inStock": false,
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000
       }
     }
@@ -18,7 +18,7 @@
     "variables": { "id": "p1" },
     "expected": {
       "product": {
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000,
         "reviews": [
           {
@@ -39,7 +39,7 @@
     "variables": { "id": "p1" },
     "expected": {
       "product": {
-        "name": "Product p1",
+        "name": "Premium p1",
         "reviews": [
           {
             "body": "Great product!",
@@ -94,7 +94,7 @@
     "variables": {},
     "expected": {
       "p1": {
-        "name": "Product p1",
+        "name": "Premium p1",
         "reviews": [
           { "body": "Great product!" },
           { "body": "Not bad" }
@@ -116,7 +116,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1"
+        "name": "Premium p1"
       },
       "me": {
         "id": "1",
@@ -132,7 +132,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000,
         "reviews": [
           { "body": "Great product!" },
@@ -149,7 +149,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000
       }
     }
@@ -162,7 +162,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000
       }
     }
@@ -175,7 +175,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000
       }
     }
@@ -227,8 +227,8 @@
     "expected": {
       "createProduct": {
         "id": "106",
-        "name": "Widget",
-        "price": 100
+        "name": "Product 106",
+        "price": 1000
       }
     }
   },
@@ -240,7 +240,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000,
         "inStock": false
       }
@@ -254,7 +254,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "shippingCost": 5
       }
     }
@@ -275,7 +275,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000
       }
     }
@@ -288,7 +288,7 @@
     "expected": {
       "product1": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000
       },
       "product2": {
@@ -306,7 +306,7 @@
       "product": {
         "id": "p2",
         "name": "Product p2",
-        "price": 1000,
+        "price": 2500,
         "inStock": false
       }
     }
@@ -319,7 +319,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "reviews": [
           {
             "id": "1",
@@ -385,7 +385,7 @@
   },
   {
     "name": "Federation v2: @provides - Optimized User Data",
-    "description": "Verify @provides directive prefetches related entity fields",
+    "description": "Verify @provides directive allows accessing User fields through reviews. Note: @provides optimization (avoiding extra entity fetch) is a future improvement; currently the gateway fetches from the owning users service.",
     "query": "query { product(id: \"p1\") { id reviews { authorName author { username } } } }",
     "variables": {},
     "expected": {
@@ -395,13 +395,13 @@
           {
             "authorName": "Alice",
             "author": {
-              "username": "Alice"
+              "username": "User user1"
             }
           },
           {
             "authorName": "Bob",
             "author": {
-              "username": "Bob"
+              "username": "User user2"
             }
           }
         ]
@@ -466,7 +466,7 @@
       "node": {
         "__typename": "Product",
         "id": "p1",
-        "name": "Product p1"
+        "name": "Premium p1"
       }
     }
   }

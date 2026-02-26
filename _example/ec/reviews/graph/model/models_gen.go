@@ -21,8 +21,16 @@ type Review struct {
 	ID         string   `json:"id"`
 	Body       string   `json:"body"`
 	AuthorName string   `json:"authorName"`
+	Author     *User    `json:"author,omitempty"`
 	Product    *Product `json:"product,omitempty"`
 }
 
 func (Review) IsNode()            {}
 func (this Review) GetID() string { return this.ID }
+
+type User struct {
+	ID       string `json:"id"`
+	Username string `json:"username"`
+}
+
+func (User) IsEntity() {}
