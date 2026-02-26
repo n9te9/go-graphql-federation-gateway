@@ -1,0 +1,19 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external", "@override"])
+
+type Organization @key(fields: "id") {
+  id: ID! @external
+  monthlyCost: Float! @override(from: "billing")
+  billing: BillingInfo @override(from: "billing")
+}
+
+type BillingInfo {
+  id: ID!
+  plan: String!
+  features: [String!]!
+}
+
+type Query {
+  _dummy: String
+}

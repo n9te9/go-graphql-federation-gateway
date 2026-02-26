@@ -14,10 +14,14 @@ import (
 // Account is the resolver for the account field.
 func (r *queryResolver) Account(ctx context.Context, iban string) (*model.Account, error) {
 	return &model.Account{
-		Iban:     iban,
-		ID:       "acc_" + iban,
-		Balance:  1000,
-		Customer: &model.Customer{ID: "1"},
+		Iban:       iban,
+		ID:         "acc_" + iban,
+		Balance:    1000,
+		Customer:   &model.Customer{ID: "1"},
+		AuditID:    "audit-" + iban,
+		CreatedAt:  "2024-01-01T00:00:00Z",
+		ModifiedAt: "2024-01-01T00:00:00Z",
+		ModifiedBy: "system",
 	}, nil
 }
 

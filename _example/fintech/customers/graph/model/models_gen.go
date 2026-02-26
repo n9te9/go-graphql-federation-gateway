@@ -2,11 +2,21 @@
 
 package model
 
+type Auditable struct {
+	AuditID string `json:"auditId"`
+}
+
+func (Auditable) IsEntity() {}
+
 type Customer struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-	Tier string `json:"tier"`
-	Ssn  string `json:"ssn"`
+	ID         string `json:"id"`
+	Name       string `json:"name"`
+	Tier       string `json:"tier"`
+	Ssn        string `json:"ssn"`
+	AuditID    string `json:"auditId"`
+	CreatedAt  string `json:"createdAt"`
+	ModifiedAt string `json:"modifiedAt"`
+	ModifiedBy string `json:"modifiedBy"`
 }
 
 func (Customer) IsEntity() {}

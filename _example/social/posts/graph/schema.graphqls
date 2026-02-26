@@ -6,8 +6,14 @@ type Post @key(fields: "id") {
   id: ID!
   title: String!
   content: String!
+  body: String!
   likeCount: Int! @shareable
   author: User!
+  createdAt: String!
+}
+
+extend type Content @key(fields: "id") {
+  id: ID!
 }
 
 extend type User @key(fields: "id") {

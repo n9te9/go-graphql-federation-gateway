@@ -190,5 +190,155 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Bookable Interface for Flight",
+    "description": "Verify @interfaceObject support for Flight as Bookable interface implementation",
+    "query": "query { bookable(id: \"AA100_2026-03-01\") { id name type availability } }",
+    "variables": {},
+    "expected": {
+      "bookable": {
+        "id": "AA100_2026-03-01",
+        "name": "AA100 SFO-JFK",
+        "type": "Flight",
+        "availability": 120
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Bookable Interface for Hotel",
+    "description": "Verify @interfaceObject support for Hotel as Bookable interface implementation",
+    "query": "query { bookable(id: \"hotel1_2026-03-01\") { id name type availability } }",
+    "variables": {},
+    "expected": {
+      "bookable": {
+        "id": "hotel1_2026-03-01",
+        "name": "Grand Plaza Hotel",
+        "type": "Hotel",
+        "availability": 45
+      }
+    }
+  },
+  {
+    "name": "Search Bookables",
+    "description": "Verify searching across multiple bookable types",
+    "query": "query { searchBookables(query: \"SFO\") { id name type price availability } }",
+    "variables": {},
+    "expected": {
+      "searchBookables": [
+        {
+          "id": "AA100_2026-03-01",
+          "name": "AA100 SFO-JFK",
+          "type": "Flight",
+          "price": 500,
+          "availability": 120
+        }
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @override - Flight Dynamic Pricing",
+    "description": "Verify @override directive overrides price field based on dynamic pricing",
+    "query": "query { flight(number: \"AA100\", departureDate: \"2026-03-01\") { number price dynamicPrice } }",
+    "variables": {},
+    "expected": {
+      "flight": {
+        "number": "AA100",
+        "price": 500,
+        "dynamicPrice": 575
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @override - Hotel Room Rate Override",
+    "description": "Verify @override applies to hotel pricing",
+    "query": "query { hotel(id: \"hotel1\") { id name baseRate dynamicRate discount } }",
+    "variables": {},
+    "expected": {
+      "hotel": {
+        "id": "hotel1",
+        "name": "Grand Plaza Hotel",
+        "baseRate": 200,
+        "dynamicRate": 180,
+        "discount": 10
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Travel Option with Flight Result",
+    "description": "Verify union type resolution for flight travel options",
+    "query": "query { travelOption(id: \"opt1\") { ... on FlightOption { id itinerary stops duration } } }",
+    "variables": {},
+    "expected": {
+      "travelOption": {
+        "id": "opt1",
+        "itinerary": "AA100",
+        "stops": 0,
+        "duration": 300
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Travel Option with Hotel Result",
+    "description": "Verify union type resolution for hotel travel options",
+    "query": "query { travelOption(id: \"opt2\") { ... on HotelOption { id property nights totalCost } } }",
+    "variables": {},
+    "expected": {
+      "travelOption": {
+        "id": "opt2",
+        "property": "Grand Plaza Hotel",
+        "nights": 3,
+        "totalCost": 540
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @provides - Booking with Flight Details",
+    "description": "Verify @provides directive resolves flight details from parent context",
+    "query": "query { booking(id: \"booking1\") { id status flight { number origin destination } flightInfo } }",
+    "variables": {},
+    "expected": {
+      "booking": {
+        "id": "booking1",
+        "status": "confirmed",
+        "flight": {
+          "number": "AA100",
+          "origin": "SFO",
+          "destination": "JFK"
+        },
+        "flightInfo": "AA100: SFO to JFK"
+      }
+    }
+  },
+  {
+    "name": "Complex Travel Itinerary Query",
+    "description": "Verify complex query combining flights, hotels, and bookings",
+    "query": "query { itinerary(id: \"itin1\") { id startDate options { id type ... on FlightOption { itinerary } ... on HotelOption { property nights } } bookings { id status } } }",
+    "variables": {},
+    "expected": {
+      "itinerary": {
+        "id": "itin1",
+        "startDate": "2026-03-01",
+        "options": [
+          {
+            "id": "opt1",
+            "type": "FlightOption",
+            "itinerary": "AA100"
+          },
+          {
+            "id": "opt2",
+            "type": "HotelOption",
+            "property": "Grand Plaza Hotel",
+            "nights": 3
+          }
+        ],
+        "bookings": [
+          {
+            "id": "booking1",
+            "status": "confirmed"
+          }
+        ]
+      }
+    }
   }
 ]

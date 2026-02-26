@@ -1,0 +1,28 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: [])
+
+union BillingEvent = Invoice | PaymentReceived | SubscriptionChange
+
+type Invoice {
+  id: ID!
+  amount: Float!
+  dueDate: String!
+}
+
+type PaymentReceived {
+  id: ID!
+  amount: Float!
+  timestamp: String!
+}
+
+type SubscriptionChange {
+  id: ID!
+  oldPlan: String!
+  newPlan: String!
+  timestamp: String!
+}
+
+type Query {
+  organizationEvents(orgId: ID!): [BillingEvent!]!
+}

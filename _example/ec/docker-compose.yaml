@@ -33,10 +33,34 @@ services:
       - PORT=8080
   inventory:
     build:
-      context: ./inventory 
+      context: ./inventory
       dockerfile: Dockerfile
     ports:
       - "8104:8080"
+    environment:
+      - PORT=8080
+  catalog:
+    build:
+      context: ./catalog
+      dockerfile: Dockerfile
+    ports:
+      - "8105:8080"
+    environment:
+      - PORT=8080
+  products-v2:
+    build:
+      context: ./products-v2
+      dockerfile: Dockerfile
+    ports:
+      - "8106:8080"
+    environment:
+      - PORT=8080
+  search:
+    build:
+      context: ./search
+      dockerfile: Dockerfile
+    ports:
+      - "8107:8080"
     environment:
       - PORT=8080
   jaeger:

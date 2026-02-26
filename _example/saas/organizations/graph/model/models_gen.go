@@ -7,9 +7,17 @@ type Organization struct {
 	Name          string `json:"name"`
 	EmployeeCount int    `json:"employeeCount"`
 	TaxID         string `json:"taxId"`
+	Owner         string `json:"owner"`
+	CreatedAt     string `json:"createdAt"`
 }
 
 func (Organization) IsEntity() {}
 
 type Query struct {
 }
+
+type Resource struct {
+	ID string `json:"id"`
+}
+
+func (Resource) IsEntity() {}

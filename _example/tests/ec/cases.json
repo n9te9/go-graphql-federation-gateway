@@ -340,5 +340,134 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Node Query Product",
+    "description": "Query Product through Node interface",
+    "query": "query { node(id: \"p1\") { id } }",
+    "variables": {},
+    "expected": { "node": { "id": "p1" } }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Node Query User",
+    "description": "Query User through Node interface",
+    "query": "query { node(id: \"user1\") { id } }",
+    "variables": {},
+    "expected": { "node": { "id": "user1" } }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Batch Nodes Query",
+    "description": "Query multiple nodes by ID",
+    "query": "query { nodes(ids: [\"p1\", \"user1\"]) { id } }",
+    "variables": {},
+    "expected": { "nodes": [{ "id": "p1" }, { "id": "user1" }] }
+  },
+  {
+    "name": "Federation v2: @override - Product Name from V2",
+    "description": "Product name comes from products-v2 service",
+    "query": "query { product(id: \"p1\") { id name description } }",
+    "variables": {},
+    "expected": { "product": { "id": "p1", "name": "Premium p1", "description": "Enhanced product description for p1" } }
+  },
+  {
+    "name": "Federation Feature: Union Types - Search Products",
+    "description": "Search returns Product union members",
+    "query": "query { search(query: \"product\") { ... on Product { id name } } }",
+    "variables": {},
+    "expected": { "search": [{ "id": "p1", "name": "Product p1" }] }
+  },
+  {
+    "name": "Federation Feature: Union Types - Mixed Search Results",
+    "description": "Search returns mixed union types",
+    "query": "query { search(query: \"alice\") { ... on User { id username } ... on Product { id name } } }",
+    "variables": {},
+    "expected": { "search": [{ "id": "user1", "username": "Alice" }] }
+  },
+  {
+    "name": "Federation v2: @provides - Optimized User Data",
+    "description": "Verify @provides directive prefetches related entity fields",
+    "query": "query { product(id: \"p1\") { id reviews { authorName author { username } } } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "reviews": [
+          {
+            "authorName": "Alice",
+            "author": {
+              "username": "Alice"
+            }
+          },
+          {
+            "authorName": "Bob",
+            "author": {
+              "username": "Bob"
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @override - Price Field Override",
+    "description": "Product price can be overridden in products-v2 service",
+    "query": "query { product(id: \"p2\") { id name price } }",
+    "variables": {},
+    "expected": { "product": { "id": "p2", "name": "Product p2", "price": 2500 } }
+  },
+  {
+    "name": "Federation v2: @override - Multiple Field Override",
+    "description": "Multiple fields can be overridden from products-v2",
+    "query": "query { product(id: \"p1\") { id name price description inStock } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Premium p1",
+        "price": 1000,
+        "description": "Enhanced product description for p1",
+        "inStock": false
+      }
+    }
+  },
+  {
+    "name": "Federation Feature: Union Types - Empty Search Results",
+    "description": "Search with no matches returns empty array",
+    "query": "query { search(query: \"nonexistent\") { ... on Product { id name } ... on User { id username } } }",
+    "variables": {},
+    "expected": { "search": [] }
+  },
+  {
+    "name": "Federation Feature: Union Types - All Result Types",
+    "description": "Search returns all union type members",
+    "query": "query { search(query: \"all\") { __typename ... on Product { id name } ... on User { id username } } }",
+    "variables": {},
+    "expected": {
+      "search": [
+        {
+          "__typename": "Product",
+          "id": "p1",
+          "name": "Product p1"
+        },
+        {
+          "__typename": "User",
+          "id": "user1",
+          "username": "Alice"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Node with Typename",
+    "description": "Query Node interface with __typename field",
+    "query": "query { node(id: \"p1\") { __typename id ... on Product { name } } }",
+    "variables": {},
+    "expected": {
+      "node": {
+        "__typename": "Product",
+        "id": "p1",
+        "name": "Product p1"
+      }
+    }
   }
 ]

@@ -1,0 +1,10 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@override"])
+
+type Product @key(fields: "id") {
+  id: ID!
+  name: String! @override(from: "products")
+  price: Int! @override(from: "products")
+  description: String!
+}

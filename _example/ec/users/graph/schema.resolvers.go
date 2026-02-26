@@ -32,13 +32,20 @@ func (r *queryResolver) UserByEmail(ctx context.Context, email string) (*model.U
 	return &model.User{ID: "user_id_" + email, Username: username, Email: email}, nil
 }
 
-// Node is the resolver for the node field.
-func (r *queryResolver) Node(ctx context.Context, id string) (model.Node, error) {
-	// Return a User as Node interface implementation
-	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com"}, nil
-}
-
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
 type queryResolver struct{ *Resolver }
+
+// !!! WARNING !!!
+// The code below was going to be deleted when updating resolvers. It has been copied here so you have
+// one last chance to move it out of harms way if you want. There are two reasons this happens:
+//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
+//    it when you're done.
+//  - You have helper methods in this file. Move them out to keep these resolver files clean.
+/*
+	func (r *queryResolver) Node(ctx context.Context, id string) (model.Node, error) {
+	// Return a User as Node interface implementation
+	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com"}, nil
+}
+*/

@@ -172,6 +172,25 @@ func (ec *executionContext) resolveEntity(
 
 			return entity, nil
 		}
+	case "Resource":
+		resolverName, err := entityResolverNameForResource(ctx, rep)
+		if err != nil {
+			return nil, fmt.Errorf(`finding resolver for Entity "Resource": %w`, err)
+		}
+		switch resolverName {
+
+		case "findResourceByID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["id"])
+			if err != nil {
+				return nil, fmt.Errorf(`unmarshalling param 0 for findResourceByID(): %w`, err)
+			}
+			entity, err := ec.resolvers.Entity().FindResourceByID(ctx, id0)
+			if err != nil {
+				return nil, fmt.Errorf(`resolving Entity "Resource": %w`, err)
+			}
+
+			return entity, nil
+		}
 
 	}
 	return nil, fmt.Errorf("%w: %s", ErrUnknownType, typeName)
@@ -230,5 +249,40 @@ func entityResolverNameForOrganization(ctx context.Context, rep EntityRepresenta
 		return "findOrganizationByID", nil
 	}
 	return "", fmt.Errorf("%w for Organization due to %v", ErrTypeNotFound,
+		errors.Join(entityResolverErrs...).Error())
+}
+
+func entityResolverNameForResource(ctx context.Context, rep EntityRepresentation) (string, error) {
+	// we collect errors because a later entity resolver may work fine
+	// when an entity has multiple keys
+	entityResolverErrs := []error{}
+	for {
+		var (
+			m   EntityRepresentation
+			val any
+			ok  bool
+		)
+		_ = val
+		// if all of the KeyFields values for this resolver are null,
+		// we shouldn't use use it
+		allNull := true
+		m = rep
+		val, ok = m["id"]
+		if !ok {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to missing Key Field \"id\" for Resource", ErrTypeNotFound))
+			break
+		}
+		if allNull {
+			allNull = val == nil
+		}
+		if allNull {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to all null value KeyFields for Resource", ErrTypeNotFound))
+			break
+		}
+		return "findResourceByID", nil
+	}
+	return "", fmt.Errorf("%w for Resource due to %v", ErrTypeNotFound,
 		errors.Join(entityResolverErrs...).Error())
 }

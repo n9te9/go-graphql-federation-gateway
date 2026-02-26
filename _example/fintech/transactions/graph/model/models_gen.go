@@ -11,12 +11,22 @@ type Account struct {
 
 func (Account) IsEntity() {}
 
+type Auditable struct {
+	AuditID string `json:"auditId"`
+}
+
+func (Auditable) IsEntity() {}
+
 type Query struct {
 }
 
 type Transaction struct {
-	ID     string `json:"id"`
-	Amount int    `json:"amount"`
+	ID         string `json:"id"`
+	Amount     int    `json:"amount"`
+	AuditID    string `json:"auditId"`
+	CreatedAt  string `json:"createdAt"`
+	ModifiedAt string `json:"modifiedAt"`
+	ModifiedBy string `json:"modifiedBy"`
 }
 
 func (Transaction) IsEntity() {}

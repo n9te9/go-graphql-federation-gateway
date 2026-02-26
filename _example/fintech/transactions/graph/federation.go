@@ -176,6 +176,25 @@ func (ec *executionContext) resolveEntity(
 			}
 			return entity, nil
 		}
+	case "Auditable":
+		resolverName, err := entityResolverNameForAuditable(ctx, rep)
+		if err != nil {
+			return nil, fmt.Errorf(`finding resolver for Entity "Auditable": %w`, err)
+		}
+		switch resolverName {
+
+		case "findAuditableByAuditID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["auditId"])
+			if err != nil {
+				return nil, fmt.Errorf(`unmarshalling param 0 for findAuditableByAuditID(): %w`, err)
+			}
+			entity, err := ec.resolvers.Entity().FindAuditableByAuditID(ctx, id0)
+			if err != nil {
+				return nil, fmt.Errorf(`resolving Entity "Auditable": %w`, err)
+			}
+
+			return entity, nil
+		}
 	case "Transaction":
 		resolverName, err := entityResolverNameForTransaction(ctx, rep)
 		if err != nil {
@@ -189,6 +208,17 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`unmarshalling param 0 for findTransactionByID(): %w`, err)
 			}
 			entity, err := ec.resolvers.Entity().FindTransactionByID(ctx, id0)
+			if err != nil {
+				return nil, fmt.Errorf(`resolving Entity "Transaction": %w`, err)
+			}
+
+			return entity, nil
+		case "findTransactionByAuditID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["auditId"])
+			if err != nil {
+				return nil, fmt.Errorf(`unmarshalling param 0 for findTransactionByAuditID(): %w`, err)
+			}
+			entity, err := ec.resolvers.Entity().FindTransactionByAuditID(ctx, id0)
 			if err != nil {
 				return nil, fmt.Errorf(`resolving Entity "Transaction": %w`, err)
 			}
@@ -256,6 +286,41 @@ func entityResolverNameForAccount(ctx context.Context, rep EntityRepresentation)
 		errors.Join(entityResolverErrs...).Error())
 }
 
+func entityResolverNameForAuditable(ctx context.Context, rep EntityRepresentation) (string, error) {
+	// we collect errors because a later entity resolver may work fine
+	// when an entity has multiple keys
+	entityResolverErrs := []error{}
+	for {
+		var (
+			m   EntityRepresentation
+			val any
+			ok  bool
+		)
+		_ = val
+		// if all of the KeyFields values for this resolver are null,
+		// we shouldn't use use it
+		allNull := true
+		m = rep
+		val, ok = m["auditId"]
+		if !ok {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to missing Key Field \"auditId\" for Auditable", ErrTypeNotFound))
+			break
+		}
+		if allNull {
+			allNull = val == nil
+		}
+		if allNull {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to all null value KeyFields for Auditable", ErrTypeNotFound))
+			break
+		}
+		return "findAuditableByAuditID", nil
+	}
+	return "", fmt.Errorf("%w for Auditable due to %v", ErrTypeNotFound,
+		errors.Join(entityResolverErrs...).Error())
+}
+
 func entityResolverNameForTransaction(ctx context.Context, rep EntityRepresentation) (string, error) {
 	// we collect errors because a later entity resolver may work fine
 	// when an entity has multiple keys
@@ -286,6 +351,33 @@ func entityResolverNameForTransaction(ctx context.Context, rep EntityRepresentat
 			break
 		}
 		return "findTransactionByID", nil
+	}
+	for {
+		var (
+			m   EntityRepresentation
+			val any
+			ok  bool
+		)
+		_ = val
+		// if all of the KeyFields values for this resolver are null,
+		// we shouldn't use use it
+		allNull := true
+		m = rep
+		val, ok = m["auditId"]
+		if !ok {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to missing Key Field \"auditId\" for Transaction", ErrTypeNotFound))
+			break
+		}
+		if allNull {
+			allNull = val == nil
+		}
+		if allNull {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to all null value KeyFields for Transaction", ErrTypeNotFound))
+			break
+		}
+		return "findTransactionByAuditID", nil
 	}
 	return "", fmt.Errorf("%w for Transaction due to %v", ErrTypeNotFound,
 		errors.Join(entityResolverErrs...).Error())

@@ -49,10 +49,18 @@ type DirectiveRoot struct {
 
 type ComplexityRoot struct {
 	Account struct {
-		Balance  func(childComplexity int) int
-		Customer func(childComplexity int) int
-		ID       func(childComplexity int) int
-		Iban     func(childComplexity int) int
+		AuditID    func(childComplexity int) int
+		Balance    func(childComplexity int) int
+		CreatedAt  func(childComplexity int) int
+		Customer   func(childComplexity int) int
+		ID         func(childComplexity int) int
+		Iban       func(childComplexity int) int
+		ModifiedAt func(childComplexity int) int
+		ModifiedBy func(childComplexity int) int
+	}
+
+	Auditable struct {
+		AuditID func(childComplexity int) int
 	}
 
 	Customer struct {
@@ -62,8 +70,10 @@ type ComplexityRoot struct {
 	}
 
 	Entity struct {
-		FindAccountByIban func(childComplexity int, iban string) int
-		FindCustomerByID  func(childComplexity int, id string) int
+		FindAccountByAuditID   func(childComplexity int, auditID string) int
+		FindAccountByIban      func(childComplexity int, iban string) int
+		FindAuditableByAuditID func(childComplexity int, auditID string) int
+		FindCustomerByID       func(childComplexity int, id string) int
 	}
 
 	Query struct {
@@ -79,6 +89,8 @@ type ComplexityRoot struct {
 
 type EntityResolver interface {
 	FindAccountByIban(ctx context.Context, iban string) (*model.Account, error)
+	FindAccountByAuditID(ctx context.Context, auditID string) (*model.Account, error)
+	FindAuditableByAuditID(ctx context.Context, auditID string) (*model.Auditable, error)
 	FindCustomerByID(ctx context.Context, id string) (*model.Customer, error)
 }
 type QueryResolver interface {
@@ -104,12 +116,24 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	_ = ec
 	switch typeName + "." + field {
 
+	case "Account.auditId":
+		if e.complexity.Account.AuditID == nil {
+			break
+		}
+
+		return e.complexity.Account.AuditID(childComplexity), true
 	case "Account.balance":
 		if e.complexity.Account.Balance == nil {
 			break
 		}
 
 		return e.complexity.Account.Balance(childComplexity), true
+	case "Account.createdAt":
+		if e.complexity.Account.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.Account.CreatedAt(childComplexity), true
 	case "Account.customer":
 		if e.complexity.Account.Customer == nil {
 			break
@@ -128,6 +152,25 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Account.Iban(childComplexity), true
+	case "Account.modifiedAt":
+		if e.complexity.Account.ModifiedAt == nil {
+			break
+		}
+
+		return e.complexity.Account.ModifiedAt(childComplexity), true
+	case "Account.modifiedBy":
+		if e.complexity.Account.ModifiedBy == nil {
+			break
+		}
+
+		return e.complexity.Account.ModifiedBy(childComplexity), true
+
+	case "Auditable.auditId":
+		if e.complexity.Auditable.AuditID == nil {
+			break
+		}
+
+		return e.complexity.Auditable.AuditID(childComplexity), true
 
 	case "Customer.accounts":
 		if e.complexity.Customer.Accounts == nil {
@@ -148,6 +191,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Customer.Tier(childComplexity), true
 
+	case "Entity.findAccountByAuditID":
+		if e.complexity.Entity.FindAccountByAuditID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findAccountByAuditID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindAccountByAuditID(childComplexity, args["auditID"].(string)), true
 	case "Entity.findAccountByIban":
 		if e.complexity.Entity.FindAccountByIban == nil {
 			break
@@ -159,6 +213,17 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Entity.FindAccountByIban(childComplexity, args["iban"].(string)), true
+	case "Entity.findAuditableByAuditID":
+		if e.complexity.Entity.FindAuditableByAuditID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findAuditableByAuditID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindAuditableByAuditID(childComplexity, args["auditID"].(string)), true
 	case "Entity.findCustomerByID":
 		if e.complexity.Entity.FindCustomerByID == nil {
 			break
@@ -361,11 +426,13 @@ var sources = []*ast.Source{
 `, BuiltIn: true},
 	{Name: "../federation/entity.graphql", Input: `
 # a union of all types that use the @key directive
-union _Entity = Account | Customer
+union _Entity = Account | Auditable | Customer
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
 	findAccountByIban(iban: ID!,): Account!
+	findAccountByAuditID(auditID: ID!,): Account!
+	findAuditableByAuditID(auditID: ID!,): Auditable!
 	findCustomerByID(id: ID!,): Customer!
 }
 
@@ -385,6 +452,17 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 
 // region    ***************************** args.gotpl *****************************
 
+func (ec *executionContext) field_Entity_findAccountByAuditID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "auditID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["auditID"] = arg0
+	return args, nil
+}
+
 func (ec *executionContext) field_Entity_findAccountByIban_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
 	args := map[string]any{}
@@ -393,6 +471,17 @@ func (ec *executionContext) field_Entity_findAccountByIban_args(ctx context.Cont
 		return nil, err
 	}
 	args["iban"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Entity_findAuditableByAuditID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "auditID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["auditID"] = arg0
 	return args, nil
 }
 
@@ -616,6 +705,151 @@ func (ec *executionContext) fieldContext_Account_customer(_ context.Context, fie
 	return fc, nil
 }
 
+func (ec *executionContext) _Account_auditId(ctx context.Context, field graphql.CollectedField, obj *model.Account) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Account_auditId,
+		func(ctx context.Context) (any, error) {
+			return obj.AuditID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Account_auditId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Account",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Account_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Account) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Account_createdAt,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Account_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Account",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Account_modifiedAt(ctx context.Context, field graphql.CollectedField, obj *model.Account) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Account_modifiedAt,
+		func(ctx context.Context) (any, error) {
+			return obj.ModifiedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Account_modifiedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Account",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Account_modifiedBy(ctx context.Context, field graphql.CollectedField, obj *model.Account) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Account_modifiedBy,
+		func(ctx context.Context) (any, error) {
+			return obj.ModifiedBy, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Account_modifiedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Account",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Auditable_auditId(ctx context.Context, field graphql.CollectedField, obj *model.Auditable) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Auditable_auditId,
+		func(ctx context.Context) (any, error) {
+			return obj.AuditID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Auditable_auditId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Auditable",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Customer_id(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -706,6 +940,14 @@ func (ec *executionContext) fieldContext_Customer_accounts(_ context.Context, fi
 				return ec.fieldContext_Account_balance(ctx, field)
 			case "customer":
 				return ec.fieldContext_Account_customer(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Account_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Account_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Account_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Account_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Account", field.Name)
 		},
@@ -746,6 +988,14 @@ func (ec *executionContext) fieldContext_Entity_findAccountByIban(ctx context.Co
 				return ec.fieldContext_Account_balance(ctx, field)
 			case "customer":
 				return ec.fieldContext_Account_customer(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Account_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Account_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Account_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Account_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Account", field.Name)
 		},
@@ -758,6 +1008,110 @@ func (ec *executionContext) fieldContext_Entity_findAccountByIban(ctx context.Co
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Entity_findAccountByIban_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findAccountByAuditID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findAccountByAuditID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindAccountByAuditID(ctx, fc.Args["auditID"].(string))
+		},
+		nil,
+		ec.marshalNAccount2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAccount,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findAccountByAuditID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "iban":
+				return ec.fieldContext_Account_iban(ctx, field)
+			case "id":
+				return ec.fieldContext_Account_id(ctx, field)
+			case "balance":
+				return ec.fieldContext_Account_balance(ctx, field)
+			case "customer":
+				return ec.fieldContext_Account_customer(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Account_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Account_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Account_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Account_modifiedBy(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Account", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findAccountByAuditID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findAuditableByAuditID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findAuditableByAuditID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindAuditableByAuditID(ctx, fc.Args["auditID"].(string))
+		},
+		nil,
+		ec.marshalNAuditable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAuditable,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findAuditableByAuditID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "auditId":
+				return ec.fieldContext_Auditable_auditId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Auditable", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findAuditableByAuditID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -846,6 +1200,14 @@ func (ec *executionContext) fieldContext_Query_account(ctx context.Context, fiel
 				return ec.fieldContext_Account_balance(ctx, field)
 			case "customer":
 				return ec.fieldContext_Account_customer(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Account_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Account_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Account_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Account_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Account", field.Name)
 		},
@@ -2536,6 +2898,13 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 			return graphql.Null
 		}
 		return ec._Customer(ctx, sel, obj)
+	case model.Auditable:
+		return ec._Auditable(ctx, sel, &obj)
+	case *model.Auditable:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Auditable(ctx, sel, obj)
 	case model.Account:
 		return ec._Account(ctx, sel, &obj)
 	case *model.Account:
@@ -2584,6 +2953,65 @@ func (ec *executionContext) _Account(ctx context.Context, sel ast.SelectionSet, 
 			}
 		case "customer":
 			out.Values[i] = ec._Account_customer(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "auditId":
+			out.Values[i] = ec._Account_auditId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._Account_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "modifiedAt":
+			out.Values[i] = ec._Account_modifiedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "modifiedBy":
+			out.Values[i] = ec._Account_modifiedBy(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var auditableImplementors = []string{"Auditable", "_Entity"}
+
+func (ec *executionContext) _Auditable(ctx context.Context, sel ast.SelectionSet, obj *model.Auditable) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, auditableImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Auditable")
+		case "auditId":
+			out.Values[i] = ec._Auditable_auditId(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -2688,6 +3116,50 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 					}
 				}()
 				res = ec._Entity_findAccountByIban(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findAccountByAuditID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findAccountByAuditID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findAuditableByAuditID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findAuditableByAuditID(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -3285,6 +3757,20 @@ func (ec *executionContext) marshalNAccount2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraph
 		return graphql.Null
 	}
 	return ec._Account(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNAuditable2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAuditable(ctx context.Context, sel ast.SelectionSet, v model.Auditable) graphql.Marshaler {
+	return ec._Auditable(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAuditable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋaccountsᚋgraphᚋmodelᚐAuditable(ctx context.Context, sel ast.SelectionSet, v *model.Auditable) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Auditable(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {

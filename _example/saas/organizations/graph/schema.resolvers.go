@@ -20,6 +20,8 @@ func (r *queryResolver) Organization(ctx context.Context, id string) (*model.Org
 			Name:          "Acme Corp",
 			EmployeeCount: 50,
 			TaxID:         "TAX-" + id,
+			Owner:         "admin@acme.com",
+			CreatedAt:     "2024-01-01T00:00:00Z",
 		}, nil
 	}
 	return &model.Organization{
@@ -27,6 +29,8 @@ func (r *queryResolver) Organization(ctx context.Context, id string) (*model.Org
 		Name:          "Org " + id,
 		EmployeeCount: 10,
 		TaxID:         "TAX-" + id,
+		Owner:         "owner@org.com",
+		CreatedAt:     "2024-01-01T00:00:00Z",
 	}, nil
 }
 

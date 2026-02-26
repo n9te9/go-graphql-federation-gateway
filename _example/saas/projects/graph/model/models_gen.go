@@ -3,7 +3,9 @@
 package model
 
 type Organization struct {
-	ID string `json:"id"`
+	ID            string `json:"id"`
+	Name          string `json:"name"`
+	EmployeeCount int    `json:"employeeCount"`
 }
 
 func (Organization) IsEntity() {}
@@ -12,9 +14,17 @@ type Project struct {
 	ID           string        `json:"id"`
 	Name         string        `json:"name"`
 	Organization *Organization `json:"organization"`
+	Owner        string        `json:"owner"`
+	CreatedAt    string        `json:"createdAt"`
 }
 
 func (Project) IsEntity() {}
 
 type Query struct {
 }
+
+type Resource struct {
+	ID string `json:"id"`
+}
+
+func (Resource) IsEntity() {}

@@ -7,9 +7,15 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/social/posts/graph/model"
 )
+
+// FindContentByID is the resolver for the findContentByID field.
+func (r *entityResolver) FindContentByID(ctx context.Context, id string) (*model.Content, error) {
+	panic(fmt.Errorf("not implemented: FindContentByID - findContentByID"))
+}
 
 // FindPostByID is the resolver for the findPostByID field.
 func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Post, error) {
@@ -18,16 +24,20 @@ func (r *entityResolver) FindPostByID(ctx context.Context, id string) (*model.Po
 			ID:        id,
 			Title:     "My First Post",
 			Content:   "This is my first post",
+			Body:      "This is my first post",
 			LikeCount: 100,
 			Author:    &model.User{ID: "user1"},
+			CreatedAt: "2024-01-01T00:00:00Z",
 		}, nil
 	}
 	return &model.Post{
 		ID:        id,
 		Title:     "Post " + id,
 		Content:   "Content " + id,
+		Body:      "Content " + id,
 		LikeCount: 10,
 		Author:    &model.User{ID: "unknown"},
+		CreatedAt: "2024-01-01T00:00:00Z",
 	}, nil
 }
 
@@ -42,8 +52,10 @@ func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.Us
 					ID:        "post1",
 					Title:     "My First Post",
 					Content:   "This is my first post",
+					Body:      "This is my first post",
 					LikeCount: 100,
 					Author:    &model.User{ID: "user1"},
+					CreatedAt: "2024-01-01T00:00:00Z",
 				},
 			},
 		}, nil

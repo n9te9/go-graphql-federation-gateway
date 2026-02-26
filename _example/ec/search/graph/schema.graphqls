@@ -1,0 +1,23 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external"])
+
+union SearchResult = Product | User | Review
+
+type Query {
+  search(query: String!): [SearchResult!]!
+}
+
+extend type Product @key(fields: "id") {
+  id: ID! @external
+  name: String! @external
+}
+
+extend type User @key(fields: "id") {
+  id: ID! @external
+  username: String! @external
+}
+
+extend type Review @key(fields: "id") {
+  id: ID! @external
+}

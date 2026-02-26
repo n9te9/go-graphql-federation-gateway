@@ -241,5 +241,162 @@
         ]
       }
     }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Content Interface for Post",
+    "description": "Verify @interfaceObject support for Post as Content interface implementation",
+    "query": "query { contentItem(id: \"post1\") { id title contentType createdAt } }",
+    "variables": {},
+    "expected": {
+      "contentItem": {
+        "id": "post1",
+        "title": "My First Post",
+        "contentType": "Post",
+        "createdAt": "2026-01-15"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Content Interface for Comment",
+    "description": "Verify @interfaceObject support for Comment as Content interface implementation",
+    "query": "query { contentItem(id: \"comment1\") { id body contentType createdAt } }",
+    "variables": {},
+    "expected": {
+      "contentItem": {
+        "id": "comment1",
+        "body": "Great post!",
+        "contentType": "Comment",
+        "createdAt": "2026-01-15"
+      }
+    }
+  },
+  {
+    "name": "Feed Query",
+    "description": "Verify feed query with multiple content types",
+    "query": "query { feed { id contentType ... on Post { title } ... on Comment { body } } }",
+    "variables": {},
+    "expected": {
+      "feed": [
+        {
+          "id": "post1",
+          "contentType": "Post",
+          "title": "My First Post"
+        },
+        {
+          "id": "comment1",
+          "contentType": "Comment",
+          "body": "Great post!"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @override - Post Moderation Status Override",
+    "description": "Verify @override directive overrides post moderation fields",
+    "query": "query { post(id: \"post1\") { id title moderationStatus isApproved } }",
+    "variables": {},
+    "expected": {
+      "post": {
+        "id": "post1",
+        "title": "My First Post",
+        "moderationStatus": "approved",
+        "isApproved": true
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @override - Comment Moderation Override",
+    "description": "Verify @override applies to comments moderation as well",
+    "query": "query { post(id: \"post1\") { id comments { id body moderationStatus } } }",
+    "variables": {},
+    "expected": {
+      "post": {
+        "id": "post1",
+        "comments": [
+          {
+            "id": "comment1",
+            "body": "Great post!",
+            "moderationStatus": "approved"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Notification with Post Interaction",
+    "description": "Verify union type resolution for post interaction notifications",
+    "query": "query { notification(id: \"notif1\") { ... on PostLike { id postId likedBy } } }",
+    "variables": {},
+    "expected": {
+      "notification": {
+        "id": "notif1",
+        "postId": "post1",
+        "likedBy": "user2"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Notification with Comment Interaction",
+    "description": "Verify union type resolution for comment interaction notifications",
+    "query": "query { notification(id: \"notif2\") { ... on CommentMention { id commentId mentionedUser } } }",
+    "variables": {},
+    "expected": {
+      "notification": {
+        "id": "notif2",
+        "commentId": "comment1",
+        "mentionedUser": "user1"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @provides - Comment with Author Name",
+    "description": "Verify @provides directive resolves author name from parent context",
+    "query": "query { post(id: \"post1\") { id comments { id body author { id name } authorName } } }",
+    "variables": {},
+    "expected": {
+      "post": {
+        "id": "post1",
+        "comments": [
+          {
+            "id": "comment1",
+            "body": "Great post!",
+            "author": {
+              "id": "user2",
+              "name": "Bob"
+            },
+            "authorName": "Bob"
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Complex Feed Query with Multiple Content Types",
+    "description": "Verify complex feed query with posts, comments, and metadata",
+    "query": "query { feed { id contentType moderationStatus ... on Post { title author { name } commentCount } ... on Comment { body author { name } } } }",
+    "variables": {},
+    "expected": {
+      "feed": [
+        {
+          "id": "post1",
+          "contentType": "Post",
+          "moderationStatus": "approved",
+          "title": "My First Post",
+          "author": {
+            "name": "Alice"
+          },
+          "commentCount": 1
+        },
+        {
+          "id": "comment1",
+          "contentType": "Comment",
+          "moderationStatus": "approved",
+          "body": "Great post!",
+          "author": {
+            "name": "Bob"
+          }
+        }
+      ]
+    }
   }
 ]

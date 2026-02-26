@@ -48,13 +48,22 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	Bookable struct {
+		ID func(childComplexity int) int
+	}
+
 	Entity struct {
+		FindBookableByID                   func(childComplexity int, id string) int
+		FindFlightByID                     func(childComplexity int, id string) int
 		FindFlightByNumberAndDepartureDate func(childComplexity int, number string, departureDate string) int
 	}
 
 	Flight struct {
+		AircraftType  func(childComplexity int) int
+		Availability  func(childComplexity int) int
 		DepartureDate func(childComplexity int) int
 		Destination   func(childComplexity int) int
+		ID            func(childComplexity int) int
 		Number        func(childComplexity int) int
 		Origin        func(childComplexity int) int
 		Price         func(childComplexity int) int
@@ -72,7 +81,9 @@ type ComplexityRoot struct {
 }
 
 type EntityResolver interface {
+	FindBookableByID(ctx context.Context, id string) (*model.Bookable, error)
 	FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error)
+	FindFlightByID(ctx context.Context, id string) (*model.Flight, error)
 }
 type QueryResolver interface {
 	Flight(ctx context.Context, number string, departureDate string) (*model.Flight, error)
@@ -97,6 +108,35 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	_ = ec
 	switch typeName + "." + field {
 
+	case "Bookable.id":
+		if e.complexity.Bookable.ID == nil {
+			break
+		}
+
+		return e.complexity.Bookable.ID(childComplexity), true
+
+	case "Entity.findBookableByID":
+		if e.complexity.Entity.FindBookableByID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findBookableByID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindBookableByID(childComplexity, args["id"].(string)), true
+	case "Entity.findFlightByID":
+		if e.complexity.Entity.FindFlightByID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findFlightByID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindFlightByID(childComplexity, args["id"].(string)), true
 	case "Entity.findFlightByNumberAndDepartureDate":
 		if e.complexity.Entity.FindFlightByNumberAndDepartureDate == nil {
 			break
@@ -109,6 +149,18 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Entity.FindFlightByNumberAndDepartureDate(childComplexity, args["number"].(string), args["departureDate"].(string)), true
 
+	case "Flight.aircraftType":
+		if e.complexity.Flight.AircraftType == nil {
+			break
+		}
+
+		return e.complexity.Flight.AircraftType(childComplexity), true
+	case "Flight.availability":
+		if e.complexity.Flight.Availability == nil {
+			break
+		}
+
+		return e.complexity.Flight.Availability(childComplexity), true
 	case "Flight.departureDate":
 		if e.complexity.Flight.DepartureDate == nil {
 			break
@@ -121,6 +173,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Flight.Destination(childComplexity), true
+	case "Flight.id":
+		if e.complexity.Flight.ID == nil {
+			break
+		}
+
+		return e.complexity.Flight.ID(childComplexity), true
 	case "Flight.number":
 		if e.complexity.Flight.Number == nil {
 			break
@@ -330,11 +388,13 @@ var sources = []*ast.Source{
 `, BuiltIn: true},
 	{Name: "../federation/entity.graphql", Input: `
 # a union of all types that use the @key directive
-union _Entity = Flight
+union _Entity = Bookable | Flight
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
+	findBookableByID(id: ID!,): Bookable!
 	findFlightByNumberAndDepartureDate(number: String!,departureDate: String!,): Flight!
+	findFlightByID(id: ID!,): Flight!
 }
 
 type _Service {
@@ -352,6 +412,28 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Entity_findBookableByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Entity_findFlightByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "id", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["id"] = arg0
+	return args, nil
+}
 
 func (ec *executionContext) field_Entity_findFlightByNumberAndDepartureDate_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
@@ -459,6 +541,80 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 
 // region    **************************** field.gotpl *****************************
 
+func (ec *executionContext) _Bookable_id(ctx context.Context, field graphql.CollectedField, obj *model.Bookable) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Bookable_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Bookable_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Bookable",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findBookableByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findBookableByID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindBookableByID(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		ec.marshalNBookable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋtravelᚋflightsᚋgraphᚋmodelᚐBookable,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findBookableByID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Bookable_id(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Bookable", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findBookableByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Entity_findFlightByNumberAndDepartureDate(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -484,6 +640,8 @@ func (ec *executionContext) fieldContext_Entity_findFlightByNumberAndDepartureDa
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "id":
+				return ec.fieldContext_Flight_id(ctx, field)
 			case "number":
 				return ec.fieldContext_Flight_number(ctx, field)
 			case "departureDate":
@@ -494,6 +652,10 @@ func (ec *executionContext) fieldContext_Entity_findFlightByNumberAndDepartureDa
 				return ec.fieldContext_Flight_destination(ctx, field)
 			case "price":
 				return ec.fieldContext_Flight_price(ctx, field)
+			case "aircraftType":
+				return ec.fieldContext_Flight_aircraftType(ctx, field)
+			case "availability":
+				return ec.fieldContext_Flight_availability(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
 		},
@@ -508,6 +670,94 @@ func (ec *executionContext) fieldContext_Entity_findFlightByNumberAndDepartureDa
 	if fc.Args, err = ec.field_Entity_findFlightByNumberAndDepartureDate_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findFlightByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findFlightByID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindFlightByID(ctx, fc.Args["id"].(string))
+		},
+		nil,
+		ec.marshalNFlight2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋtravelᚋflightsᚋgraphᚋmodelᚐFlight,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findFlightByID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Flight_id(ctx, field)
+			case "number":
+				return ec.fieldContext_Flight_number(ctx, field)
+			case "departureDate":
+				return ec.fieldContext_Flight_departureDate(ctx, field)
+			case "origin":
+				return ec.fieldContext_Flight_origin(ctx, field)
+			case "destination":
+				return ec.fieldContext_Flight_destination(ctx, field)
+			case "price":
+				return ec.fieldContext_Flight_price(ctx, field)
+			case "aircraftType":
+				return ec.fieldContext_Flight_aircraftType(ctx, field)
+			case "availability":
+				return ec.fieldContext_Flight_availability(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findFlightByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Flight_id(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Flight_id,
+		func(ctx context.Context) (any, error) {
+			return obj.ID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Flight_id(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Flight",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
 	}
 	return fc, nil
 }
@@ -657,6 +907,64 @@ func (ec *executionContext) fieldContext_Flight_price(_ context.Context, field g
 	return fc, nil
 }
 
+func (ec *executionContext) _Flight_aircraftType(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Flight_aircraftType,
+		func(ctx context.Context) (any, error) {
+			return obj.AircraftType, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Flight_aircraftType(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Flight",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Flight_availability(ctx context.Context, field graphql.CollectedField, obj *model.Flight) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Flight_availability,
+		func(ctx context.Context) (any, error) {
+			return obj.Availability, nil
+		},
+		nil,
+		ec.marshalNBoolean2bool,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Flight_availability(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Flight",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type Boolean does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Query_flight(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -682,6 +990,8 @@ func (ec *executionContext) fieldContext_Query_flight(ctx context.Context, field
 		IsResolver: true,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			switch field.Name {
+			case "id":
+				return ec.fieldContext_Flight_id(ctx, field)
 			case "number":
 				return ec.fieldContext_Flight_number(ctx, field)
 			case "departureDate":
@@ -692,6 +1002,10 @@ func (ec *executionContext) fieldContext_Query_flight(ctx context.Context, field
 				return ec.fieldContext_Flight_destination(ctx, field)
 			case "price":
 				return ec.fieldContext_Flight_price(ctx, field)
+			case "aircraftType":
+				return ec.fieldContext_Flight_aircraftType(ctx, field)
+			case "availability":
+				return ec.fieldContext_Flight_availability(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Flight", field.Name)
 		},
@@ -2382,6 +2696,13 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 			return graphql.Null
 		}
 		return ec._Flight(ctx, sel, obj)
+	case model.Bookable:
+		return ec._Bookable(ctx, sel, &obj)
+	case *model.Bookable:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Bookable(ctx, sel, obj)
 	default:
 		if typedObj, ok := obj.(graphql.Marshaler); ok {
 			return typedObj
@@ -2394,6 +2715,45 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 // endregion ************************** interface.gotpl ***************************
 
 // region    **************************** object.gotpl ****************************
+
+var bookableImplementors = []string{"Bookable", "_Entity"}
+
+func (ec *executionContext) _Bookable(ctx context.Context, sel ast.SelectionSet, obj *model.Bookable) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, bookableImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Bookable")
+		case "id":
+			out.Values[i] = ec._Bookable_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
 
 var entityImplementors = []string{"Entity"}
 
@@ -2414,6 +2774,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Entity")
+		case "findBookableByID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findBookableByID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "findFlightByNumberAndDepartureDate":
 			field := field
 
@@ -2424,6 +2806,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 					}
 				}()
 				res = ec._Entity_findFlightByNumberAndDepartureDate(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findFlightByID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findFlightByID(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -2470,6 +2874,11 @@ func (ec *executionContext) _Flight(ctx context.Context, sel ast.SelectionSet, o
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Flight")
+		case "id":
+			out.Values[i] = ec._Flight_id(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "number":
 			out.Values[i] = ec._Flight_number(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -2492,6 +2901,16 @@ func (ec *executionContext) _Flight(ctx context.Context, sel ast.SelectionSet, o
 			}
 		case "price":
 			out.Values[i] = ec._Flight_price(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "aircraftType":
+			out.Values[i] = ec._Flight_aircraftType(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "availability":
+			out.Values[i] = ec._Flight_availability(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -3002,6 +3421,20 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 
 // region    ***************************** type.gotpl *****************************
 
+func (ec *executionContext) marshalNBookable2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋtravelᚋflightsᚋgraphᚋmodelᚐBookable(ctx context.Context, sel ast.SelectionSet, v model.Bookable) graphql.Marshaler {
+	return ec._Bookable(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNBookable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋtravelᚋflightsᚋgraphᚋmodelᚐBookable(ctx context.Context, sel ast.SelectionSet, v *model.Bookable) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Bookable(ctx, sel, v)
+}
+
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {
 	res, err := graphql.UnmarshalBoolean(v)
 	return res, graphql.ErrorOnPath(ctx, err)
@@ -3062,6 +3495,22 @@ func (ec *executionContext) marshalNFloat2float64(ctx context.Context, sel ast.S
 		}
 	}
 	return graphql.WrapContextMarshaler(ctx, res)
+}
+
+func (ec *executionContext) unmarshalNID2string(ctx context.Context, v any) (string, error) {
+	res, err := graphql.UnmarshalID(v)
+	return res, graphql.ErrorOnPath(ctx, err)
+}
+
+func (ec *executionContext) marshalNID2string(ctx context.Context, sel ast.SelectionSet, v string) graphql.Marshaler {
+	_ = sel
+	res := graphql.MarshalID(v)
+	if res == graphql.Null {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+	}
+	return res
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

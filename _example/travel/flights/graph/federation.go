@@ -153,6 +153,25 @@ func (ec *executionContext) resolveEntity(
 	}()
 
 	switch typeName {
+	case "Bookable":
+		resolverName, err := entityResolverNameForBookable(ctx, rep)
+		if err != nil {
+			return nil, fmt.Errorf(`finding resolver for Entity "Bookable": %w`, err)
+		}
+		switch resolverName {
+
+		case "findBookableByID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["id"])
+			if err != nil {
+				return nil, fmt.Errorf(`unmarshalling param 0 for findBookableByID(): %w`, err)
+			}
+			entity, err := ec.resolvers.Entity().FindBookableByID(ctx, id0)
+			if err != nil {
+				return nil, fmt.Errorf(`resolving Entity "Bookable": %w`, err)
+			}
+
+			return entity, nil
+		}
 	case "Flight":
 		resolverName, err := entityResolverNameForFlight(ctx, rep)
 		if err != nil {
@@ -170,6 +189,17 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`unmarshalling param 1 for findFlightByNumberAndDepartureDate(): %w`, err)
 			}
 			entity, err := ec.resolvers.Entity().FindFlightByNumberAndDepartureDate(ctx, id0, id1)
+			if err != nil {
+				return nil, fmt.Errorf(`resolving Entity "Flight": %w`, err)
+			}
+
+			return entity, nil
+		case "findFlightByID":
+			id0, err := ec.unmarshalNID2string(ctx, rep["id"])
+			if err != nil {
+				return nil, fmt.Errorf(`unmarshalling param 0 for findFlightByID(): %w`, err)
+			}
+			entity, err := ec.resolvers.Entity().FindFlightByID(ctx, id0)
 			if err != nil {
 				return nil, fmt.Errorf(`resolving Entity "Flight": %w`, err)
 			}
@@ -200,6 +230,41 @@ func (ec *executionContext) resolveManyEntities(
 	default:
 		return errors.New("unknown type: " + typeName)
 	}
+}
+
+func entityResolverNameForBookable(ctx context.Context, rep EntityRepresentation) (string, error) {
+	// we collect errors because a later entity resolver may work fine
+	// when an entity has multiple keys
+	entityResolverErrs := []error{}
+	for {
+		var (
+			m   EntityRepresentation
+			val any
+			ok  bool
+		)
+		_ = val
+		// if all of the KeyFields values for this resolver are null,
+		// we shouldn't use use it
+		allNull := true
+		m = rep
+		val, ok = m["id"]
+		if !ok {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to missing Key Field \"id\" for Bookable", ErrTypeNotFound))
+			break
+		}
+		if allNull {
+			allNull = val == nil
+		}
+		if allNull {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to all null value KeyFields for Bookable", ErrTypeNotFound))
+			break
+		}
+		return "findBookableByID", nil
+	}
+	return "", fmt.Errorf("%w for Bookable due to %v", ErrTypeNotFound,
+		errors.Join(entityResolverErrs...).Error())
 }
 
 func entityResolverNameForFlight(ctx context.Context, rep EntityRepresentation) (string, error) {
@@ -242,6 +307,33 @@ func entityResolverNameForFlight(ctx context.Context, rep EntityRepresentation) 
 			break
 		}
 		return "findFlightByNumberAndDepartureDate", nil
+	}
+	for {
+		var (
+			m   EntityRepresentation
+			val any
+			ok  bool
+		)
+		_ = val
+		// if all of the KeyFields values for this resolver are null,
+		// we shouldn't use use it
+		allNull := true
+		m = rep
+		val, ok = m["id"]
+		if !ok {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to missing Key Field \"id\" for Flight", ErrTypeNotFound))
+			break
+		}
+		if allNull {
+			allNull = val == nil
+		}
+		if allNull {
+			entityResolverErrs = append(entityResolverErrs,
+				fmt.Errorf("%w due to all null value KeyFields for Flight", ErrTypeNotFound))
+			break
+		}
+		return "findFlightByID", nil
 	}
 	return "", fmt.Errorf("%w for Flight due to %v", ErrTypeNotFound,
 		errors.Join(entityResolverErrs...).Error())

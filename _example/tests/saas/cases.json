@@ -220,5 +220,140 @@
         }
       }
     }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Organization Resource Interface",
+    "description": "Verify @interfaceObject support for Organization interface resource resolution",
+    "query": "query { organizationResource(id: \"org1\") { id name type } }",
+    "variables": {},
+    "expected": {
+      "organizationResource": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "type": "Organization"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @interfaceObject - Project Resource Interface",
+    "description": "Verify @interfaceObject support for Project interface resource resolution",
+    "query": "query { projectResource(id: \"proj1\") { id name type } }",
+    "variables": {},
+    "expected": {
+      "projectResource": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "type": "Project"
+      }
+    }
+  },
+  {
+    "name": "Resources List Query",
+    "description": "Verify listing multiple resources with @interfaceObject types",
+    "query": "query { resources { id name type } }",
+    "variables": {},
+    "expected": {
+      "resources": [
+        {
+          "id": "org1",
+          "name": "Acme Corp",
+          "type": "Organization"
+        },
+        {
+          "id": "proj1",
+          "name": "Project Alpha",
+          "type": "Project"
+        }
+      ]
+    }
+  },
+  {
+    "name": "Federation v2: @override - Billing V2 Cost Override",
+    "description": "Verify @override directive overrides monthlyCost field from parent service",
+    "query": "query { organization(id: \"org1\") { id name monthlyCost } }",
+    "variables": {},
+    "expected": {
+      "organization": {
+        "id": "org1",
+        "name": "Acme Corp",
+        "monthlyCost": 7500
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @override - Billing Features Override",
+    "description": "Verify @override directive applies to multiple fields",
+    "query": "query { billing(id: \"bill1\") { id plan features } }",
+    "variables": {},
+    "expected": {
+      "billing": {
+        "id": "bill1",
+        "plan": "Enterprise",
+        "features": ["Analytics", "Support", "Custom Integration", "SSO"]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Billing Event with Invoice",
+    "description": "Verify union type resolution for Invoice billing events",
+    "query": "query { billingEvent(id: \"evt1\") { ... on Invoice { id amount dueDate } } }",
+    "variables": {},
+    "expected": {
+      "billingEvent": {
+        "id": "inv1",
+        "amount": 5000,
+        "dueDate": "2026-03-31"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: Union - Billing Event with Payment Received",
+    "description": "Verify union type resolution for PaymentReceived billing events",
+    "query": "query { billingEvent(id: \"evt2\") { ... on PaymentReceived { id amount paidDate } } }",
+    "variables": {},
+    "expected": {
+      "billingEvent": {
+        "id": "pay1",
+        "amount": 5000,
+        "paidDate": "2026-03-20"
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @provides - Project with Organization Context",
+    "description": "Verify @provides directive resolves organization name from parent context",
+    "query": "query { project(id: \"proj1\") { id name organization { id name } orgName } }",
+    "variables": {},
+    "expected": {
+      "project": {
+        "id": "proj1",
+        "name": "Project Alpha",
+        "organization": {
+          "id": "org1",
+          "name": "Acme Corp"
+        },
+        "orgName": "Acme Corp"
+      }
+    }
+  },
+  {
+    "name": "Multi-Resource Query with Aliases",
+    "description": "Verify querying multiple resource types with aliases in one query",
+    "query": "query { org: organization(id: \"org1\") { id name } proj: project(id: \"proj1\") { id name } bill: billing(id: \"bill1\") { id plan } }",
+    "variables": {},
+    "expected": {
+      "org": {
+        "id": "org1",
+        "name": "Acme Corp"
+      },
+      "proj": {
+        "id": "proj1",
+        "name": "Project Alpha"
+      },
+      "bill": {
+        "id": "bill1",
+        "plan": "Enterprise"
+      }
+    }
   }
 ]

@@ -48,14 +48,25 @@ type DirectiveRoot struct {
 }
 
 type ComplexityRoot struct {
+	Auditable struct {
+		AuditID func(childComplexity int) int
+	}
+
 	Customer struct {
-		ID   func(childComplexity int) int
-		Name func(childComplexity int) int
-		Tier func(childComplexity int) int
+		AuditID    func(childComplexity int) int
+		CreatedAt  func(childComplexity int) int
+		ID         func(childComplexity int) int
+		ModifiedAt func(childComplexity int) int
+		ModifiedBy func(childComplexity int) int
+		Name       func(childComplexity int) int
+		Ssn        func(childComplexity int) int
+		Tier       func(childComplexity int) int
 	}
 
 	Entity struct {
-		FindCustomerByID func(childComplexity int, id string) int
+		FindAuditableByAuditID func(childComplexity int, auditID string) int
+		FindCustomerByAuditID  func(childComplexity int, auditID string) int
+		FindCustomerByID       func(childComplexity int, id string) int
 	}
 
 	Query struct {
@@ -70,7 +81,9 @@ type ComplexityRoot struct {
 }
 
 type EntityResolver interface {
+	FindAuditableByAuditID(ctx context.Context, auditID string) (*model.Auditable, error)
 	FindCustomerByID(ctx context.Context, id string) (*model.Customer, error)
+	FindCustomerByAuditID(ctx context.Context, auditID string) (*model.Customer, error)
 }
 type QueryResolver interface {
 	Customer(ctx context.Context, id string) (*model.Customer, error)
@@ -95,18 +108,55 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 	_ = ec
 	switch typeName + "." + field {
 
+	case "Auditable.auditId":
+		if e.complexity.Auditable.AuditID == nil {
+			break
+		}
+
+		return e.complexity.Auditable.AuditID(childComplexity), true
+
+	case "Customer.auditId":
+		if e.complexity.Customer.AuditID == nil {
+			break
+		}
+
+		return e.complexity.Customer.AuditID(childComplexity), true
+	case "Customer.createdAt":
+		if e.complexity.Customer.CreatedAt == nil {
+			break
+		}
+
+		return e.complexity.Customer.CreatedAt(childComplexity), true
 	case "Customer.id":
 		if e.complexity.Customer.ID == nil {
 			break
 		}
 
 		return e.complexity.Customer.ID(childComplexity), true
+	case "Customer.modifiedAt":
+		if e.complexity.Customer.ModifiedAt == nil {
+			break
+		}
+
+		return e.complexity.Customer.ModifiedAt(childComplexity), true
+	case "Customer.modifiedBy":
+		if e.complexity.Customer.ModifiedBy == nil {
+			break
+		}
+
+		return e.complexity.Customer.ModifiedBy(childComplexity), true
 	case "Customer.name":
 		if e.complexity.Customer.Name == nil {
 			break
 		}
 
 		return e.complexity.Customer.Name(childComplexity), true
+	case "Customer.ssn":
+		if e.complexity.Customer.Ssn == nil {
+			break
+		}
+
+		return e.complexity.Customer.Ssn(childComplexity), true
 	case "Customer.tier":
 		if e.complexity.Customer.Tier == nil {
 			break
@@ -114,6 +164,28 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Customer.Tier(childComplexity), true
 
+	case "Entity.findAuditableByAuditID":
+		if e.complexity.Entity.FindAuditableByAuditID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findAuditableByAuditID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindAuditableByAuditID(childComplexity, args["auditID"].(string)), true
+	case "Entity.findCustomerByAuditID":
+		if e.complexity.Entity.FindCustomerByAuditID == nil {
+			break
+		}
+
+		args, err := ec.field_Entity_findCustomerByAuditID_args(ctx, rawArgs)
+		if err != nil {
+			return 0, false
+		}
+
+		return e.complexity.Entity.FindCustomerByAuditID(childComplexity, args["auditID"].(string)), true
 	case "Entity.findCustomerByID":
 		if e.complexity.Entity.FindCustomerByID == nil {
 			break
@@ -316,11 +388,13 @@ var sources = []*ast.Source{
 `, BuiltIn: true},
 	{Name: "../federation/entity.graphql", Input: `
 # a union of all types that use the @key directive
-union _Entity = Customer
+union _Entity = Auditable | Customer
 
 # fake type to build resolver interfaces for users to implement
 type Entity {
+	findAuditableByAuditID(auditID: ID!,): Auditable!
 	findCustomerByID(id: ID!,): Customer!
+	findCustomerByAuditID(auditID: ID!,): Customer!
 }
 
 type _Service {
@@ -338,6 +412,28 @@ var parsedSchema = gqlparser.MustLoadSchema(sources...)
 // endregion ************************** generated!.gotpl **************************
 
 // region    ***************************** args.gotpl *****************************
+
+func (ec *executionContext) field_Entity_findAuditableByAuditID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "auditID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["auditID"] = arg0
+	return args, nil
+}
+
+func (ec *executionContext) field_Entity_findCustomerByAuditID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
+	var err error
+	args := map[string]any{}
+	arg0, err := graphql.ProcessArgField(ctx, rawArgs, "auditID", ec.unmarshalNID2string)
+	if err != nil {
+		return nil, err
+	}
+	args["auditID"] = arg0
+	return args, nil
+}
 
 func (ec *executionContext) field_Entity_findCustomerByID_args(ctx context.Context, rawArgs map[string]any) (map[string]any, error) {
 	var err error
@@ -435,6 +531,35 @@ func (ec *executionContext) field___Type_fields_args(ctx context.Context, rawArg
 
 // region    **************************** field.gotpl *****************************
 
+func (ec *executionContext) _Auditable_auditId(ctx context.Context, field graphql.CollectedField, obj *model.Auditable) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Auditable_auditId,
+		func(ctx context.Context) (any, error) {
+			return obj.AuditID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Auditable_auditId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Auditable",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Customer_id(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -522,6 +647,196 @@ func (ec *executionContext) fieldContext_Customer_tier(_ context.Context, field 
 	return fc, nil
 }
 
+func (ec *executionContext) _Customer_ssn(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Customer_ssn,
+		func(ctx context.Context) (any, error) {
+			return obj.Ssn, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Customer_ssn(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Customer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Customer_auditId(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Customer_auditId,
+		func(ctx context.Context) (any, error) {
+			return obj.AuditID, nil
+		},
+		nil,
+		ec.marshalNID2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Customer_auditId(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Customer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type ID does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Customer_createdAt(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Customer_createdAt,
+		func(ctx context.Context) (any, error) {
+			return obj.CreatedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Customer_createdAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Customer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Customer_modifiedAt(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Customer_modifiedAt,
+		func(ctx context.Context) (any, error) {
+			return obj.ModifiedAt, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Customer_modifiedAt(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Customer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Customer_modifiedBy(ctx context.Context, field graphql.CollectedField, obj *model.Customer) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Customer_modifiedBy,
+		func(ctx context.Context) (any, error) {
+			return obj.ModifiedBy, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Customer_modifiedBy(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Customer",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findAuditableByAuditID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findAuditableByAuditID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindAuditableByAuditID(ctx, fc.Args["auditID"].(string))
+		},
+		nil,
+		ec.marshalNAuditable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋcustomersᚋgraphᚋmodelᚐAuditable,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findAuditableByAuditID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "auditId":
+				return ec.fieldContext_Auditable_auditId(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Auditable", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findAuditableByAuditID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Entity_findCustomerByID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -553,6 +868,16 @@ func (ec *executionContext) fieldContext_Entity_findCustomerByID(ctx context.Con
 				return ec.fieldContext_Customer_name(ctx, field)
 			case "tier":
 				return ec.fieldContext_Customer_tier(ctx, field)
+			case "ssn":
+				return ec.fieldContext_Customer_ssn(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Customer_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Customer_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Customer_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Customer_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Customer", field.Name)
 		},
@@ -565,6 +890,65 @@ func (ec *executionContext) fieldContext_Entity_findCustomerByID(ctx context.Con
 	}()
 	ctx = graphql.WithFieldContext(ctx, fc)
 	if fc.Args, err = ec.field_Entity_findCustomerByID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
+		ec.Error(ctx, err)
+		return fc, err
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Entity_findCustomerByAuditID(ctx context.Context, field graphql.CollectedField) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Entity_findCustomerByAuditID,
+		func(ctx context.Context) (any, error) {
+			fc := graphql.GetFieldContext(ctx)
+			return ec.resolvers.Entity().FindCustomerByAuditID(ctx, fc.Args["auditID"].(string))
+		},
+		nil,
+		ec.marshalNCustomer2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋcustomersᚋgraphᚋmodelᚐCustomer,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Entity_findCustomerByAuditID(ctx context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Entity",
+		Field:      field,
+		IsMethod:   true,
+		IsResolver: true,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "id":
+				return ec.fieldContext_Customer_id(ctx, field)
+			case "name":
+				return ec.fieldContext_Customer_name(ctx, field)
+			case "tier":
+				return ec.fieldContext_Customer_tier(ctx, field)
+			case "ssn":
+				return ec.fieldContext_Customer_ssn(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Customer_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Customer_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Customer_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Customer_modifiedBy(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type Customer", field.Name)
+		},
+	}
+	defer func() {
+		if r := recover(); r != nil {
+			err = ec.Recover(ctx, r)
+			ec.Error(ctx, err)
+		}
+	}()
+	ctx = graphql.WithFieldContext(ctx, fc)
+	if fc.Args, err = ec.field_Entity_findCustomerByAuditID_args(ctx, field.ArgumentMap(ec.Variables)); err != nil {
 		ec.Error(ctx, err)
 		return fc, err
 	}
@@ -602,6 +986,16 @@ func (ec *executionContext) fieldContext_Query_customer(ctx context.Context, fie
 				return ec.fieldContext_Customer_name(ctx, field)
 			case "tier":
 				return ec.fieldContext_Customer_tier(ctx, field)
+			case "ssn":
+				return ec.fieldContext_Customer_ssn(ctx, field)
+			case "auditId":
+				return ec.fieldContext_Customer_auditId(ctx, field)
+			case "createdAt":
+				return ec.fieldContext_Customer_createdAt(ctx, field)
+			case "modifiedAt":
+				return ec.fieldContext_Customer_modifiedAt(ctx, field)
+			case "modifiedBy":
+				return ec.fieldContext_Customer_modifiedBy(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Customer", field.Name)
 		},
@@ -2292,6 +2686,13 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 			return graphql.Null
 		}
 		return ec._Customer(ctx, sel, obj)
+	case model.Auditable:
+		return ec._Auditable(ctx, sel, &obj)
+	case *model.Auditable:
+		if obj == nil {
+			return graphql.Null
+		}
+		return ec._Auditable(ctx, sel, obj)
 	default:
 		if typedObj, ok := obj.(graphql.Marshaler); ok {
 			return typedObj
@@ -2304,6 +2705,45 @@ func (ec *executionContext) __Entity(ctx context.Context, sel ast.SelectionSet, 
 // endregion ************************** interface.gotpl ***************************
 
 // region    **************************** object.gotpl ****************************
+
+var auditableImplementors = []string{"Auditable", "_Entity"}
+
+func (ec *executionContext) _Auditable(ctx context.Context, sel ast.SelectionSet, obj *model.Auditable) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, auditableImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("Auditable")
+		case "auditId":
+			out.Values[i] = ec._Auditable_auditId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
 
 var customerImplementors = []string{"Customer", "_Entity"}
 
@@ -2328,6 +2768,31 @@ func (ec *executionContext) _Customer(ctx context.Context, sel ast.SelectionSet,
 			}
 		case "tier":
 			out.Values[i] = ec._Customer_tier(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "ssn":
+			out.Values[i] = ec._Customer_ssn(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "auditId":
+			out.Values[i] = ec._Customer_auditId(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "createdAt":
+			out.Values[i] = ec._Customer_createdAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "modifiedAt":
+			out.Values[i] = ec._Customer_modifiedAt(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "modifiedBy":
+			out.Values[i] = ec._Customer_modifiedBy(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -2373,6 +2838,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 		switch field.Name {
 		case "__typename":
 			out.Values[i] = graphql.MarshalString("Entity")
+		case "findAuditableByAuditID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findAuditableByAuditID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
 		case "findCustomerByID":
 			field := field
 
@@ -2383,6 +2870,28 @@ func (ec *executionContext) _Entity(ctx context.Context, sel ast.SelectionSet) g
 					}
 				}()
 				res = ec._Entity_findCustomerByID(ctx, field)
+				if res == graphql.Null {
+					atomic.AddUint32(&fs.Invalids, 1)
+				}
+				return res
+			}
+
+			rrm := func(ctx context.Context) graphql.Marshaler {
+				return ec.OperationContext.RootResolverMiddleware(ctx,
+					func(ctx context.Context) graphql.Marshaler { return innerFunc(ctx, out) })
+			}
+
+			out.Concurrently(i, func(ctx context.Context) graphql.Marshaler { return rrm(innerCtx) })
+		case "findCustomerByAuditID":
+			field := field
+
+			innerFunc := func(ctx context.Context, fs *graphql.FieldSet) (res graphql.Marshaler) {
+				defer func() {
+					if r := recover(); r != nil {
+						ec.Error(ctx, ec.Recover(ctx, r))
+					}
+				}()
+				res = ec._Entity_findCustomerByAuditID(ctx, field)
 				if res == graphql.Null {
 					atomic.AddUint32(&fs.Invalids, 1)
 				}
@@ -2901,6 +3410,20 @@ func (ec *executionContext) ___Type(ctx context.Context, sel ast.SelectionSet, o
 // endregion **************************** object.gotpl ****************************
 
 // region    ***************************** type.gotpl *****************************
+
+func (ec *executionContext) marshalNAuditable2githubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋcustomersᚋgraphᚋmodelᚐAuditable(ctx context.Context, sel ast.SelectionSet, v model.Auditable) graphql.Marshaler {
+	return ec._Auditable(ctx, sel, &v)
+}
+
+func (ec *executionContext) marshalNAuditable2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋfintechᚋcustomersᚋgraphᚋmodelᚐAuditable(ctx context.Context, sel ast.SelectionSet, v *model.Auditable) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._Auditable(ctx, sel, v)
+}
 
 func (ec *executionContext) unmarshalNBoolean2bool(ctx context.Context, v any) (bool, error) {
 	res, err := graphql.UnmarshalBoolean(v)

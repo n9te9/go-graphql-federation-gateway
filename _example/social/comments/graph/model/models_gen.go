@@ -3,12 +3,19 @@
 package model
 
 type Comment struct {
-	ID     string `json:"id"`
-	Body   string `json:"body"`
-	Author *User  `json:"author"`
+	ID        string `json:"id"`
+	Body      string `json:"body"`
+	Author    *User  `json:"author"`
+	CreatedAt string `json:"createdAt"`
 }
 
 func (Comment) IsEntity() {}
+
+type Content struct {
+	ID string `json:"id"`
+}
+
+func (Content) IsEntity() {}
 
 type Post struct {
 	ID              string     `json:"id"`

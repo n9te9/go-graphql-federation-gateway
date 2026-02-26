@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/transactions/graph/model"
 )
@@ -22,17 +23,31 @@ func (r *entityResolver) FindAccountByIban(ctx context.Context, iban string) (*m
 		Iban:      iban,
 		RiskScore: riskScore,
 		Transactions: []*model.Transaction{
-			{ID: "tx_1", Amount: 100},
+			{ID: "tx_1", Amount: 100, AuditID: "audit-tx_1", CreatedAt: "2024-01-01T00:00:00Z", ModifiedAt: "2024-01-01T00:00:00Z", ModifiedBy: "system"},
 		},
 	}, nil
+}
+
+// FindAuditableByAuditID is the resolver for the findAuditableByAuditID field.
+func (r *entityResolver) FindAuditableByAuditID(ctx context.Context, auditID string) (*model.Auditable, error) {
+	panic(fmt.Errorf("not implemented: FindAuditableByAuditID - findAuditableByAuditID"))
 }
 
 // FindTransactionByID is the resolver for the findTransactionByID field.
 func (r *entityResolver) FindTransactionByID(ctx context.Context, id string) (*model.Transaction, error) {
 	return &model.Transaction{
-		ID:     id,
-		Amount: 100,
+		ID:         id,
+		Amount:     100,
+		AuditID:    "audit-" + id,
+		CreatedAt:  "2024-01-01T00:00:00Z",
+		ModifiedAt: "2024-01-01T00:00:00Z",
+		ModifiedBy: "system",
 	}, nil
+}
+
+// FindTransactionByAuditID is the resolver for the findTransactionByAuditID field.
+func (r *entityResolver) FindTransactionByAuditID(ctx context.Context, auditID string) (*model.Transaction, error) {
+	panic(fmt.Errorf("not implemented: FindTransactionByAuditID - findTransactionByAuditID"))
 }
 
 // Entity returns EntityResolver implementation.

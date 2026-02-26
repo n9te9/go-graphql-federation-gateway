@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/fintech/accounts/graph/model"
 )
@@ -19,6 +20,16 @@ func (r *entityResolver) FindAccountByIban(ctx context.Context, iban string) (*m
 		Balance:  1000,
 		Customer: &model.Customer{ID: "1"},
 	}, nil
+}
+
+// FindAccountByAuditID is the resolver for the findAccountByAuditID field.
+func (r *entityResolver) FindAccountByAuditID(ctx context.Context, auditID string) (*model.Account, error) {
+	panic(fmt.Errorf("not implemented: FindAccountByAuditID - findAccountByAuditID"))
+}
+
+// FindAuditableByAuditID is the resolver for the findAuditableByAuditID field.
+func (r *entityResolver) FindAuditableByAuditID(ctx context.Context, auditID string) (*model.Auditable, error) {
+	panic(fmt.Errorf("not implemented: FindAuditableByAuditID - findAuditableByAuditID"))
 }
 
 // FindCustomerByID is the resolver for the findCustomerByID field.

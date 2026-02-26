@@ -1,0 +1,41 @@
+extend schema
+  @link(url: "https://specs.apollo.dev/federation/v2.0",
+        import: ["@key", "@external"])
+
+union Notification = LikeNotification | CommentNotification | MentionNotification
+
+type LikeNotification {
+  id: ID!
+  post: Post!
+  likedBy: User!
+  timestamp: String!
+}
+
+type CommentNotification {
+  id: ID!
+  comment: Comment!
+  timestamp: String!
+}
+
+type MentionNotification {
+  id: ID!
+  post: Post!
+  mentionedBy: User!
+  timestamp: String!
+}
+
+extend type Post @key(fields: "id") {
+  id: ID! @external
+}
+
+extend type Comment @key(fields: "id") {
+  id: ID! @external
+}
+
+extend type User @key(fields: "id") {
+  id: ID! @external
+}
+
+type Query {
+  notifications(userId: ID!): [Notification!]!
+}

@@ -7,21 +7,36 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/travel/flights/graph/model"
 )
+
+// FindBookableByID is the resolver for the findBookableByID field.
+func (r *entityResolver) FindBookableByID(ctx context.Context, id string) (*model.Bookable, error) {
+	panic(fmt.Errorf("not implemented: FindBookableByID - findBookableByID"))
+}
 
 // FindFlightByNumberAndDepartureDate is the resolver for the findFlightByNumberAndDepartureDate field.
 func (r *entityResolver) FindFlightByNumberAndDepartureDate(ctx context.Context, number string, departureDate string) (*model.Flight, error) {
 	if number == "AA100" && departureDate == "2026-03-01" {
 		return &model.Flight{
+			ID:            "flight-" + number + "-" + departureDate,
 			Number:        number,
 			DepartureDate: departureDate,
 			Origin:        "SFO",
 			Destination:   "JFK",
+			Price:         500.0,
+			AircraftType:  "Boeing 787",
+			Availability:  true,
 		}, nil
 	}
-	return &model.Flight{Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "NRT"}, nil
+	return &model.Flight{ID: "flight-" + number + "-" + departureDate, Number: number, DepartureDate: departureDate, Origin: "HND", Destination: "NRT", Price: 300.0, AircraftType: "Airbus A320", Availability: true}, nil
+}
+
+// FindFlightByID is the resolver for the findFlightByID field.
+func (r *entityResolver) FindFlightByID(ctx context.Context, id string) (*model.Flight, error) {
+	panic(fmt.Errorf("not implemented: FindFlightByID - findFlightByID"))
 }
 
 // Entity returns EntityResolver implementation.

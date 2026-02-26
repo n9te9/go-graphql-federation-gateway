@@ -19,3 +19,18 @@ services:
   retry:
     attempts: 3
     timeout: "5s"
+- name: feed
+  host: http://host.docker.internal:8304/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: moderation
+  host: http://host.docker.internal:8305/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: notifications
+  host: http://host.docker.internal:8306/query
+  retry:
+    attempts: 3
+    timeout: "5s"

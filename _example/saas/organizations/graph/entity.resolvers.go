@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/saas/organizations/graph/model"
 )
@@ -17,6 +18,11 @@ func (r *entityResolver) FindOrganizationByID(ctx context.Context, id string) (*
 		return &model.Organization{ID: id, Name: "Acme Corp"}, nil
 	}
 	return &model.Organization{ID: id, Name: "Org " + id}, nil
+}
+
+// FindResourceByID is the resolver for the findResourceByID field.
+func (r *entityResolver) FindResourceByID(ctx context.Context, id string) (*model.Resource, error) {
+	panic(fmt.Errorf("not implemented: FindResourceByID - findResourceByID"))
 }
 
 // Entity returns EntityResolver implementation.

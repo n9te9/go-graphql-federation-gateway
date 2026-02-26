@@ -5,3 +5,35 @@ services:
   bookings:
     build: { context: ./bookings, dockerfile: Dockerfile }
     ports: ["8402:8080"]
+  bookables:
+    build:
+      context: ./bookables
+      dockerfile: Dockerfile
+    ports:
+      - "8403:8080"
+    environment:
+      - PORT=8080
+  hotels:
+    build:
+      context: ./hotels
+      dockerfile: Dockerfile
+    ports:
+      - "8404:8080"
+    environment:
+      - PORT=8080
+  pricing:
+    build:
+      context: ./pricing
+      dockerfile: Dockerfile
+    ports:
+      - "8405:8080"
+    environment:
+      - PORT=8080
+  search:
+    build:
+      context: ./search
+      dockerfile: Dockerfile
+    ports:
+      - "8406:8080"
+    environment:
+      - PORT=8080

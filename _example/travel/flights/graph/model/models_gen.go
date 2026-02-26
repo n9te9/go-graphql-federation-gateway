@@ -2,13 +2,21 @@
 
 package model
 
+type Bookable struct {
+	ID string `json:"id"`
+}
+
+func (Bookable) IsEntity() {}
+
 type Flight struct {
+	ID            string  `json:"id"`
 	Number        string  `json:"number"`
 	DepartureDate string  `json:"departureDate"`
 	Origin        string  `json:"origin"`
 	Destination   string  `json:"destination"`
 	Price         float64 `json:"price"`
 	AircraftType  string  `json:"aircraftType"`
+	Availability  bool    `json:"availability"`
 }
 
 func (Flight) IsEntity() {}

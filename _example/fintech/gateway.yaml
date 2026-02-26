@@ -19,3 +19,18 @@ services:
   retry:
     attempts: 3
     timeout: "5s"
+- name: audit
+  host: http://localhost:8204/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: customers-eu
+  host: http://localhost:8205/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: activities
+  host: http://localhost:8206/query
+  retry:
+    attempts: 3
+    timeout: "5s"

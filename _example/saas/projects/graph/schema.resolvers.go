@@ -17,13 +17,17 @@ func (r *queryResolver) Project(ctx context.Context, id string) (*model.Project,
 		return &model.Project{
 			ID:           id,
 			Name:         "Project Alpha",
-			Organization: &model.Organization{ID: "org1"},
+			Organization: &model.Organization{ID: "org1", Name: "Acme Corp", EmployeeCount: 50},
+			Owner:        "pm@acme.com",
+			CreatedAt:    "2024-01-01T00:00:00Z",
 		}, nil
 	}
 	return &model.Project{
 		ID:           id,
 		Name:         "Project " + id,
 		Organization: &model.Organization{ID: "unknown"},
+		Owner:        "pm@project.com",
+		CreatedAt:    "2024-01-01T00:00:00Z",
 	}, nil
 }
 

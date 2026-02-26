@@ -2,6 +2,11 @@
 
 package model
 
+type Node interface {
+	IsNode()
+	GetID() string
+}
+
 type Product struct {
 	ID      string    `json:"id"`
 	Reviews []*Review `json:"reviews,omitempty"`
@@ -18,3 +23,6 @@ type Review struct {
 	AuthorName string   `json:"authorName"`
 	Product    *Product `json:"product,omitempty"`
 }
+
+func (Review) IsNode()            {}
+func (this Review) GetID() string { return this.ID }
