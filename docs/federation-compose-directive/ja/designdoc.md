@@ -332,34 +332,55 @@ sequenceDiagram
 
 ### Process
 
-1. **SubGraph V2 拡張**
-   1.1. `subgraph_v2.go` を修正
+**重要:** 以下のプロセスは TDD（テスト駆動開発）を厳守すること。各機能の実装前に必ずテストを書き、Red → Green → Refactor のサイクルを回すこと。
+
+1. **SubGraph V2 拡張 (TDD)**
+   1.1. **RED: テストを先に書く** - `subgraph_v2_test.go`
+        - @composeDirective のパース（既存）
+        - カスタムディレクティブ定義の抽出テスト
+        - 複数のカスタムディレクティブの処理テスト
+        - テストを実行して失敗することを確認
+   1.2. **GREEN: 最小限の実装** - `subgraph_v2.go`
         - SubGraphV2 構造に DirectiveDefinitions フィールドを追加
         - extractDirectiveDefinitions() 関数を追加
         - NewSubGraphV2() で extractDirectiveDefinitions() を呼び出し
-   1.2. `subgraph_v2_test.go` にテストを追加
-        - @composeDirective のパース（既存）
-        - カスタムディレクティブ定義の抽出
-        - 複数のカスタムディレクティブの処理
+        - テストを実行して成功することを確認
+   1.3. **REFACTOR: リファクタリング**
+        - コードの重複を排除
+        - 可読性を向上
+        - テストが引き続き成功することを確認
 
-2. **SuperGraph V2 拡張**
-   2.1. `super_graph_v2.go` を修正
+2. **SuperGraph V2 拡張 (TDD)**
+   2.1. **RED: テストを先に書く** - `super_graph_v2_test.go`
+        - カスタムディレクティブ定義のマージテスト
+        - ディレクティブ定義の一貫性検証（一致する場合）
+        - ディレクティブ定義の一貫性検証（不一致の場合、エラー）
+        - 複数サブグラフからの異なるカスタムディレクティブのマージ
+        - テストを実行して失敗することを確認
+   2.2. **GREEN: 最小限の実装** - `super_graph_v2.go`
         - SuperGraphV2 構造に DirectiveDefinitions フィールドを追加
         - mergeDirectiveDefinitions() 関数を追加
         - isDirectiveDefinitionEqual() ヘルパー関数を追加
         - isTypeEqual() ヘルパー関数を追加
         - NewSuperGraphV2() で mergeDirectiveDefinitions() を呼び出し
-   2.2. schema 定義への @composeDirective 追加（オプション）
-        - addSchemaDefinition() 関数を追加
-   2.3. `super_graph_v2_test.go` にテストを追加
-        - カスタムディレクティブ定義のマージ
-        - ディレクティブ定義の一貫性検証（一致する場合）
-        - ディレクティブ定義の一貫性検証（不一致の場合、エラー）
-        - 複数サブグラフからの異なるカスタムディレクティブのマージ
+        - テストを実行して成功することを確認
+   2.3. **REFACTOR: リファクタリング**
+        - コードの重複を排除
+        - 可読性を向上
+        - テストが引き続き成功することを確認
+   2.4. **[オプション] schema 定義への @composeDirective 追加 (TDD)**
+        - RED: テストを書く
+        - GREEN: addSchemaDefinition() 関数を実装
+        - REFACTOR: 改善
 
-3. **統合テスト**
-   3.1. カスタムディレクティブを使用するサンプルスキーマの作成
-   3.2. スーパーグラフにカスタムディレクティブが含まれることの確認
+3. **統合テスト (TDD)**
+   3.1. **RED: 統合テストを先に書く**
+        - カスタムディレクティブを使用するサンプルスキーマの作成
+        - スーパーグラフにカスタムディレクティブが含まれることを確認するテスト
+        - テストを実行して現状を確認
+   3.2. **GREEN: 必要な調整**
+        - テストが成功するように実装を調整
+   3.3. **REFACTOR: 統合レベルのリファクタリング**
 
 4. **ドキュメント**
    4.1. @composeDirective の使用方法を README に追加
@@ -368,6 +389,13 @@ sequenceDiagram
 5. **結合テスト**
    5.1. `make test-all` で全ドメインのテストが通ることを確認
    5.2. カスタムディレクティブ機能が既存の動作を壊していないことを確認
+
+**TDD チェックリスト:**
+- [ ] 各機能について、実装前にテストを書いたか？
+- [ ] テストが最初は失敗することを確認したか？（RED）
+- [ ] テストが成功する最小限のコードを書いたか？（GREEN）
+- [ ] リファクタリング後もテストが成功することを確認したか？（REFACTOR）
+- [ ] 全てのテストが通ることを確認したか？
 
 ### Expected Outcomes
 
