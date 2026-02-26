@@ -11,7 +11,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000,
         "reviews": null
       }
@@ -34,7 +34,7 @@
     "expected": {
       "product": {
         "id": "p1",
-        "name": "Product p1",
+        "name": "Premium p1",
         "price": 1000,
         "inStock": null
       }

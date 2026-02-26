@@ -1,11 +1,11 @@
 [
   {
     "name": "Partial Response - Organization with Billing Service Failure",
-    "description": "When billing service fails, organization data should still be returned",
+    "description": "When billing-v2 service fails (which @overrides billing), organization data should still be returned with billing null",
     "query": "query { organization(id: \"org1\") { id name billing { id plan } } }",
     "variables": {},
     "mockFailure": {
-      "service": "billing",
+      "service": "billing-v2",
       "failOnEntity": true
     },
     "expected": {
