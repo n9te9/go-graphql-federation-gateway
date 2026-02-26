@@ -502,45 +502,38 @@ func (sg *SuperGraphV2) buildOwnershipMap() error {
 			fieldName := field.Name.String()
 			key := fmt.Sprintf("%s.%s", typeName, fieldName)
 
-			// Check for @override directive
-			var overrideFrom string
-			var overrideSubGraph *SubGraphV2
-
+			// Collect all @override relationships for this field.
+			// overrideChain maps each "from" subgraph name to the subgraph that
+			// overrides it.  This supports chained overrides: A→B→C where C is
+			// the ultimate owner and both A and B must be excluded.
+			overrideChain := make(map[string]*SubGraphV2)
 			for _, subGraph := range sg.SubGraphs {
 				if entity, exists := subGraph.GetEntity(typeName); exists {
 					if entityField, ok := entity.Fields[fieldName]; ok {
 						if override := entityField.GetOverride(); override != nil {
-							overrideFrom = override.From
-							overrideSubGraph = subGraph
-							break
+							overrideChain[override.From] = subGraph
 						}
 					}
 				}
 			}
 
-			// Traverse all subgraphs to find those that can resolve this field
+			// Build the set of excluded subgraphs — those that appear as the
+			// "from" target of any @override.  In a chain A→B→C, both A and B
+			// are excluded so that only C remains as the owner.
+			excludedByOverride := make(map[string]bool, len(overrideChain))
+			for fromName := range overrideChain {
+				excludedByOverride[fromName] = true
+			}
+
+			// Traverse all subgraphs to find those that can resolve this field,
+			// skipping any that have been superseded by @override.
 			for _, subGraph := range sg.SubGraphs {
-				// Skip the original owner if @override is present
-				if overrideFrom != "" && subGraph.Name == overrideFrom {
+				if excludedByOverride[subGraph.Name] {
 					continue
 				}
 
 				if sg.canResolveField(subGraph, typeName, fieldName) {
 					sg.Ownership[key] = append(sg.Ownership[key], subGraph)
-				}
-			}
-
-			// Ensure the override subgraph is in the ownership list
-			if overrideSubGraph != nil {
-				found := false
-				for _, owner := range sg.Ownership[key] {
-					if owner.Name == overrideSubGraph.Name {
-						found = true
-						break
-					}
-				}
-				if !found {
-					sg.Ownership[key] = append(sg.Ownership[key], overrideSubGraph)
 				}
 			}
 		}

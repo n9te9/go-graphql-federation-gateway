@@ -1377,3 +1377,202 @@ func TestNewSuperGraphV2_Inaccessible_ExtensionFieldExcluded(t *testing.T) {
 		t.Error("expected publicRating field to be present in composed schema")
 	}
 }
+
+// subgraphNames is a helper that returns the names of a slice of SubGraphV2.
+func subgraphNames(sgs []*graph.SubGraphV2) []string {
+	names := make([]string, len(sgs))
+	for i, sg := range sgs {
+		names[i] = sg.Name
+	}
+	return names
+}
+
+// TestSuperGraphV2_Override_BasicOverride verifies that @override(from: "products")
+// causes catalog to become the sole owner of the overridden field, and that the
+// "products" subgraph no longer appears as an owner.
+func TestSuperGraphV2_Override_BasicOverride(t *testing.T) {
+	// products: original owner of description
+	productsSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			description: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	// catalog: @override(from: "products") for description only
+	catalogSchema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			description: String! @override(from: "products")
+		}
+	`
+
+	productsSG, err := graph.NewSubGraphV2("products", []byte(productsSchema), "http://products.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+	}
+	catalogSG, err := graph.NewSubGraphV2("catalog", []byte(catalogSchema), "http://catalog.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for catalog: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productsSG, catalogSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// description: catalog must be the only owner
+	descOwners := superGraph.GetSubGraphsForField("Product", "description")
+	if len(descOwners) != 1 {
+		t.Fatalf("expected 1 owner for Product.description, got %d: %v", len(descOwners), subgraphNames(descOwners))
+	}
+	if descOwners[0].Name != "catalog" {
+		t.Errorf("expected Product.description to be owned by 'catalog', got '%s'", descOwners[0].Name)
+	}
+
+	// products must NOT appear in description owners
+	for _, owner := range descOwners {
+		if owner.Name == "products" {
+			t.Error("products should NOT own Product.description after @override")
+		}
+	}
+
+	// name is NOT overridden — products still owns it
+	nameOwners := superGraph.GetSubGraphsForField("Product", "name")
+	if len(nameOwners) != 1 {
+		t.Fatalf("expected 1 owner for Product.name, got %d: %v", len(nameOwners), subgraphNames(nameOwners))
+	}
+	if nameOwners[0].Name != "products" {
+		t.Errorf("expected Product.name to be owned by 'products', got '%s'", nameOwners[0].Name)
+	}
+}
+
+// TestSuperGraphV2_Override_ChainedOverride verifies that sequential overrides
+// (A→B→C) result in serviceC being the sole owner of the field.
+// serviceA originally defines the field, serviceB overrides from serviceA,
+// and serviceC overrides from serviceB.
+func TestSuperGraphV2_Override_ChainedOverride(t *testing.T) {
+	schemaA := `
+		type Product @key(fields: "id") {
+			id: ID!
+			field: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	schemaB := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			field: String! @override(from: "serviceA")
+		}
+	`
+
+	schemaC := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			field: String! @override(from: "serviceB")
+		}
+	`
+
+	sgA, err := graph.NewSubGraphV2("serviceA", []byte(schemaA), "http://a.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceA: %v", err)
+	}
+	sgB, err := graph.NewSubGraphV2("serviceB", []byte(schemaB), "http://b.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceB: %v", err)
+	}
+	sgC, err := graph.NewSubGraphV2("serviceC", []byte(schemaC), "http://c.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceC: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sgA, sgB, sgC})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// Only serviceC must own the field — serviceA and serviceB must be excluded.
+	owners := superGraph.GetSubGraphsForField("Product", "field")
+	if len(owners) != 1 {
+		t.Fatalf("expected 1 owner for Product.field, got %d: %v", len(owners), subgraphNames(owners))
+	}
+	if owners[0].Name != "serviceC" {
+		t.Errorf("expected Product.field to be owned by 'serviceC', got '%s'", owners[0].Name)
+	}
+
+	for _, owner := range owners {
+		if owner.Name == "serviceA" || owner.Name == "serviceB" {
+			t.Errorf("subgraph '%s' should NOT own Product.field after chained @override", owner.Name)
+		}
+	}
+}
+
+// TestSuperGraphV2_Override_PartialFields verifies that only the specifically
+// @overridden field changes ownership, while other fields remain with the
+// original subgraph.
+func TestSuperGraphV2_Override_PartialFields(t *testing.T) {
+	// products: owns id, name, price, description
+	productsSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			price: Float!
+			description: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	// catalog: @override(from: "products") for description only
+	catalogSchema := `
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			description: String! @override(from: "products")
+		}
+	`
+
+	productsSG, err := graph.NewSubGraphV2("products", []byte(productsSchema), "http://products.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for products: %v", err)
+	}
+	catalogSG, err := graph.NewSubGraphV2("catalog", []byte(catalogSchema), "http://catalog.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for catalog: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{productsSG, catalogSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	// description: overridden — catalog must be the sole owner
+	descOwners := superGraph.GetSubGraphsForField("Product", "description")
+	if len(descOwners) != 1 {
+		t.Fatalf("Product.description: expected 1 owner, got %d: %v", len(descOwners), subgraphNames(descOwners))
+	}
+	if descOwners[0].Name != "catalog" {
+		t.Errorf("Product.description: expected 'catalog', got '%s'", descOwners[0].Name)
+	}
+
+	// name, price: NOT overridden — products still owns them
+	for _, fieldName := range []string{"name", "price"} {
+		owners := superGraph.GetSubGraphsForField("Product", fieldName)
+		if len(owners) != 1 {
+			t.Fatalf("Product.%s: expected 1 owner, got %d: %v", fieldName, len(owners), subgraphNames(owners))
+		}
+		if owners[0].Name != "products" {
+			t.Errorf("Product.%s: expected 'products', got '%s'", fieldName, owners[0].Name)
+		}
+	}
+}
