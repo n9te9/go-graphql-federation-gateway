@@ -52,7 +52,8 @@ type SubGraphV2 struct {
 	entities map[string]*Entity // Entity map with entity name as key
 
 	// Federation v2 directives
-	ComposeDirectives []string // @composeDirective directives
+	ComposeDirectives    []string                            // @composeDirective directives
+	DirectiveDefinitions map[string]*ast.DirectiveDefinition // Custom directive definitions to compose
 }
 
 // NewSubGraphV2 initializes a SubGraphV2 by parsing the schema and extracting entities.
@@ -67,12 +68,14 @@ func NewSubGraphV2(name string, src []byte, host string) (*SubGraphV2, error) {
 	}
 
 	// Initialize SubGraph structure
+	composeDirectives := extractSchemaComposeDirectives(doc)
 	sg := &SubGraphV2{
-		Name:              name,
-		Host:              host,
-		Schema:            doc,
-		entities:          make(map[string]*Entity),
-		ComposeDirectives: extractSchemaComposeDirectives(doc),
+		Name:                 name,
+		Host:                 host,
+		Schema:               doc,
+		entities:             make(map[string]*Entity),
+		ComposeDirectives:    composeDirectives,
+		DirectiveDefinitions: extractDirectiveDefinitions(doc, composeDirectives),
 	}
 
 	// Traverse all type definitions
@@ -289,4 +292,34 @@ func extractSchemaComposeDirectives(doc *ast.Document) []string {
 // GetComposeDirectives returns the compose directives of the subgraph.
 func (sg *SubGraphV2) GetComposeDirectives() []string {
 	return sg.ComposeDirectives
+}
+
+// GetDirectiveDefinitions returns the custom directive definitions to compose.
+func (sg *SubGraphV2) GetDirectiveDefinitions() map[string]*ast.DirectiveDefinition {
+	return sg.DirectiveDefinitions
+}
+
+// extractDirectiveDefinitions extracts directive definitions that are listed in composeDirectives.
+func extractDirectiveDefinitions(
+	doc *ast.Document,
+	composeDirectives []string,
+) map[string]*ast.DirectiveDefinition {
+	definitions := make(map[string]*ast.DirectiveDefinition)
+
+	// Build a set of directive names to compose (strip leading "@")
+	composeSet := make(map[string]bool)
+	for _, name := range composeDirectives {
+		cleanName := strings.TrimPrefix(name, "@")
+		composeSet[cleanName] = true
+	}
+
+	for _, def := range doc.Definitions {
+		if directiveDef, ok := def.(*ast.DirectiveDefinition); ok {
+			if composeSet[directiveDef.Name.String()] {
+				definitions[directiveDef.Name.String()] = directiveDef
+			}
+		}
+	}
+
+	return definitions
 }

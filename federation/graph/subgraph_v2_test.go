@@ -363,3 +363,126 @@ func TestNewSubGraphV2_WithComposeDirective(t *testing.T) {
 		t.Errorf("expected compose directive '@custom', got '%s'", composeDirectives[0])
 	}
 }
+
+func TestNewSubGraphV2_ExtractsDirectiveDefinitions(t *testing.T) {
+	schema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!, duration: Int!) on FIELD_DEFINITION
+
+		type Query {
+			expensiveQuery: String! @rateLimit(limit: 10, duration: 60)
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	defs := sg.GetDirectiveDefinitions()
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 directive definition, got %d", len(defs))
+	}
+
+	def, ok := defs["rateLimit"]
+	if !ok {
+		t.Fatal("expected 'rateLimit' directive definition, not found")
+	}
+
+	if def.Name.String() != "rateLimit" {
+		t.Errorf("expected directive name 'rateLimit', got '%s'", def.Name.String())
+	}
+}
+
+func TestNewSubGraphV2_ExtractsMultipleDirectiveDefinitions(t *testing.T) {
+	schema := `
+		schema
+			@composeDirective(name: "@rateLimit")
+			@composeDirective(name: "@cacheControl") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!) on FIELD_DEFINITION
+		directive @cacheControl(maxAge: Int!) on FIELD_DEFINITION | OBJECT
+
+		type Query {
+			cachedData: String! @cacheControl(maxAge: 3600) @rateLimit(limit: 100)
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	defs := sg.GetDirectiveDefinitions()
+	if len(defs) != 2 {
+		t.Fatalf("expected 2 directive definitions, got %d", len(defs))
+	}
+
+	if _, ok := defs["rateLimit"]; !ok {
+		t.Error("expected 'rateLimit' directive definition, not found")
+	}
+	if _, ok := defs["cacheControl"]; !ok {
+		t.Error("expected 'cacheControl' directive definition, not found")
+	}
+}
+
+func TestNewSubGraphV2_DirectiveDefinitions_OnlyComposed(t *testing.T) {
+	// @internal is defined but NOT listed in @composeDirective, so should not be extracted
+	schema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!) on FIELD_DEFINITION
+		directive @internal on FIELD_DEFINITION
+
+		type Query {
+			data: String! @rateLimit(limit: 10) @internal
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	defs := sg.GetDirectiveDefinitions()
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 directive definition (only composed ones), got %d", len(defs))
+	}
+
+	if _, ok := defs["rateLimit"]; !ok {
+		t.Error("expected 'rateLimit' directive definition, not found")
+	}
+	if _, ok := defs["internal"]; ok {
+		t.Error("'internal' directive should not be extracted (not in @composeDirective)")
+	}
+}
+
+func TestNewSubGraphV2_NoComposeDirective_EmptyDefinitions(t *testing.T) {
+	schema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(schema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	defs := sg.GetDirectiveDefinitions()
+	if len(defs) != 0 {
+		t.Errorf("expected 0 directive definitions, got %d", len(defs))
+	}
+}

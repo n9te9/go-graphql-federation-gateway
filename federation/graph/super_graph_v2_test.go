@@ -470,3 +470,188 @@ func TestNewSuperGraphV2_WithOverride(t *testing.T) {
 		t.Errorf("expected GetFieldOwnerSubGraph to return 'products-v2', got '%s'", nameOwner.Name)
 	}
 }
+
+func TestNewSuperGraphV2_MergesComposeDirectiveDefinitions(t *testing.T) {
+	// Both subgraphs define the same @rateLimit directive via @composeDirective
+	subGraphASchema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!) on FIELD_DEFINITION
+
+		type Query {
+			dataA: String! @rateLimit(limit: 10)
+		}
+	`
+
+	subGraphBSchema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!) on FIELD_DEFINITION
+
+		extend type Query {
+			dataB: String! @rateLimit(limit: 20)
+		}
+	`
+
+	sgA, err := graph.NewSubGraphV2("serviceA", []byte(subGraphASchema), "http://a.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceA: %v", err)
+	}
+
+	sgB, err := graph.NewSubGraphV2("serviceB", []byte(subGraphBSchema), "http://b.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceB: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sgA, sgB})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	defs := superGraph.DirectiveDefinitions
+	if len(defs) != 1 {
+		t.Fatalf("expected 1 directive definition in super graph, got %d", len(defs))
+	}
+
+	def, ok := defs["rateLimit"]
+	if !ok {
+		t.Fatal("expected 'rateLimit' directive definition in super graph")
+	}
+
+	if def.Name.String() != "rateLimit" {
+		t.Errorf("expected directive name 'rateLimit', got '%s'", def.Name.String())
+	}
+}
+
+func TestNewSuperGraphV2_MergesDifferentComposeDirectives(t *testing.T) {
+	// subGraphA defines @rateLimit, subGraphB defines @cacheControl
+	subGraphASchema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!) on FIELD_DEFINITION
+
+		type Query {
+			dataA: String! @rateLimit(limit: 10)
+		}
+	`
+
+	subGraphBSchema := `
+		schema @composeDirective(name: "@cacheControl") {
+			query: Query
+		}
+
+		directive @cacheControl(maxAge: Int!) on FIELD_DEFINITION | OBJECT
+
+		extend type Query {
+			dataB: String! @cacheControl(maxAge: 3600)
+		}
+	`
+
+	sgA, err := graph.NewSubGraphV2("serviceA", []byte(subGraphASchema), "http://a.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceA: %v", err)
+	}
+
+	sgB, err := graph.NewSubGraphV2("serviceB", []byte(subGraphBSchema), "http://b.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceB: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sgA, sgB})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	defs := superGraph.DirectiveDefinitions
+	if len(defs) != 2 {
+		t.Fatalf("expected 2 directive definitions in super graph, got %d", len(defs))
+	}
+
+	if _, ok := defs["rateLimit"]; !ok {
+		t.Error("expected 'rateLimit' directive definition in super graph")
+	}
+	if _, ok := defs["cacheControl"]; !ok {
+		t.Error("expected 'cacheControl' directive definition in super graph")
+	}
+}
+
+func TestNewSuperGraphV2_InconsistentDirectiveDefinitions_ReturnsError(t *testing.T) {
+	// subGraphA and subGraphB define @rateLimit with different argument names
+	subGraphASchema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(limit: Int!) on FIELD_DEFINITION
+
+		type Query {
+			dataA: String! @rateLimit(limit: 10)
+		}
+	`
+
+	subGraphBSchema := `
+		schema @composeDirective(name: "@rateLimit") {
+			query: Query
+		}
+
+		directive @rateLimit(max: Int!) on FIELD_DEFINITION
+
+		extend type Query {
+			dataB: String! @rateLimit(max: 20)
+		}
+	`
+
+	sgA, err := graph.NewSubGraphV2("serviceA", []byte(subGraphASchema), "http://a.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceA: %v", err)
+	}
+
+	sgB, err := graph.NewSubGraphV2("serviceB", []byte(subGraphBSchema), "http://b.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed for serviceB: %v", err)
+	}
+
+	_, err = graph.NewSuperGraphV2([]*graph.SubGraphV2{sgA, sgB})
+	if err == nil {
+		t.Fatal("expected error for inconsistent directive definitions, got nil")
+	}
+
+	expectedMsg := "inconsistent directive definition for '@rateLimit' between subgraphs"
+	if err.Error() != expectedMsg {
+		t.Errorf("expected error '%s', got '%s'", expectedMsg, err.Error())
+	}
+}
+
+func TestNewSuperGraphV2_NoComposeDirectives_EmptyDefinitions(t *testing.T) {
+	// Subgraphs without @composeDirective should yield empty DirectiveDefinitions
+	productSchema := `
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+		}
+
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+
+	sg, err := graph.NewSubGraphV2("product", []byte(productSchema), "http://product.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 failed: %v", err)
+	}
+
+	superGraph, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{sg})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	if len(superGraph.DirectiveDefinitions) != 0 {
+		t.Errorf("expected 0 directive definitions, got %d", len(superGraph.DirectiveDefinitions))
+	}
+}

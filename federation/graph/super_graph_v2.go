@@ -8,10 +8,11 @@ import (
 
 // SuperGraphV2 represents an aggregated super graph composed of multiple subgraphs.
 type SuperGraphV2 struct {
-	SubGraphs []*SubGraphV2            // List of subgraphs
-	Schema    *ast.Document            // Composed schema
-	Ownership map[string][]*SubGraphV2 // Field ownership map (e.g., "Product.id" -> [SubGraph])
-	Graph     *WeightedDirectedGraph   // Weighted directed graph for Dijkstra-based plan optimization
+	SubGraphs            []*SubGraphV2                       // List of subgraphs
+	Schema               *ast.Document                       // Composed schema
+	Ownership            map[string][]*SubGraphV2            // Field ownership map (e.g., "Product.id" -> [SubGraph])
+	Graph                *WeightedDirectedGraph              // Weighted directed graph for Dijkstra-based plan optimization
+	DirectiveDefinitions map[string]*ast.DirectiveDefinition // Custom directive definitions merged from @composeDirective
 }
 
 // NewSuperGraphV2 creates a super graph from a list of SubGraphV2 instances.
@@ -23,6 +24,11 @@ func NewSuperGraphV2(subGraphs []*SubGraphV2) (*SuperGraphV2, error) {
 
 	// Schema Composition - compose schemas from all subgraphs
 	if err := sg.composeSchema(); err != nil {
+		return nil, err
+	}
+
+	// Merge and validate custom directive definitions from @composeDirective
+	if err := sg.mergeComposeDirectiveDefinitions(); err != nil {
 		return nil, err
 	}
 
@@ -345,6 +351,74 @@ func (sg *SuperGraphV2) mergeDirectiveDefinition(newDef *ast.DirectiveDefinition
 	if existingDef == nil {
 		sg.Schema.Definitions = append(sg.Schema.Definitions, newDef)
 	}
+}
+
+// mergeComposeDirectiveDefinitions validates and merges custom directive definitions
+// listed via @composeDirective across all subgraphs into the super graph.
+func (sg *SuperGraphV2) mergeComposeDirectiveDefinitions() error {
+	sg.DirectiveDefinitions = make(map[string]*ast.DirectiveDefinition)
+
+	for _, subGraph := range sg.SubGraphs {
+		for name, directiveDef := range subGraph.DirectiveDefinitions {
+			if existing, ok := sg.DirectiveDefinitions[name]; ok {
+				// Already seen this directive - validate consistency
+				if !isDirectiveDefinitionEqual(existing, directiveDef) {
+					return fmt.Errorf(
+						"inconsistent directive definition for '@%s' between subgraphs",
+						name,
+					)
+				}
+				// Consistent - skip
+				continue
+			}
+			// New directive definition
+			sg.DirectiveDefinitions[name] = directiveDef
+		}
+	}
+
+	return nil
+}
+
+// isDirectiveDefinitionEqual checks whether two DirectiveDefinition nodes are equivalent
+// by comparing their argument names/types and applicable locations.
+func isDirectiveDefinitionEqual(a, b *ast.DirectiveDefinition) bool {
+	if a.Name.String() != b.Name.String() {
+		return false
+	}
+
+	if len(a.Arguments) != len(b.Arguments) {
+		return false
+	}
+
+	for i := range a.Arguments {
+		if a.Arguments[i].Name.String() != b.Arguments[i].Name.String() {
+			return false
+		}
+		if !isTypeEqual(a.Arguments[i].Type, b.Arguments[i].Type) {
+			return false
+		}
+	}
+
+	if len(a.Locations) != len(b.Locations) {
+		return false
+	}
+
+	locSet := make(map[string]bool)
+	for _, loc := range a.Locations {
+		locSet[loc.String()] = true
+	}
+	for _, loc := range b.Locations {
+		if !locSet[loc.String()] {
+			return false
+		}
+	}
+
+	return true
+}
+
+// isTypeEqual compares two ast.Type values by their string representation.
+func isTypeEqual(a, b ast.Type) bool {
+	return a.String() == b.String()
 }
 
 // buildOwnershipMap constructs the ownership map.
