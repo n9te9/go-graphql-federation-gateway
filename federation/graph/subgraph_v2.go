@@ -41,7 +41,8 @@ type Entity struct {
 	Fields      map[string]*Field // Field map with field name as key
 
 	// Federation v2 directives
-	isInterfaceObject bool // @interfaceObject
+	isInterfaceObject bool     // @interfaceObject
+	Tags              []string // @tag(name: "...") at type level
 }
 
 // SubGraphV2 represents a subgraph information.
@@ -211,6 +212,22 @@ func parseField(field *ast.FieldDefinition) *Field {
 	return f
 }
 
+// parseTypeTags extracts @tag directive names from a directive list.
+func parseTypeTags(directives []*ast.Directive) []string {
+	var tags []string
+	for _, d := range directives {
+		if d.Name == "tag" {
+			for _, arg := range d.Arguments {
+				if arg.Name.String() == "name" {
+					tagName := strings.Trim(arg.Value.String(), "\"")
+					tags = append(tags, tagName)
+				}
+			}
+		}
+	}
+	return tags
+}
+
 // buildEntity creates an Entity from directives, isExtension flag, and field definitions.
 // This consolidates the common entity-parsing logic shared across ObjectType, ObjectTypeExtension,
 // InterfaceTypeDefinition, and InterfaceTypeExtension.
@@ -220,6 +237,7 @@ func buildEntity(directives []*ast.Directive, isExtension bool, fields []*ast.Fi
 		isExtension:       isExtension,
 		Fields:            make(map[string]*Field),
 		isInterfaceObject: hasDirective(directives, "interfaceObject"),
+		Tags:              parseTypeTags(directives),
 	}
 	for _, field := range fields {
 		entity.Fields[field.Name.String()] = parseField(field)
@@ -261,6 +279,11 @@ func (f *Field) IsInaccessible() bool {
 // GetTags returns the tags of the field.
 func (f *Field) GetTags() []string {
 	return f.Tags
+}
+
+// GetTags returns the type-level tags of the entity.
+func (e *Entity) GetTags() []string {
+	return e.Tags
 }
 
 // GetOverride returns the override metadata of the field.
