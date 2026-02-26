@@ -42,6 +42,7 @@ type Entity struct {
 
 	// Federation v2 directives
 	isInterfaceObject bool     // @interfaceObject
+	isInaccessible    bool     // @inaccessible
 	Tags              []string // @tag(name: "...") at type level
 }
 
@@ -237,6 +238,7 @@ func buildEntity(directives []*ast.Directive, isExtension bool, fields []*ast.Fi
 		isExtension:       isExtension,
 		Fields:            make(map[string]*Field),
 		isInterfaceObject: hasDirective(directives, "interfaceObject"),
+		isInaccessible:    hasDirective(directives, "inaccessible"),
 		Tags:              parseTypeTags(directives),
 	}
 	for _, field := range fields {
@@ -274,6 +276,11 @@ func (e *Entity) IsInterfaceObject() bool {
 // IsInaccessible returns whether the field has @inaccessible directive.
 func (f *Field) IsInaccessible() bool {
 	return f.isInaccessible
+}
+
+// IsInaccessible returns whether the entity (type) has @inaccessible directive.
+func (e *Entity) IsInaccessible() bool {
+	return e.isInaccessible
 }
 
 // GetTags returns the tags of the field.

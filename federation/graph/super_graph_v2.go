@@ -105,12 +105,21 @@ func (sg *SuperGraphV2) mergeSchemaDeep(newSchema *ast.Document) {
 
 // mergeSchemaDeepPass1 merges all non-extension type definitions.
 // This is the first pass of the two-pass composition strategy.
+// Types annotated with @inaccessible are skipped and excluded from the public schema.
 func (sg *SuperGraphV2) mergeSchemaDeepPass1(newSchema *ast.Document) {
 	for _, newDef := range newSchema.Definitions {
 		switch newTypeDef := newDef.(type) {
 		case *ast.ObjectTypeDefinition:
+			// Skip @inaccessible types - they must not appear in the public schema
+			if hasDirective(newTypeDef.Directives, "inaccessible") {
+				continue
+			}
 			sg.mergeObjectTypeDefinitionDeep(newTypeDef)
 		case *ast.InterfaceTypeDefinition:
+			// Skip @inaccessible interface types
+			if hasDirective(newTypeDef.Directives, "inaccessible") {
+				continue
+			}
 			sg.mergeInterfaceTypeDefinition(newTypeDef)
 		case *ast.InputObjectTypeDefinition:
 			sg.mergeInputObjectTypeDefinition(newTypeDef)
@@ -129,12 +138,21 @@ func (sg *SuperGraphV2) mergeSchemaDeepPass1(newSchema *ast.Document) {
 // mergeSchemaDeepPass2 merges extension type definitions only.
 // This is the second pass of the two-pass composition strategy, run after
 // all base types have been merged so extensions can always find their target.
+// Extensions annotated with @inaccessible are skipped.
 func (sg *SuperGraphV2) mergeSchemaDeepPass2(newSchema *ast.Document) {
 	for _, newDef := range newSchema.Definitions {
 		switch newTypeDef := newDef.(type) {
 		case *ast.ObjectTypeExtension:
+			// Skip @inaccessible extension types
+			if hasDirective(newTypeDef.Directives, "inaccessible") {
+				continue
+			}
 			sg.mergeObjectTypeExtensionDeep(newTypeDef)
 		case *ast.InterfaceTypeExtension:
+			// Skip @inaccessible interface extensions
+			if hasDirective(newTypeDef.Directives, "inaccessible") {
+				continue
+			}
 			sg.mergeInterfaceTypeExtension(newTypeDef)
 		}
 	}
@@ -209,19 +227,24 @@ func mergeIntoDefinition(existingFields *[]*ast.FieldDefinition, existingDirecti
 	*existingDirectives = append(*existingDirectives, copyDirectives(newDirectives)...)
 }
 
-// copyFields creates a deep copy of a field definition list.
+// copyFields creates a deep copy of a field definition list, excluding @inaccessible fields.
+// @inaccessible fields must not appear in the public supergraph schema.
 func copyFields(fields []*ast.FieldDefinition) []*ast.FieldDefinition {
 	if fields == nil {
 		return nil
 	}
-	copied := make([]*ast.FieldDefinition, len(fields))
-	for i, field := range fields {
-		copied[i] = &ast.FieldDefinition{
+	copied := make([]*ast.FieldDefinition, 0, len(fields))
+	for _, field := range fields {
+		// Skip @inaccessible fields - they must not be exposed in the public schema
+		if hasDirective(field.Directives, "inaccessible") {
+			continue
+		}
+		copied = append(copied, &ast.FieldDefinition{
 			Name:       field.Name,
 			Arguments:  field.Arguments, // TODO: Implement deep copy if needed
 			Type:       field.Type,
 			Directives: copyDirectives(field.Directives),
-		}
+		})
 	}
 	return copied
 }
@@ -735,6 +758,21 @@ func (sg *SuperGraphV2) HasFieldTag(typeName, fieldName, tag string) bool {
 	for _, t := range sg.GetFieldTags(typeName, fieldName) {
 		if t == tag {
 			return true
+		}
+	}
+	return false
+}
+
+// IsFieldInaccessible returns true if the given field is marked @inaccessible in any subgraph.
+// This can be used to provide descriptive error messages when a client queries a hidden field.
+func (sg *SuperGraphV2) IsFieldInaccessible(typeName, fieldName string) bool {
+	for _, subGraph := range sg.SubGraphs {
+		if entity, ok := subGraph.GetEntity(typeName); ok {
+			if field, ok := entity.Fields[fieldName]; ok {
+				if field.IsInaccessible() {
+					return true
+				}
+			}
 		}
 	}
 	return false
