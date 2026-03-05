@@ -745,17 +745,21 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 		current = next
 	}
 
-	// Extract representations from entities
-	// Get @key fields from entity definition
-	// We need to get the entity from the subgraph that owns it, not step.SubGraph
-	ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType)
-	if ownerSubGraph == nil {
-		return representations
-	}
-
-	entity, exists := ownerSubGraph.GetEntity(step.ParentType)
+	// Extract representations using the @key declared by the TARGET subgraph (step.SubGraph).
+	// This ensures we send the representation format the target expects (e.g. username key),
+	// which must match what the planner injected into the parent step's SelectionSet.
+	// If the target subgraph doesn't declare the entity (e.g. in some test setups), fall
+	// back to the owner subgraph's @key for backward compatibility.
+	entity, exists := step.SubGraph.GetEntity(step.ParentType)
 	if !exists || len(entity.Keys) == 0 {
-		return representations
+		ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType)
+		if ownerSubGraph == nil {
+			return representations
+		}
+		entity, exists = ownerSubGraph.GetEntity(step.ParentType)
+		if !exists || len(entity.Keys) == 0 {
+			return representations
+		}
 	}
 
 	parsedFields := entity.Keys[0].ParsedFields
@@ -818,14 +822,19 @@ func (e *ExecutorV2) navigatePathWithArrays(current map[string]interface{}, path
 	representations := make([]map[string]interface{}, 0)
 
 	if len(path) == 0 {
-		// Reached the end - extract representation from current
-		if ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType); ownerSubGraph != nil {
-			if entity, exists := ownerSubGraph.GetEntity(step.ParentType); exists && len(entity.Keys) > 0 {
-				requiredFields := e.collectRequiredFields(step)
-				parsedFields := entity.Keys[0].ParsedFields
-				if rep := e.buildRepresentationFromNodes(current, step.ParentType, parsedFields, requiredFields); rep != nil {
-					representations = append(representations, rep)
-				}
+		// Reached the end - use same key-selection logic as extractRepresentations:
+		// prefer step.SubGraph's @key, fall back to owner's @key.
+		entity, exists := step.SubGraph.GetEntity(step.ParentType)
+		if !exists || len(entity.Keys) == 0 {
+			if ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType); ownerSubGraph != nil {
+				entity, exists = ownerSubGraph.GetEntity(step.ParentType)
+			}
+		}
+		if exists && len(entity.Keys) > 0 {
+			requiredFields := e.collectRequiredFields(step)
+			parsedFields := entity.Keys[0].ParsedFields
+			if rep := e.buildRepresentationFromNodes(current, step.ParentType, parsedFields, requiredFields); rep != nil {
+				representations = append(representations, rep)
 			}
 		}
 		return representations

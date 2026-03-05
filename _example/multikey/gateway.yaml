@@ -1,0 +1,16 @@
+endpoint: /graphql
+port: 9000
+service_name: multikey-gateway
+timeout_duration: "5s"
+request_timeout: "30s"
+services:
+- name: users
+  host: http://localhost:8701/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: badges
+  host: http://localhost:8702/query
+  retry:
+    attempts: 3
+    timeout: "5s"

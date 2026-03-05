@@ -1,0 +1,16 @@
+services:
+  apollo-router:
+    image: ghcr.io/apollographql/router:v1.52.0
+    ports:
+      - "9801:4000"
+    volumes:
+      - ./apollo:/apollo
+    command: -s /apollo/supergraph.graphql -c /apollo/router.yaml --listen 0.0.0.0:4000
+    networks:
+      - default
+      - subgraph_net
+
+networks:
+  subgraph_net:
+    name: multikey_default
+    external: true
