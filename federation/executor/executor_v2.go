@@ -758,7 +758,7 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 		return representations
 	}
 
-	keyField := entity.Keys[0].FieldSet
+	parsedFields := entity.Keys[0].ParsedFields
 
 	// Collect @requires fields from this step's subgraph for the entity type
 	requiredFields := e.collectRequiredFields(step)
@@ -767,14 +767,14 @@ func (e *ExecutorV2) extractRepresentations(execCtx *ExecutionContext, step *pla
 	switch v := current.(type) {
 	case map[string]interface{}:
 		// Single entity
-		if rep := e.buildRepresentation(v, step.ParentType, keyField, requiredFields); rep != nil {
+		if rep := e.buildRepresentationFromNodes(v, step.ParentType, parsedFields, requiredFields); rep != nil {
 			representations = append(representations, rep)
 		}
 	case []interface{}:
 		// List of entities
 		for _, item := range v {
 			if itemMap, ok := item.(map[string]interface{}); ok {
-				if rep := e.buildRepresentation(itemMap, step.ParentType, keyField, requiredFields); rep != nil {
+				if rep := e.buildRepresentationFromNodes(itemMap, step.ParentType, parsedFields, requiredFields); rep != nil {
 					representations = append(representations, rep)
 				}
 			}
@@ -821,9 +821,9 @@ func (e *ExecutorV2) navigatePathWithArrays(current map[string]interface{}, path
 		// Reached the end - extract representation from current
 		if ownerSubGraph := e.superGraph.GetEntityOwnerSubGraph(step.ParentType); ownerSubGraph != nil {
 			if entity, exists := ownerSubGraph.GetEntity(step.ParentType); exists && len(entity.Keys) > 0 {
-				keyField := entity.Keys[0].FieldSet
 				requiredFields := e.collectRequiredFields(step)
-				if rep := e.buildRepresentation(current, step.ParentType, keyField, requiredFields); rep != nil {
+				parsedFields := entity.Keys[0].ParsedFields
+				if rep := e.buildRepresentationFromNodes(current, step.ParentType, parsedFields, requiredFields); rep != nil {
 					representations = append(representations, rep)
 				}
 			}
@@ -854,6 +854,83 @@ func (e *ExecutorV2) navigatePathWithArrays(current map[string]interface{}, path
 	}
 
 	return representations
+}
+
+// buildRepresentationFromNodes builds a representation using a parsed KeyFieldNode tree.
+// It supports both flat keys (leaf nodes) and nested keys (non-leaf nodes), e.g.:
+//
+//	"coordinate { lat lng }" → { __typename: "T", coordinate: { lat: X, lng: Y } }
+//
+// Returns nil if any required key field is missing from entity.
+func (e *ExecutorV2) buildRepresentationFromNodes(entity map[string]interface{}, typeName string, nodes []*graph.KeyFieldNode, requiredFields []string) map[string]interface{} {
+	representation := map[string]interface{}{
+		"__typename": typeName,
+	}
+
+	for _, node := range nodes {
+		if len(node.Fields) == 0 {
+			// Leaf node: extract scalar value directly
+			val, exists := entity[node.Name]
+			if !exists {
+				return nil
+			}
+			representation[node.Name] = val
+		} else {
+			// Non-leaf node: recurse into the nested object
+			nested, exists := entity[node.Name]
+			if !exists {
+				return nil
+			}
+			nestedMap, ok := nested.(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			sub := e.extractNestedKeyFields(nestedMap, node.Fields)
+			if sub == nil {
+				return nil
+			}
+			representation[node.Name] = sub
+		}
+	}
+
+	// Inject @requires field values
+	for _, rf := range requiredFields {
+		if val, ok := entity[rf]; ok {
+			representation[rf] = val
+		}
+	}
+
+	return representation
+}
+
+// extractNestedKeyFields recursively extracts only the key fields from a nested object map.
+// Returns nil if any required key field is missing.
+func (e *ExecutorV2) extractNestedKeyFields(obj map[string]interface{}, nodes []*graph.KeyFieldNode) map[string]interface{} {
+	result := map[string]interface{}{}
+	for _, node := range nodes {
+		if len(node.Fields) == 0 {
+			val, exists := obj[node.Name]
+			if !exists {
+				return nil
+			}
+			result[node.Name] = val
+		} else {
+			nested, exists := obj[node.Name]
+			if !exists {
+				return nil
+			}
+			nestedMap, ok := nested.(map[string]interface{})
+			if !ok {
+				return nil
+			}
+			sub := e.extractNestedKeyFields(nestedMap, node.Fields)
+			if sub == nil {
+				return nil
+			}
+			result[node.Name] = sub
+		}
+	}
+	return result
 }
 
 // buildRepresentation builds a representation for an entity.

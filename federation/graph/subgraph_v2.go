@@ -9,10 +9,25 @@ import (
 	"github.com/n9te9/graphql-parser/parser"
 )
 
+// KeyFieldNode represents one field in a @key field set, supporting nested objects.
+// Leaf node (scalar key field): Fields == nil.
+// Non-leaf node (object key field): len(Fields) > 0.
+//
+// Examples:
+//
+//	"id"                         → [{Name:"id"}]
+//	"number departureDate"        → [{Name:"number"}, {Name:"departureDate"}]
+//	"coordinate { lat lng }"     → [{Name:"coordinate", Fields:[{Name:"lat"},{Name:"lng"}]}]
+type KeyFieldNode struct {
+	Name   string         // Field name
+	Fields []*KeyFieldNode // Child fields (nil for scalar leaf nodes)
+}
+
 // EntityKey represents the @key directive information of an Entity.
 type EntityKey struct {
-	FieldSet   string // Field set specified in @key (e.g., "id")
-	Resolvable bool   // Resolvable parameter of @key directive
+	FieldSet     string         // Raw field set string (e.g., "coordinate { lat lng }")
+	ParsedFields []*KeyFieldNode // Parsed tree representation of FieldSet
+	Resolvable   bool           // Resolvable parameter of @key directive
 }
 
 // OverrideMetadata represents the @override directive information.
@@ -145,6 +160,7 @@ func parseEntityKeys(directives []*ast.Directive) []EntityKey {
 					// Get fields value (remove quotes)
 					fieldSet := strings.Trim(arg.Value.String(), "\"")
 					key.FieldSet = fieldSet
+					key.ParsedFields = parseKeyFieldSet(fieldSet)
 				case "resolvable":
 					// Get resolvable value
 					if arg.Value.String() == "false" {
@@ -158,6 +174,81 @@ func parseEntityKeys(directives []*ast.Directive) []EntityKey {
 	}
 
 	return keys
+}
+
+// parseKeyFieldSet parses a @key field set string into a tree of KeyFieldNode.
+// It supports flat fields ("id"), composite fields ("number departureDate"),
+// and nested object fields ("coordinate { lat lng }") including deep nesting.
+func parseKeyFieldSet(fieldSet string) []*KeyFieldNode {
+	tokens := tokenizeKeyFieldSet(fieldSet)
+	nodes, _ := parseKeyFieldNodes(tokens, 0)
+	return nodes
+}
+
+// tokenizeKeyFieldSet splits a field set string into tokens (identifiers, "{", "}").
+func tokenizeKeyFieldSet(s string) []string {
+	var tokens []string
+	var cur strings.Builder
+	for _, ch := range s {
+		switch {
+		case ch == '{' || ch == '}':
+			if cur.Len() > 0 {
+				tokens = append(tokens, strings.TrimSpace(cur.String()))
+				cur.Reset()
+			}
+			tokens = append(tokens, string(ch))
+		case ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r':
+			if cur.Len() > 0 {
+				tokens = append(tokens, strings.TrimSpace(cur.String()))
+				cur.Reset()
+			}
+		default:
+			cur.WriteRune(ch)
+		}
+	}
+	if cur.Len() > 0 {
+		tokens = append(tokens, strings.TrimSpace(cur.String()))
+	}
+	// Filter empty strings that may result from extra spaces
+	filtered := tokens[:0]
+	for _, t := range tokens {
+		if t != "" {
+			filtered = append(filtered, t)
+		}
+	}
+	return filtered
+}
+
+// parseKeyFieldNodes recursively parses tokens starting at pos into a list of KeyFieldNode.
+// Returns the parsed nodes and the updated position after parsing.
+func parseKeyFieldNodes(tokens []string, pos int) ([]*KeyFieldNode, int) {
+	var nodes []*KeyFieldNode
+	for pos < len(tokens) {
+		tok := tokens[pos]
+		if tok == "}" {
+			// End of current nested block; caller will consume the "}"
+			return nodes, pos
+		}
+		if tok == "{" {
+			// Unexpected "{" without a preceding field name; skip
+			pos++
+			continue
+		}
+		node := &KeyFieldNode{Name: tok}
+		pos++
+		// Peek: if next token is "{", parse children
+		if pos < len(tokens) && tokens[pos] == "{" {
+			pos++ // consume "{"
+			var children []*KeyFieldNode
+			children, pos = parseKeyFieldNodes(tokens, pos)
+			node.Fields = children
+			if pos < len(tokens) && tokens[pos] == "}" {
+				pos++ // consume "}"
+			}
+		}
+		nodes = append(nodes, node)
+	}
+	return nodes, pos
 }
 
 // parseField creates a Field structure from field definition.

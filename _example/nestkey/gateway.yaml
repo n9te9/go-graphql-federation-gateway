@@ -1,0 +1,16 @@
+endpoint: /graphql
+port: 9000
+service_name: nestkey-gateway
+timeout_duration: "5s"
+request_timeout: "30s"
+services:
+- name: locations
+  host: http://localhost:8601/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: weather
+  host: http://localhost:8602/query
+  retry:
+    attempts: 3
+    timeout: "5s"
