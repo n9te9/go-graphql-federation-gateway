@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -9,9 +10,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/goccy/go-json"
-
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/graphql-parser/ast"
 	"github.com/n9te9/graphql-parser/lexer"
 	"github.com/n9te9/graphql-parser/parser"
@@ -191,38 +191,48 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		ctx = executor.SetRequestHeaderToContext(ctx, r.Header)
 	}
 
-	l := lexer.New(req.Query)
-	p := parser.New(l)
-	doc := p.ParseDocument()
-	if len(p.Errors()) > 0 {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"errors": p.Errors(),
-		})
-		return
-	}
+	// Fast path: reuse a cached plan when the query string is identical.
+	// The cache is scoped to the current executionEngine, so it is automatically
+	// invalidated whenever the schema is updated (old engine is GC'd).
+	var plan *planner.PlanV2
+	if cached, ok := engine.planner.PlanCache().Load(req.Query); ok {
+		plan = cached.(*planner.PlanV2)
+	} else {
+		l := lexer.New(req.Query)
+		p := parser.New(l)
+		doc := p.ParseDocument()
+		if len(p.Errors()) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"errors": p.Errors(),
+			})
+			return
+		}
 
-	// Validate @inaccessible fields using the snapshot engine.
-	if err := g.validateAccessibility(doc, engine); err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"errors": []map[string]any{
-				{
-					"message":    err.Error(),
-					"extensions": map[string]string{"code": "INACCESSIBLE_FIELD"},
+		// Validate @inaccessible fields using the snapshot engine.
+		if err := g.validateAccessibility(doc, engine); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"errors": []map[string]any{
+					{
+						"message":    err.Error(),
+						"extensions": map[string]string{"code": "INACCESSIBLE_FIELD"},
+					},
 				},
-			},
-		})
-		return
-	}
+			})
+			return
+		}
 
-	plan, err := engine.planner.Plan(doc, req.Variables)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"errors": []string{err.Error()},
-		})
-		return
+		var err error
+		plan, err = engine.planner.Plan(doc, req.Variables)
+		if err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"errors": []string{err.Error()},
+			})
+			return
+		}
+		engine.planner.PlanCache().Store(req.Query, plan)
 	}
 
 	resp, err := engine.executor.Execute(ctx, plan, req.Variables)

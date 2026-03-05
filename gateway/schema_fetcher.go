@@ -2,11 +2,10 @@ package gateway
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/goccy/go-json"
 )
 
 // serviceSDLResponse is the response body from a subgraph's GraphQL endpoint

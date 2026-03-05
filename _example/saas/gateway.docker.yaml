@@ -5,32 +5,32 @@ timeout_duration: "5s"
 request_timeout: "30s"
 services:
 - name: organizations
-  host: http://host.docker.internal:8501/query
+  host: http://organizations:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: projects
-  host: http://host.docker.internal:8502/query
+  host: http://projects:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: billing
-  host: http://host.docker.internal:8503/query
+  host: http://billing:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: resources
-  host: http://host.docker.internal:8504/query
+  host: http://resources:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: billing-v2
-  host: http://host.docker.internal:8505/query
+  host: http://billing-v2:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: events
-  host: http://host.docker.internal:8506/query
+  host: http://events:8080/query
   retry:
     attempts: 3
     timeout: "5s"

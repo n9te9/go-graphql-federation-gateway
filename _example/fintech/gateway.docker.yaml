@@ -5,32 +5,32 @@ timeout_duration: "5s"
 request_timeout: "30s"
 services:
 - name: customers
-  host: http://host.docker.internal:8201/query
+  host: http://customers:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: accounts
-  host: http://host.docker.internal:8202/query
+  host: http://accounts:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: transactions
-  host: http://host.docker.internal:8203/query
+  host: http://transactions:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: audit
-  host: http://host.docker.internal:8204/query
+  host: http://audit:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: customers-eu
-  host: http://host.docker.internal:8205/query
+  host: http://customers-eu:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: activities
-  host: http://host.docker.internal:8206/query
+  host: http://activities:8080/query
   retry:
     attempts: 3
     timeout: "5s"

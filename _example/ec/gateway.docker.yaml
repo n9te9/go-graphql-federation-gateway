@@ -7,40 +7,40 @@ enable_complement_request_id: false
 enable_hang_over_request_header: false
 services:
 - name: products
-  host: http://host.docker.internal:8101/query
+  host: http://products:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: reviews
-  host: http://host.docker.internal:8102/query
+  host: http://reviews:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: users
-  host: http://host.docker.internal:8103/query
+  host: http://users:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: inventory
-  host: http://host.docker.internal:8104/query
+  host: http://inventory:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: catalog
-  host: http://host.docker.internal:8105/query
+  host: http://catalog:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: products-v2
-  host: http://host.docker.internal:8106/query
+  host: http://products-v2:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: search
-  host: http://host.docker.internal:8107/query
+  host: http://search:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 opentelemetry:
   tracing:
-    enable: true
+    enable: false

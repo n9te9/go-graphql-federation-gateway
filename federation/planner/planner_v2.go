@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/graphql-parser/ast"
@@ -43,6 +44,7 @@ type PlanV2 struct {
 // PlannerV2 generates query execution plans.
 type PlannerV2 struct {
 	SuperGraph *graph.SuperGraphV2 // Super graph
+	planCache  sync.Map            // key: query string, value: *PlanV2
 }
 
 // NewPlannerV2 creates a new PlannerV2 instance.
@@ -176,6 +178,26 @@ func (p *PlannerV2) Plan(doc *ast.Document, variables map[string]any) (*PlanV2, 
 	// For now, @provides directives are parsed and available in entity field metadata,
 	// but the optimization logic is deferred to future implementation.
 
+	return plan, nil
+}
+
+// PlanCache exposes the internal plan cache for read/write access by the gateway layer.
+func (p *PlannerV2) PlanCache() *sync.Map {
+	return &p.planCache
+}
+
+// PlanCached returns a cached plan for the given query string if available,
+// otherwise calls Plan and stores the result. Variables are not part of the cache
+// key because Plan does not use them — they are applied at execution time.
+func (p *PlannerV2) PlanCached(query string, doc *ast.Document, variables map[string]any) (*PlanV2, error) {
+	if cached, ok := p.planCache.Load(query); ok {
+		return cached.(*PlanV2), nil
+	}
+	plan, err := p.Plan(doc, variables)
+	if err != nil {
+		return nil, err
+	}
+	p.planCache.Store(query, plan)
 	return plan, nil
 }
 
