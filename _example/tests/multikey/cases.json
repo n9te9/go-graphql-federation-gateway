@@ -1,0 +1,70 @@
+[
+  {
+    "name": "Multiple @key: Owner Service Only (id key)",
+    "query": "query UserBase($id: ID!) { user(id: $id) { id username name } }",
+    "variables": { "id": "u1" },
+    "expected": {
+      "user": {
+        "id": "u1",
+        "name": "Alice Smith",
+        "username": "alice"
+      }
+    }
+  },
+  {
+    "name": "Multiple @key: Cross-Service via Alternate Key (username key to badges)",
+    "query": "query UserWithBadges($id: ID!) { user(id: $id) { name badges } }",
+    "variables": { "id": "u1" },
+    "expected": {
+      "user": {
+        "badges": ["early-adopter", "power-user"],
+        "name": "Alice Smith"
+      }
+    }
+  },
+  {
+    "name": "Multiple @key: All Fields (both services)",
+    "query": "query UserFull($id: ID!) { user(id: $id) { id username name badges } }",
+    "variables": { "id": "u1" },
+    "expected": {
+      "user": {
+        "badges": ["early-adopter", "power-user"],
+        "id": "u1",
+        "name": "Alice Smith",
+        "username": "alice"
+      }
+    }
+  },
+  {
+    "name": "Multiple @key: Second User via Alternate Key",
+    "query": "query UserWithBadges($id: ID!) { user(id: $id) { name badges } }",
+    "variables": { "id": "u2" },
+    "expected": {
+      "user": {
+        "badges": ["contributor"],
+        "name": "Bob Jones"
+      }
+    }
+  },
+  {
+    "name": "Multiple @key: Third User - All Fields",
+    "query": "query UserFull($id: ID!) { user(id: $id) { id username name badges } }",
+    "variables": { "id": "u3" },
+    "expected": {
+      "user": {
+        "badges": ["early-adopter", "contributor", "mentor"],
+        "id": "u3",
+        "name": "Carol White",
+        "username": "carol"
+      }
+    }
+  },
+  {
+    "name": "Multiple @key: Unknown User Returns Null",
+    "query": "query UserWithBadges($id: ID!) { user(id: $id) { name badges } }",
+    "variables": { "id": "unknown" },
+    "expected": {
+      "user": null
+    }
+  }
+]

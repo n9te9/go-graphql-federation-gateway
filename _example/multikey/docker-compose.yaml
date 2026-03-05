@@ -1,0 +1,18 @@
+services:
+  users:
+    build:
+      context: ./users
+      dockerfile: Dockerfile
+    ports:
+      - "8701:8080"
+    environment:
+      - PORT=8080
+
+  badges:
+    build:
+      context: ./badges
+      dockerfile: Dockerfile
+    ports:
+      - "8702:8080"
+    environment:
+      - PORT=8080

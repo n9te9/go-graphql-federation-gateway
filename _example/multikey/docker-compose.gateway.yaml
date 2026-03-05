@@ -1,0 +1,25 @@
+services:
+  go-gateway:
+    build:
+      context: ../..
+      dockerfile: _example/Dockerfile.gateway
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./gateway.docker.yaml:/app/gateway.yaml
+    networks:
+      - default
+      - subgraph_net
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 512M
+        reservations:
+          cpus: '0.5'
+          memory: 128M
+
+networks:
+  subgraph_net:
+    name: multikey_default
+    external: true

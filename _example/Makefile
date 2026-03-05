@@ -1,4 +1,4 @@
-.PHONY: test-ec test-fintech test-saas test-social test-travel test-nestkey test-all
+.PHONY: test-ec test-fintech test-saas test-social test-travel test-nestkey test-multikey test-all
 .PHONY: partial-test-ec partial-test-fintech partial-test-saas partial-test-social partial-test-travel partial-test-all
 .PHONY: setup benchmark benchmark-ec benchmark-fintech benchmark-saas benchmark-social benchmark-travel compare-benchmark all-compare-benchmark
 
@@ -71,7 +71,10 @@ test-travel:
 test-nestkey:
 	bash success_test_runner.sh nestkey
 
-test-all: test-ec test-fintech test-saas test-social test-travel test-nestkey
+test-multikey:
+	bash success_test_runner.sh multikey
+
+test-all: test-ec test-fintech test-saas test-social test-travel test-nestkey test-multikey
 
 # Partial response test targets (service failure scenarios)
 partial-test-ec:
