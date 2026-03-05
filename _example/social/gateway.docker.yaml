@@ -5,32 +5,32 @@ timeout_duration: "5s"
 request_timeout: "30s"
 services:
 - name: users
-  host: http://host.docker.internal:8301/query
+  host: http://users:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: posts
-  host: http://host.docker.internal:8302/query
+  host: http://posts:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: comments
-  host: http://host.docker.internal:8303/query
+  host: http://comments:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: feed
-  host: http://host.docker.internal:8304/query
+  host: http://feed:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: moderation
-  host: http://host.docker.internal:8305/query
+  host: http://moderation:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: notifications
-  host: http://host.docker.internal:8306/query
+  host: http://notifications:8080/query
   retry:
     attempts: 3
     timeout: "5s"

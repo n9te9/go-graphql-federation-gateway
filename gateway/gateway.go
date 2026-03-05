@@ -1,6 +1,7 @@
 package gateway
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
@@ -8,8 +9,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"github.com/goccy/go-json"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"

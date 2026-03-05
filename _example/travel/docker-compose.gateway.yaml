@@ -7,8 +7,9 @@ services:
       - "9000:9000"
     volumes:
       - ./gateway.docker.yaml:/app/gateway.yaml
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    networks:
+      - default
+      - subgraph_net
     deploy:
       resources:
         limits:
@@ -17,3 +18,8 @@ services:
         reservations:
           cpus: '0.5'
           memory: 128M
+
+networks:
+  subgraph_net:
+    name: travel_default
+    external: true

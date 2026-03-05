@@ -5,32 +5,32 @@ timeout_duration: "5s"
 request_timeout: "30s"
 services:
 - name: flights
-  host: http://host.docker.internal:8401/query
+  host: http://flights:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: bookings
-  host: http://host.docker.internal:8402/query
+  host: http://bookings:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: bookables
-  host: http://host.docker.internal:8403/query
+  host: http://bookables:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: hotels
-  host: http://host.docker.internal:8404/query
+  host: http://hotels:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: pricing
-  host: http://host.docker.internal:8405/query
+  host: http://pricing:8080/query
   retry:
     attempts: 3
     timeout: "5s"
 - name: search
-  host: http://host.docker.internal:8406/query
+  host: http://search:8080/query
   retry:
     attempts: 3
     timeout: "5s"
