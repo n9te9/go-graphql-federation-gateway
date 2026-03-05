@@ -833,19 +833,120 @@ func (p *PlannerV2) getKeyFields(typeName string, subGraph *graph.SubGraphV2) []
 
 // injectKeyFieldsIntoParentStep injects @key fields into the parent step's selections
 // so that entity resolution can extract representations.
+// It supports both flat keys ("id") and nested keys ("coordinate { lat lng }").
 func (p *PlannerV2) injectKeyFieldsIntoParentStep(parentStep *StepV2, entityType string, childSubGraph *graph.SubGraphV2, insertionPath []string) {
-	// Get key fields
-	keyFields := p.getKeyFields(entityType, childSubGraph)
-
-	// insertionPath is relative to parentStep's SelectionSet
-	// Example: [reviews, product] means navigate to reviews field, then product field
-
 	if len(insertionPath) == 0 {
-		return // No path to navigate
+		return
 	}
 
-	// Use ensureAndInjectKeyFields to both create missing fields and inject key fields
-	parentStep.SelectionSet = p.ensureAndInjectKeyFields(parentStep.SelectionSet, insertionPath, keyFields)
+	entity, exists := childSubGraph.GetEntity(entityType)
+	if !exists || len(entity.Keys) == 0 {
+		return
+	}
+
+	// Build AST selections from the parsed key field nodes (supports nesting)
+	keyNodes := entity.Keys[0].ParsedFields
+	keySelections := keyFieldNodesToASTSelections(keyNodes)
+
+	// Always prepend __typename
+	typenameField := &ast.Field{
+		Name: &ast.Name{
+			Token: token.Token{Type: token.IDENT, Literal: "__typename"},
+			Value: "__typename",
+		},
+	}
+	keySelections = append([]ast.Selection{typenameField}, keySelections...)
+
+	parentStep.SelectionSet = p.ensureAndInjectKeySelections(parentStep.SelectionSet, insertionPath, keySelections)
+}
+
+// keyFieldNodesToASTSelections converts a slice of KeyFieldNode into AST selections.
+// Leaf nodes produce simple ast.Field; non-leaf nodes produce ast.Field with nested SelectionSet.
+func keyFieldNodesToASTSelections(nodes []*graph.KeyFieldNode) []ast.Selection {
+	var sels []ast.Selection
+	for _, node := range nodes {
+		field := &ast.Field{
+			Name: &ast.Name{
+				Token: token.Token{Type: token.IDENT, Literal: node.Name},
+				Value: node.Name,
+			},
+		}
+		if len(node.Fields) > 0 {
+			field.SelectionSet = keyFieldNodesToASTSelections(node.Fields)
+		}
+		sels = append(sels, field)
+	}
+	return sels
+}
+
+// ensureAndInjectKeySelections navigates insertionPath in selections, creating missing fields as
+// needed, and at the terminal field merges keySelections into its SelectionSet.
+func (p *PlannerV2) ensureAndInjectKeySelections(selections []ast.Selection, path []string, keySelections []ast.Selection) []ast.Selection {
+	if len(path) == 0 {
+		return selections
+	}
+
+	targetName := path[0]
+	var targetField *ast.Field
+
+	for _, sel := range selections {
+		if f, ok := sel.(*ast.Field); ok {
+			name := f.Name.String()
+			if f.Alias != nil && f.Alias.String() != "" {
+				name = f.Alias.String()
+			}
+			if name == targetName {
+				targetField = f
+				break
+			}
+		}
+	}
+
+	if targetField == nil {
+		targetField = &ast.Field{
+			Name: &ast.Name{
+				Token: token.Token{Type: token.IDENT, Literal: targetName},
+				Value: targetName,
+			},
+			SelectionSet: make([]ast.Selection, 0),
+		}
+		selections = append(selections, targetField)
+	}
+
+	if len(path) == 1 {
+		// Terminal: merge keySelections into targetField.SelectionSet
+		targetField.SelectionSet = mergeKeySelectionsInto(targetField.SelectionSet, keySelections)
+	} else {
+		targetField.SelectionSet = p.ensureAndInjectKeySelections(targetField.SelectionSet, path[1:], keySelections)
+	}
+
+	return selections
+}
+
+// mergeKeySelectionsInto adds each selection from keySelections into existing if not already present.
+// For nested fields (non-leaf), it recursively merges children rather than duplicating the parent.
+func mergeKeySelectionsInto(existing []ast.Selection, keySelections []ast.Selection) []ast.Selection {
+	for _, keySel := range keySelections {
+		keyField, ok := keySel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		found := false
+		for _, ex := range existing {
+			if exField, ok := ex.(*ast.Field); ok && exField.Name.String() == keyField.Name.String() {
+				// Field already present; merge children if this is a nested key field
+				if len(keyField.SelectionSet) > 0 {
+					exField.SelectionSet = mergeKeySelectionsInto(exField.SelectionSet, keyField.SelectionSet)
+				}
+				found = true
+				break
+			}
+		}
+		if !found {
+			existing = append(existing, keyField)
+		}
+	}
+	return existing
 }
 
 // ensureAndInjectKeyFields recursively ensures fields in the path exist and injects key fields.

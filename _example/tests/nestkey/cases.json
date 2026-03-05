@@ -1,0 +1,76 @@
+[
+  {
+    "name": "Nested @key: Owner Service Only (coordinate + name)",
+    "query": "query LocationBase($id: ID!) { location(id: $id) { name coordinate { lat lng } } }",
+    "variables": { "id": "loc1" },
+    "expected": {
+      "location": {
+        "coordinate": {
+          "lat": 35.6762,
+          "lng": 139.6503
+        },
+        "name": "Tokyo Station"
+      }
+    }
+  },
+  {
+    "name": "Nested @key: Cross-Service Resolution (weather field)",
+    "query": "query LocationWeather($id: ID!) { location(id: $id) { name weather } }",
+    "variables": { "id": "loc1" },
+    "expected": {
+      "location": {
+        "name": "Tokyo Station",
+        "weather": "Sunny, 22°C"
+      }
+    }
+  },
+  {
+    "name": "Nested @key: All Fields from Both Services",
+    "query": "query LocationFull($id: ID!) { location(id: $id) { name coordinate { lat lng } weather } }",
+    "variables": { "id": "loc1" },
+    "expected": {
+      "location": {
+        "coordinate": {
+          "lat": 35.6762,
+          "lng": 139.6503
+        },
+        "name": "Tokyo Station",
+        "weather": "Sunny, 22°C"
+      }
+    }
+  },
+  {
+    "name": "Nested @key: Second Location - Cross-Service",
+    "query": "query LocationWeather($id: ID!) { location(id: $id) { name weather } }",
+    "variables": { "id": "loc2" },
+    "expected": {
+      "location": {
+        "name": "Shibuya",
+        "weather": "Cloudy, 20°C"
+      }
+    }
+  },
+  {
+    "name": "Nested @key: Third Location - All Fields",
+    "query": "query LocationFull($id: ID!) { location(id: $id) { name coordinate { lat lng } weather } }",
+    "variables": { "id": "loc3" },
+    "expected": {
+      "location": {
+        "coordinate": {
+          "lat": 35.6896,
+          "lng": 139.6917
+        },
+        "name": "Shinjuku",
+        "weather": "Rainy, 18°C"
+      }
+    }
+  },
+  {
+    "name": "Nested @key: Unknown Location Returns Null",
+    "query": "query LocationWeather($id: ID!) { location(id: $id) { name weather } }",
+    "variables": { "id": "unknown" },
+    "expected": {
+      "location": null
+    }
+  }
+]

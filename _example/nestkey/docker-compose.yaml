@@ -1,0 +1,18 @@
+services:
+  locations:
+    build:
+      context: ./locations
+      dockerfile: Dockerfile
+    ports:
+      - "8601:8080"
+    environment:
+      - PORT=8080
+
+  weather:
+    build:
+      context: ./weather
+      dockerfile: Dockerfile
+    ports:
+      - "8602:8080"
+    environment:
+      - PORT=8080
