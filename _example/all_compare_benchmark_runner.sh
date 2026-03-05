@@ -119,7 +119,7 @@ for entry in "${DOMAINS[@]}"; do
     IFS='|' read -r domain apollo_port query test_name <<< "$entry"
 
     echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
-    echo -e "${CYAN}Domain: ${domain^^}${NC}"
+    echo -e "${CYAN}Domain: $(echo "$domain" | tr '[:lower:]' '[:upper:]')${NC}"
     echo -e "${MAGENTA}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
     echo ""
 
