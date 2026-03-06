@@ -29,6 +29,11 @@ var SampleGatewaySetting = &gateway.GatewayOption{
 			Retry: gateway.RetryOption{Attempts: 3, Timeout: "5s"},
 		},
 	},
+	ConnectionPool: gateway.ConnectionPoolSetting{
+		MaxIdleConnsPerHost: 32,
+		MaxConnsPerHost:     0,
+		IdleConnTimeout:     "90s",
+	},
 }
 
 func Init() {
