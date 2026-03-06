@@ -385,7 +385,7 @@
   },
   {
     "name": "Federation v2: @provides - Optimized User Data",
-    "description": "Verify @provides directive allows accessing User fields through reviews. Note: @provides optimization (avoiding extra entity fetch) is a future improvement; currently the gateway fetches from the owning users service.",
+    "description": "Verify @provides optimization: reviews service declares Review.author @provides(fields: \"username\"), so the gateway skips the entity fetch to users service. Username comes from reviews service directly (\"Alice\", \"Bob\") instead of users service (\"User user1\", \"User user2\").",
     "query": "query { product(id: \"p1\") { id reviews { authorName author { username } } } }",
     "variables": {},
     "expected": {
@@ -395,13 +395,13 @@
           {
             "authorName": "Alice",
             "author": {
-              "username": "User user1"
+              "username": "Alice"
             }
           },
           {
             "authorName": "Bob",
             "author": {
-              "username": "User user2"
+              "username": "Bob"
             }
           }
         ]

@@ -1,0 +1,16 @@
+endpoint: /graphql
+port: 9000
+service_name: provides-gateway
+timeout_duration: "5s"
+request_timeout: "30s"
+services:
+- name: posts
+  host: http://localhost:8901/query
+  retry:
+    attempts: 3
+    timeout: "5s"
+- name: users
+  host: http://localhost:8902/query
+  retry:
+    attempts: 3
+    timeout: "5s"

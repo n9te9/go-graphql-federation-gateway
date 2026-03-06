@@ -547,6 +547,51 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 
 			// Check if this is a nested entity (field type owned by same subgraph as target)
 			isNestedEntity := (entityOwnerSubGraph != nil && entityOwnerSubGraph.Name == targetSubGraph.Name)
+
+			// @provides optimization: when this field is an entity reference (not an extension)
+			// and the parent step's subgraph declares @provides covering ALL requested child fields,
+			// skip creating the entity step.
+			//
+			// Two conditions must both hold to skip:
+			//  1. @provides lists all requested (non-key, non-__typename) child fields.
+			//  2. Those @provides fields are declared in the parent subgraph schema for the entity
+			//     type (so buildStepSelections will include them in the parent query).
+			//
+			// Condition 2 guards against @provides declarations whose fields are not in the
+			// subgraph schema (e.g. Review.product @provides(fields: "name price") where the
+			// reviews service does not declare Product.name — its resolver cannot return it).
+			if entityTypeToResolve != parentType {
+				provides := p.getFieldProvides(parentStep.SubGraph, parentType, fieldName)
+				if len(provides) > 0 {
+					expandedChildSels := p.expandFragmentsInSelections(field.SelectionSet, fragmentDefs)
+					if p.childFieldsCoveredByProvides(expandedChildSels, provides, entityTypeToResolve, targetSubGraph) &&
+						p.providedFieldsDeclaredInSchema(parentStep.SubGraph, entityTypeToResolve, expandedChildSels, provides, targetSubGraph) {
+						// Compute injection path (same formula as injectKeyFieldsIntoParentStep).
+						// buildStepSelections uses the ownership map and excludes @external fields,
+						// so we must explicitly inject the @provides fields into the parent step's
+						// selection so the parent service's resolver includes them in its response.
+						var providesRelPath []string
+						if len(parentStep.InsertionPath) == 0 {
+							if len(currentPath) > 0 && (currentPath[0] == "Query" || currentPath[0] == "Mutation" || currentPath[0] == "Subscription") {
+								providesRelPath = currentPath[1:]
+							} else {
+								providesRelPath = currentPath
+							}
+						} else {
+							providesRelPath = currentPath[len(parentStep.InsertionPath):]
+						}
+						if isNestedEntity && entityTypeToResolve != parentType {
+							providesRelPath = append(append([]string{}, providesRelPath...), fieldName)
+						}
+						providedSels := p.buildProvidesSelections(expandedChildSels, provides)
+						parentStep.SelectionSet = p.ensureAndInjectKeySelections(
+							parentStep.SelectionSet, providesRelPath, providedSels,
+						)
+						continue // Entity step skipped — parent service returns @provides fields directly
+					}
+				}
+			}
+
 			// The stepKey should identify a unique entity resolution step, based on:
 			// - Target subgraph
 			// - Entity type
@@ -829,6 +874,164 @@ func (p *PlannerV2) getKeyFields(typeName string, subGraph *graph.SubGraphV2) []
 	result = append(result, keyFieldNames...)
 
 	return result
+}
+
+// buildProvidesSelections returns AST selections for the requested fields that are
+// covered by @provides. Only fields present in both requestedSels and the provides
+// list are included (key fields and __typename are always omitted since they are
+// already managed separately).
+func (p *PlannerV2) buildProvidesSelections(requestedSels []ast.Selection, provides []string) []ast.Selection {
+	providesSet := make(map[string]bool, len(provides))
+	for _, pf := range provides {
+		providesSet[pf] = true
+	}
+	var sels []ast.Selection
+	for _, sel := range requestedSels {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		if providesSet[field.Name.String()] {
+			sels = append(sels, field)
+		}
+	}
+	return sels
+}
+
+// getFieldProvides returns the @provides field names for a given field on a parent type
+// within the specified subgraph. It checks both entity types (with @key) and plain
+// object types (without @key, e.g. Review) by searching the schema AST.
+// Returns nil if @provides is not declared.
+func (p *PlannerV2) getFieldProvides(subGraph *graph.SubGraphV2, parentType, fieldName string) []string {
+	// Check entity types first (types with @key — stored in subGraph.entities)
+	entity, ok := subGraph.GetEntity(parentType)
+	if ok {
+		field, ok := entity.Fields[fieldName]
+		if ok && len(field.Provides) > 0 {
+			return field.Provides
+		}
+	}
+
+	// For non-entity types (no @key), parse @provides directly from the schema AST.
+	for _, def := range subGraph.Schema.Definitions {
+		obj, ok := def.(*ast.ObjectTypeDefinition)
+		if !ok || obj.Name.String() != parentType {
+			continue
+		}
+		for _, f := range obj.Fields {
+			if f.Name.String() != fieldName {
+				continue
+			}
+			for _, d := range f.Directives {
+				if d.Name != "provides" {
+					continue
+				}
+				for _, arg := range d.Arguments {
+					if arg.Name.String() == "fields" {
+						fieldsVal := strings.Trim(arg.Value.String(), "\"")
+						return strings.Fields(fieldsVal)
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// providedFieldsDeclaredInSchema checks that the @provides optimization can safely apply.
+//
+// The key safety condition: the entity type must be declared as a FULL type definition
+// (`type Foo { ... }`, i.e. ObjectTypeDefinition) in the providing subgraph — not merely
+// as an extension (`extend type Foo { ... }`).
+//
+// Rationale: when a subgraph declares `type User { id @external; username @external }`,
+// its resolver is expected to return username directly (the @provides contract). But when
+// it only declares `extend type Organization { name @external }`, the fields are declared
+// for schema-composition purposes only; the actual resolver typically does NOT return those
+// fields — it relies on entity resolution from the owning service.
+//
+// Examples:
+//   - reviews schema: `type User @key(fields:"id") { id @external; username @external }` → full type → optimization OK
+//   - projects schema: `extend type Organization { name @external }` → extension only → skip optimization
+func (p *PlannerV2) providedFieldsDeclaredInSchema(subGraph *graph.SubGraphV2, entityType string, childSels []ast.Selection, provides []string, targetSG *graph.SubGraphV2) bool {
+	// The entity type must be declared as a full ObjectTypeDefinition in the providing subgraph.
+	// Extensions (ObjectTypeExtension) indicate that the resolver does not own the type and
+	// is unlikely to return the @provides fields.
+	entityTypeDeclaredAsFull := false
+	for _, def := range subGraph.Schema.Definitions {
+		if obj, ok := def.(*ast.ObjectTypeDefinition); ok && obj.Name.String() == entityType {
+			entityTypeDeclaredAsFull = true
+			break
+		}
+	}
+	if !entityTypeDeclaredAsFull {
+		return false
+	}
+
+	providesSet := make(map[string]bool, len(provides))
+	for _, pf := range provides {
+		providesSet[pf] = true
+	}
+
+	keyFields := p.getKeyFields(entityType, targetSG)
+	keySet := make(map[string]bool, len(keyFields))
+	for _, kf := range keyFields {
+		keySet[kf] = true
+	}
+
+	for _, sel := range childSels {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		fname := field.Name.String()
+		if fname == "__typename" || keySet[fname] {
+			continue
+		}
+		if !providesSet[fname] {
+			continue // Not a @provides field — not our concern here
+		}
+		// @provides field: must be declared in the subgraph schema
+		if !p.fieldDeclaredInSubGraph(subGraph, entityType, fname) {
+			return false
+		}
+	}
+	return true
+}
+
+// childFieldsCoveredByProvides reports whether every requested non-trivial child field
+// (i.e., excluding __typename and key fields of the entity type) is listed in provides.
+func (p *PlannerV2) childFieldsCoveredByProvides(childSels []ast.Selection, provides []string, entityType string, targetSubGraph *graph.SubGraphV2) bool {
+	if len(childSels) == 0 {
+		return true // No child fields requested — trivially covered
+	}
+
+	providesSet := make(map[string]bool, len(provides))
+	for _, pf := range provides {
+		providesSet[pf] = true
+	}
+
+	// Key fields are always available so don't need to be in @provides
+	keyFields := p.getKeyFields(entityType, targetSubGraph)
+	keySet := make(map[string]bool, len(keyFields))
+	for _, kf := range keyFields {
+		keySet[kf] = true
+	}
+
+	for _, sel := range childSels {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		fname := field.Name.String()
+		if fname == "__typename" || keySet[fname] {
+			continue // Always available
+		}
+		if !providesSet[fname] {
+			return false // Field not covered by @provides
+		}
+	}
+	return true
 }
 
 // injectKeyFieldsIntoParentStep injects @key fields into the parent step's selections
