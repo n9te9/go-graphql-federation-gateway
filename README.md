@@ -1,287 +1,237 @@
 # Go GraphQL Federation Gateway
 
-A robust, hackable, and high-performance **GraphQL Federation v2 Gateway** written purely in **Go**.
+A **stateless**, high-performance **GraphQL Federation v2 Gateway** written purely in **Go**.
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Go Version](https://img.shields.io/badge/go-1.25+-00ADD8.svg?logo=go)
-![Version](https://img.shields.io/badge/version-v0.1.4-blue.svg)
+![Version](https://img.shields.io/badge/version-v0.1.5-blue.svg)
 ![Status](https://img.shields.io/badge/status-active-success.svg)
 
 ## 📖 Introduction
 
-**Go GraphQL Federation Gateway** is designed to be a lightweight GraphQL Federation v2 Gateway written purely in Go.
+**Go GraphQL Federation Gateway** is a lightweight, stateless GraphQL Federation v2 Gateway written purely in Go.
 
-While existing solutions like Apollo Router (Rust) are excellent, extending them often requires learning Rust or dealing with binary constraints. This project provides a fully-featured Federation Gateway that is:
+While existing solutions like Apollo Router (Rust) are excellent, extending them often requires learning Rust or dealing with binary constraints. This gateway provides:
 
-* **Native Go:** Easy to read, debug, and extend for Go developers.
-* **Federation v2 Compliant:** Supports core and advanced directives including `@key`, `@requires`, `@external`, `@override`, `@inaccessible`, and more.
-* **Hackable:** The Planner and Executor logic is modular, allowing for custom optimization strategies.
-* **Observable:** Built-in OpenTelemetry support for production-grade tracing.
-* **Performance Optimized:** Parallel benchmark workflow with comprehensive performance testing across multiple domains.
+- **Native Go** — Easy to read, debug, and extend for Go developers
+- **Stateless design** — HTTP-only (query & mutation); no WebSocket state required
+- **Federation v2 Compliant** — Core and advanced directives fully supported
+- **Hackable** — Modular Planner/Executor architecture for custom optimization
+- **Observable** — Built-in OpenTelemetry tracing support
+- **Faster than Apollo Router** — 1.58x higher throughput in benchmarks
 
-## 🆕 What's New in v0.1.4
+## 🆕 What's New in v0.1.5
 
-### Query Planner Optimizations
-- **Dijkstra-based optimized planner (`PlanOptimized`):** New `PlanOptimized()` method using a weighted directed graph with Dijkstra's algorithm to find the minimum-cost execution plan across subgraphs. `@provides` shortcuts are modeled as zero-cost edges for optimal cross-service routing.
-- **`@shareable` subgraph preference:** Planner now preferentially selects the same subgraph as the parent step when a field is `@shareable` across multiple subgraphs, eliminating unnecessary entity fetches.
-- **Entity step deduplication fix:** Fixed a bug where sibling extension fields on the same entity type (e.g., `inStock` and `shippingCost` on an inventory-extended `Product`) were incorrectly generating separate `_entities` calls. These are now correctly merged into a single call — matching Apollo Router behavior and reducing subgraph round-trips.
+### Federation v2 Compliance
 
-### Federation v2 Directive Improvements
-- **`@key(resolvable: false)` support:** Entities marked with `resolvable: false` are now correctly excluded from entity fetch origin selection. The planner skips them as resolution entry points while still allowing reference traversal.
-- **`@requires` dependency chaining:** Improved `@requires` field injection to correctly handle chained dependencies (e.g., `purchaseHistory → reviews → reviewCount`), ensuring required fields are injected in topological order.
+- **`@key` nested field support:** `@key(fields: "coordinate { lat lng }")` — nested object keys are fully parsed and resolved via a `KeyFieldNode` tree structure
+- **Multiple `@key` directives (executor fix):** When an extension subgraph declares a different `@key` than the owner's first key, the executor now correctly uses the extension's key for `_entities` representations (e.g., `@key(fields: "username")` in badges service when owner also has `@key(fields: "id")`)
+- **`@provides` optimization:** Entity steps are skipped when the parent service fully covers all requested child fields via `@provides`. Safety check ensures the optimization only applies when the entity type is declared as a full `type` definition (not `extend type`)
 
-### Testing & Infrastructure
-- **78+ integration tests** across 5 production-like domains (up from 73+)
-- **Subgraph Docker images** now pre-compile at build time (`go build`) instead of `go run`, dramatically reducing container startup time and improving test reliability
-- **Regression test** added for entity step deduplication (`TestECBenchmarkQuery_PlanSteps`)
+### Performance
 
-## 🆕 What's New in v0.1.3
+- **HTTP connection pool settings via `gateway.yaml`:** `max_idle_conns_per_host` (default 32), `max_conns_per_host`, and `idle_conn_timeout` are now configurable — eliminating the previous bottleneck of `MaxIdleConnsPerHost: 2` from `http.DefaultTransport`
+- **`sync.Pool` request body buffering:** `sendRequest` now uses a pool of `*bytes.Buffer` instances, eliminating per-request `json.Marshal` intermediate `[]byte` allocation and `bytes.NewReader` wrapper
+- **Result: 1.58x faster than Apollo Router** (4,380 req/s vs 2,771 req/s at concurrency 50)
 
-### Enhanced Federation v2 Support
-- **`@override` directive:** Progressive field ownership migration between subgraphs
-- **`@inaccessible` directive:** Hide fields/types from the public schema
-- **`@tag` directive:** Schema metadata annotations for tooling
-- **`@interfaceObject` directive:** Interface representation in subgraphs
-- **`@composeDirective` directive:** Custom directive preservation
+### Testing
 
-### Comprehensive Testing Infrastructure
-- **73+ integration tests** across 5 production-like domains
-- Variable-based query testing with complex nested structures
-- Full coverage of all Federation v2 directives
-- Automated validation in CI/CD pipeline
-
-### Performance Benchmarking
-- **Parallel benchmark workflow** for efficient performance testing
-- Direct comparison with Apollo Router baseline
-- Automated PR comments with detailed performance metrics
-- Domain-specific benchmark scripts for local testing
+- **135+ integration tests** across 8 production-like domains (EC, Fintech, SaaS, Social, Travel, nestkey, multikey, provides)
+- **3 new test domains** demonstrating nested keys (`nestkey`), alternate key resolution (`multikey`), and `@provides` optimization (`provides`)
 
 ## ✨ Key Features
 
-* **Apollo Federation v2 Support:** Seamlessly composes subgraphs using v2 directives.
-* **Advanced Query Planning:**
-  * Solves complex dependency graphs (DAGs).
-  * **Optimized planner (`PlanOptimized`):** Uses Dijkstra's algorithm on a weighted directed graph to find the minimum-cost execution plan. `@provides` fields are modeled as zero-cost shortcuts.
-  * Handles **`@requires`** directives by automatically injecting required fields (e.g., `weight`) into upstream requests to compute dependent fields (e.g., `shippingEstimate`). Supports chained `@requires` dependencies.
-  * Resolves **Deadlocks** and circular dependencies in schema definitions using strict `@external` checks.
-  * **`@shareable` preference:** Preferentially selects the parent's subgraph when a field is available in multiple subgraphs, eliminating unnecessary entity fetches.
-  * **Entity step deduplication:** Sibling extension fields on the same entity type are merged into a single `_entities` call, matching Apollo Router behavior.
-* **"Flattening" Execution Strategy:**
-  * Avoids recursion hell by flattening entity requests.
-  * Optimizes `_entities` queries by discarding unnecessary parent paths, ensuring compatibility with all subgraph implementations.
-* **Concurrent Execution:** Fetches independent subgraphs in parallel using Go routines with proper context handling.
-* **Partial Response Support:** Returns partial data when some subgraphs fail, improving resilience and user experience.
-  * Failed fields are set to `null` with detailed error information.
-  * Errors include path information and service name for easy debugging.
-  * Graceful degradation with continued execution when possible.
-  * See [Partial Response Documentation](docs/partial-response.md) for details.
-* **Comprehensive Testing:** 
-  * **78+ integration tests** covering all Federation v2 features across 5 example domains (EC, Fintech, SaaS, Social, Travel).
-  * Variable-based query testing with multiple data types, nested queries, and composite keys.
-  * Partial response tests validating graceful degradation scenarios.
-  * Tests validate `@key`, `@external`, `@requires`, `@provides`, `@shareable`, `@override`, `@inaccessible`, `@tag`, and `@key(resolvable: false)` directives.
-  * **Automated parallel benchmarking** comparing Go Gateway vs Apollo Router performance across all domains.
-* **Observability:**
-  * Full **OpenTelemetry** support.
-  * Traces propagate context to subgraphs (`traceparent` injection), allowing for end-to-end visualization of distributed requests.
+### Stateless Architecture
+
+This gateway is designed to be **stateless and horizontally scalable**:
+- HTTP-only: query and mutation operations
+- No persistent WebSocket connections (Subscription is intentionally out of scope)
+- Every request is fully self-contained
+
+### Advanced Query Planning
+
+- **DAG-based execution:** Resolves complex dependency graphs, executing independent steps in parallel
+- **`@requires` injection:** Automatically injects required fields (e.g., `weight`) into upstream requests for computed fields (e.g., `shippingCost`). Supports chained `@requires` dependencies
+- **`@provides` optimization:** Skips unnecessary `_entities` fetches when the parent service already provides the needed fields
+- **`@shareable` preference:** Prefers the parent's subgraph for `@shareable` fields to avoid extra entity fetches
+- **Entity step deduplication:** Sibling extension fields on the same entity are merged into a single `_entities` call
+- **Query plan caching:** Plans are cached per query string and reused on cache hits, skipping parse/validate/plan on repeated queries
+
+### Concurrent Execution
+
+- Independent subgraph steps execute in parallel via goroutines
+- Step dependency graph (DAG) ensures correct ordering
+
+### Partial Response Support
+
+- Returns partial data when some subgraphs fail
+- Failed fields are set to `null` with error details including path and service name
+- Execution continues for independent fields even when some steps fail
+
+### HTTP Connection Pool
+
+Configurable via `gateway.yaml`:
+
+```yaml
+connection_pool:
+  max_idle_conns_per_host: 32   # default: 32
+  max_conns_per_host: 0         # default: 0 (unlimited)
+  idle_conn_timeout: "90s"      # default: "90s"
+```
+
+## 🧩 Supported Directives
+
+### Core Federation v2 Directives
+
+| Directive | Status | Notes |
+| :--- | :---: | :--- |
+| `@key` | ✅ | Simple, composite, nested (`"coord { lat lng }"`), multiple `@key` per type |
+| `@key(resolvable: false)` | ✅ | Excluded from entity fetch origin selection |
+| `@external` | ✅ | Correct ownership filtering, prevents stub references from being treated as owners |
+| `@requires` | ✅ | Chained dependency injection in topological order |
+| `@provides` | ✅ | Optimization: skips entity step when parent covers all requested fields |
+| `@shareable` | ✅ | Same-subgraph preference to avoid unnecessary entity fetches |
+| `@override` | ✅ | Field ownership migration between subgraphs |
+| `@inaccessible` | ✅ | Type & field level; enforced at schema composition and query validation |
+| `@tag` | ✅ | Type & field level metadata |
+| `@interfaceObject` | ✅ | Interface types as entities; inline fragment resolution |
+| `@composeDirective` | ✅ | Custom directive preservation and consistency validation |
+| `@link` | ✅ | Parsed and passed through in composed schema |
+
+### Not Supported (Intentional)
+
+| Feature | Reason |
+| :--- | :--- |
+| **Subscription** | Requires stateful WebSocket connections; contradicts stateless design |
+| `@authenticated / @requiresScopes / @policy` | Authorization layer should be handled outside the gateway |
+| `@defer / @stream` | Requires long-lived streaming connections |
+| Federated Tracing (ftv1) | Apollo Studio-specific protocol |
+| `@override(label)` | Progressive override; planned for future release |
 
 ## ⚠️ Schema Definition Best Practices
 
-The planner relies on explicit schema definitions to determine field ownership and dependency graphs.
+The planner relies on explicit schema definitions to determine field ownership.
 
-To ensure correct planning and avoid deadlocks:
-* **Explicitly use `extend type`** for type extensions.
-* **Always mark external fields with `@external`**, even if Federation v2 allows omitting it in some cases.
+Always use `extend type` and mark external fields with `@external`:
 
-**Recommended:**
 ```graphql
-extend type Product @key(fields: "upc") {
-  upc: String! @external
-  weight: Int @external
-  shippingEstimate: Int @requires(fields: "weight")
+# ✅ Recommended
+extend type Product @key(fields: "id") {
+  id: ID! @external
+  weight: Float @external
+  shippingCost: Float @requires(fields: "weight")
 }
+```
+
+## 🛠️ Getting Started
+
+### Option 1: Install the Binary
+
+```bash
+go install github.com/n9te9/go-graphql-federation-gateway/cmd/go-graphql-federation-gateway@latest
+```
+
+Initialize configuration:
+
+```bash
+go-graphql-federation-gateway init
+```
+
+This generates a `gateway.yaml` with sensible defaults:
+
+```yaml
+endpoint: /graphql
+port: 9000
+service_name: go-graphql-federation-gateway
+timeout_duration: "5s"
+request_timeout: "30s"
+services:
+  - name: products
+    host: http://localhost:4001
+    retry:
+      attempts: 3
+      timeout: "5s"
+connection_pool:
+  max_idle_conns_per_host: 32
+  max_conns_per_host: 0
+  idle_conn_timeout: "90s"
+opentelemetry:
+  tracing:
+    enable: false
+```
+
+Start the gateway:
+
+```bash
+go-graphql-federation-gateway serve
+```
+
+### Option 2: Run the Example
+
+```bash
+git clone https://github.com/n9te9/go-graphql-federation-gateway.git
+cd _example/ec
+docker compose up -d
+```
+
+Then start the gateway:
+
+```bash
+cd _example/ec
+go-graphql-federation-gateway serve
+```
+
+## 🧪 Integration Tests
+
+```bash
+cd _example
+
+make test-all       # All 8 domains (135+ tests)
+make test-ec        # EC domain only
+make test-nestkey   # Nested @key tests
+make test-multikey  # Multiple @key directive tests
+make test-provides  # @provides optimization tests
+```
+
+## 📊 Performance
+
+Benchmarks run at concurrency 50 with 10,000 requests per domain (Docker internal networking):
+
+| Domain | Go Gateway | Apollo Router | Ratio |
+| :--- | ---: | ---: | :--- |
+| EC — `@external + @requires` | ~4,380 req/s | ~2,771 req/s | **1.58x faster** |
+
+Run benchmarks locally:
+
+```bash
+cd _example
+make setup      # Install hey, verify Docker
+make benchmark  # All domains
 ```
 
 ## 🔭 Observability
 
-This gateway supports distributed tracing via **OpenTelemetry (OTLP)**.
+Enable OpenTelemetry tracing in `gateway.yaml`:
 
-### Configuration
-Tracing is enabled via `gateway.yaml` and configured using standard OTEL environment variables.
-
-**1. Enable in `gateway.yaml`:**
 ```yaml
 opentelemetry:
   tracing:
-    enabled: true
+    enable: true
 ```
 
-**2. Configure Exporter (Environment Variables):**
-The gateway uses the OTLP HTTP exporter by default.
+Configure the exporter via environment variable:
 
 ```bash
 export OTEL_EXPORTER_OTLP_ENDPOINT="http://localhost:4318"
 ```
 
-## 🧩 Supported Directives
-
-### Core Federation v1/v2 Directives
-
-| Directive | Status | Description |
-| :--- | :---: | :--- |
-| `@key` | ✅ | Entity resolution via `_entities`. Supports both simple and composite keys. |
-| `@key(resolvable: false)` | ✅ | Marks an entity as non-resolvable; excluded from entity fetch origin selection. |
-| `@external` | ✅ | Used to identify fields owned by other subgraphs. |
-| `@requires` | ✅ | Solves computed fields by injecting dependencies. Supports chained dependency graphs. |
-| `@provides` | ✅ | Optimization for pre-fetching fields from entities. Modeled as zero-cost edges in the optimized planner. |
-| `@shareable`| ✅ | Allows same field/type definition across multiple subgraphs. Planner prefers same-subgraph resolution. |
-
-### Advanced Federation v2 Directives
-
-| Directive | Status | Description |
-| :--- | :---: | :--- |
-| `@override` | ✅ | Progressive migration of field ownership between subgraphs. |
-| `@inaccessible` | ✅ | Hides fields/types from the public schema while keeping them in the supergraph. |
-| `@tag` | ✅ | Annotates schema elements with metadata for tooling and documentation. |
-| `@interfaceObject` | ✅ | Represents interface types as value types in subgraphs. |
-| `@composeDirective` | ✅ | Preserves custom directives during composition. |
-
-**Tested Features:**
-- ✅ Simple keys (`@key(fields: "id")`)
-- ✅ Composite keys (`@key(fields: "number departureDate")`)
-- ✅ Non-resolvable keys (`@key(fields: "id", resolvable: false)`)
-- ✅ Entity extensions with `@external` fields
-- ✅ Computed fields with `@requires` directive (including chained dependencies)
-- ✅ Field optimization with `@provides` directive  
-- ✅ Shareable fields and types across services (with same-subgraph preference)
-- ✅ Field ownership migration with `@override` directive
-- ✅ Schema element hiding with `@inaccessible` directive
-- ✅ Metadata annotations with `@tag` directive
-- ✅ Nested entity resolution chains
-- ✅ Circular/loopback references
-- ✅ Partial responses with graceful degradation
-- ✅ Variable-based queries with complex nested structures
-- ✅ Entity step deduplication (sibling extension fields merged into one `_entities` call)
-
-## 🛠️ Getting Started
-
-There are two ways to get started: running the included example or installing the gateway for your own project.
-
-### Option 1: Running the Example (Quick Start)
-
-The repository includes a full E-Commerce example (Product, Account, Review, Shipping services) with **Jaeger** for tracing.
-
-1.  **Clone the repository:**
-    ```bash
-    git clone https://github.com/n9te9/go-graphql-federation-gateway.git
-    ```
-
-2.  **Start Subgraphs & Jaeger via Docker:**
-    Navigate to the example directory and start the microservices.
-    ```bash
-    cd _examples/ec
-    docker compose up -d
-    ```
-3.  **Visualize Traces:**
-    Open Jaeger at [http://localhost:16686](http://localhost:16686) to see your request traces.
-
-### Option 2: Installation & Usage (New Project)
-
-To use this gateway with your own subgraphs:
-
-1.  **Install the binary:**
-    ```bash
-    go install github.com/n9te9/go-graphql-federation-gateway/cmd/go-graphql-federation-gateway@latest
-    ```
-
-2.  **Initialize Configuration:**
-    Generate a default `gateway.yaml` file.
-    ```bash
-    go-graphql-federation-gateway init
-    ```
-
-3.  **Start the Server:**
-    ```bash
-    go-graphql-federation-gateway serve
-    ```
-
-## 🧪 Testing the Gateway
-
-Once the gateway is running (default port `9000`), you can send complex Federation queries.
-
-**Example Query:**
-Fetching data from **Inventory** (Product), calculating fields via **Shipping** (`@requires` injection), fetching **Reviews**, and resolving **Users** (Accounts).
-
-```bash
-curl -X POST http://localhost:9000/graphql \
--H "Content-Type: application/json" \
--d '{
-  "query": "query { topProducts(first: 3) { upc name price weight shippingEstimate reviews { body author { username } } } }"
-}' | jq
-```
-
-**Result:**
-You will receive a fully stitched response. If tracing is enabled, check Jaeger to see the breakdown of subgraph requests.
-
-```json
-{
-  "data": {
-    "topProducts": [
-      {
-        "upc": "1",
-        "name": "hogehoge",
-        "price": 1000,
-        "weight": 30,
-        "shippingEstimate": 100,
-        "reviews": [
-          {
-            "body": "Great book!",
-            "author": {
-              "username": "Alice"
-            }
-          }
-        ]
-      }
-      // ...
-    ]
-  }
-}
-```
-
-## 📊 Performance Benchmarking
-
-The project includes comprehensive performance testing infrastructure:
-
-### Automated Benchmarks
-- **Parallel execution** across 5 production-like domains (EC, Fintech, SaaS, Social, Travel)
-- **Direct comparison** between Go Gateway and Apollo Router
-- **10,000 requests** per test at 50 concurrent connections
-- **Metrics tracked:** Requests/sec, Average latency, P50/P95/P99 percentiles
-
-### Running Benchmarks Locally
-
-```bash
-# Run single domain benchmark
-cd _example
-./domain_benchmark.sh ec 9001 '{"query":"..."}' "Test Name"
-
-# Run all domain benchmarks
-cd _example/ec
-./benchmark.sh
-```
-
-### CI/CD Integration
-Pull requests automatically trigger parallel benchmarks across all domains, with results posted as PR comments comparing Go Gateway vs Apollo Router performance.
-
 ## 🤝 Contributing
 
-We welcome contributions! Please follow the **Fork & Pull Request** workflow.
-
-1.  **Fork the Project**
-2.  **Create your Feature Branch** (`git checkout -b feature/AmazingFeature`)
-3.  **Commit your Changes** (`git commit -m 'Add some AmazingFeature'`)
-4.  **Push to the Branch** (`git push origin feature/AmazingFeature`)
-5.  **Open a Pull Request**
+1. Fork the project
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
+5. Open a Pull Request
 
 ## 📝 License
 
