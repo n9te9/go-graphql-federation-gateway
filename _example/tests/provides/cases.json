@@ -1,0 +1,76 @@
+[
+  {
+    "name": "@provides: Post Owner Fields Only (no cross-service needed)",
+    "query": "query PostBase($id: ID!) { post(id: $id) { id title } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "post": {
+        "id": "p1",
+        "title": "Federation Post 1"
+      }
+    }
+  },
+  {
+    "name": "@provides: Optimization - author.name comes from posts service (NOT users service)",
+    "description": "posts declares @provides(fields: \"name\") on author. Gateway skips users service entity fetch. Response must contain 'PROVIDED_alice' (posts value), NOT 'USERS_alice' (users service value).",
+    "query": "query PostWithAuthorName($id: ID!) { post(id: $id) { title author { name } } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "post": {
+        "author": {
+          "name": "PROVIDED_alice"
+        },
+        "title": "Federation Post 1"
+      }
+    }
+  },
+  {
+    "name": "@provides: Second Post - author.name from posts service",
+    "query": "query PostWithAuthorName($id: ID!) { post(id: $id) { title author { name } } }",
+    "variables": { "id": "p2" },
+    "expected": {
+      "post": {
+        "author": {
+          "name": "PROVIDED_bob"
+        },
+        "title": "Federation Post 2"
+      }
+    }
+  },
+  {
+    "name": "@provides: Third Post - author.name from posts service",
+    "query": "query PostWithAuthorName($id: ID!) { post(id: $id) { title author { name } } }",
+    "variables": { "id": "p3" },
+    "expected": {
+      "post": {
+        "author": {
+          "name": "PROVIDED_carol"
+        },
+        "title": "Federation Post 3"
+      }
+    }
+  },
+  {
+    "name": "@provides: All fields including provided name",
+    "query": "query PostFull($id: ID!) { post(id: $id) { id title author { id name } } }",
+    "variables": { "id": "p1" },
+    "expected": {
+      "post": {
+        "author": {
+          "id": "u1",
+          "name": "PROVIDED_alice"
+        },
+        "id": "p1",
+        "title": "Federation Post 1"
+      }
+    }
+  },
+  {
+    "name": "@provides: Unknown Post Returns Null",
+    "query": "query PostWithAuthorName($id: ID!) { post(id: $id) { title author { name } } }",
+    "variables": { "id": "unknown" },
+    "expected": {
+      "post": null
+    }
+  }
+]
