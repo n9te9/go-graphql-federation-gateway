@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -25,16 +26,29 @@ type GatewayService struct {
 	Retry RetryOption `yaml:"retry"`
 }
 
+// ConnectionPoolSetting controls the HTTP connection pool for subgraph requests.
+type ConnectionPoolSetting struct {
+	// MaxIdleConnsPerHost is the maximum number of idle (keep-alive) connections
+	// to keep per subgraph host. 0 uses the Go default (2). Recommended: 32.
+	MaxIdleConnsPerHost int `yaml:"max_idle_conns_per_host"`
+	// MaxConnsPerHost limits the total number of connections per host (0 = unlimited).
+	MaxConnsPerHost int `yaml:"max_conns_per_host"`
+	// IdleConnTimeout is how long an idle connection is kept in the pool before
+	// being closed. Empty string or "0s" means no timeout. Default: "90s".
+	IdleConnTimeout string `yaml:"idle_conn_timeout"`
+}
+
 // GatewayOption is the top-level configuration loaded from gateway.yaml.
 type GatewayOption struct {
-	Endpoint                    string               `yaml:"endpoint"`
-	ServiceName                 string               `yaml:"service_name"`
-	Port                        int                  `yaml:"port"`
-	TimeoutDuration             string               `yaml:"timeout_duration"  default:"5s"`
-	RequestTimeout              string               `yaml:"request_timeout"   default:"30s"`
-	EnableHangOverRequestHeader bool                 `yaml:"enable_hang_over_request_header" default:"true"`
-	Services                    []GatewayService     `yaml:"services"`
-	Opentelemetry               OpentelemetrySetting `yaml:"opentelemetry"`
+	Endpoint                    string                `yaml:"endpoint"`
+	ServiceName                 string                `yaml:"service_name"`
+	Port                        int                   `yaml:"port"`
+	TimeoutDuration             string                `yaml:"timeout_duration"  default:"5s"`
+	RequestTimeout              string                `yaml:"request_timeout"   default:"30s"`
+	EnableHangOverRequestHeader bool                  `yaml:"enable_hang_over_request_header" default:"true"`
+	Services                    []GatewayService      `yaml:"services"`
+	Opentelemetry               OpentelemetrySetting  `yaml:"opentelemetry"`
+	ConnectionPool              ConnectionPoolSetting `yaml:"connection_pool"`
 }
 
 // OpentelemetrySetting holds OpenTelemetry config.
@@ -84,14 +98,48 @@ type gateway struct {
 
 var _ http.Handler = (*gateway)(nil)
 
+// buildTransport constructs an http.Transport tuned with the given connection pool
+// settings and optionally wraps it with OpenTelemetry instrumentation.
+func buildTransport(pool ConnectionPoolSetting, otelEnabled bool) http.RoundTripper {
+	maxIdle := pool.MaxIdleConnsPerHost
+	if maxIdle == 0 {
+		maxIdle = 32 // Default: much higher than http.DefaultTransport's 2
+	}
+
+	idleTimeout := 90 * time.Second
+	if pool.IdleConnTimeout != "" {
+		if d, err := time.ParseDuration(pool.IdleConnTimeout); err == nil {
+			idleTimeout = d
+		}
+	}
+
+	t := &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
+		DialContext: (&net.Dialer{
+			Timeout:   30 * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		ForceAttemptHTTP2:     true,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   maxIdle,
+		MaxConnsPerHost:       pool.MaxConnsPerHost,
+		IdleConnTimeout:       idleTimeout,
+		TLSHandshakeTimeout:   10 * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	if otelEnabled {
+		return otelhttp.NewTransport(t)
+	}
+	return t
+}
+
 // NewGateway builds a gateway by fetching the SDL from every subgraph listed in
 // settings, composing them into a SuperGraph, and wiring up the execution engine.
 func NewGateway(settings GatewayOption) (*gateway, error) {
 	httpClient := &http.Client{
-		Timeout: 3 * time.Second,
-	}
-	if settings.Opentelemetry.TracingSetting.Enable {
-		httpClient.Transport = otelhttp.NewTransport(http.DefaultTransport)
+		Timeout:   3 * time.Second,
+		Transport: buildTransport(settings.ConnectionPool, settings.Opentelemetry.TracingSetting.Enable),
 	}
 
 	requestTimeout := 30 * time.Second

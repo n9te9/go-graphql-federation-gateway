@@ -27,7 +27,8 @@ type GraphQLError struct {
 // ExecutorV2 executes a query plan by orchestrating requests to subgraphs.
 type ExecutorV2 struct {
 	httpClient      *http.Client
-	pool            sync.Pool
+	pool            sync.Pool // pool of *ExecutionContext
+	bufPool         sync.Pool // pool of *bytes.Buffer for request body serialization
 	queryBuilder    *QueryBuilderV2
 	superGraph      *graph.SuperGraphV2
 	subgraphTimeout time.Duration // per-subgraph request timeout; 0 means no extra timeout
@@ -55,6 +56,14 @@ func newExecutorV2(httpClient *http.Client, superGraph *graph.SuperGraphV2, time
 					results: make(map[int]interface{}),
 					errors:  make([]GraphQLError, 0, 8), // Pre-allocate small capacity
 				}
+			},
+		},
+		// bufPool holds *bytes.Buffer instances for reuse across sendRequest calls.
+		// Each buffer starts with a 4 KiB backing array which covers most GraphQL
+		// request bodies without reallocation.
+		bufPool: sync.Pool{
+			New: func() interface{} {
+				return bytes.NewBuffer(make([]byte, 0, 4096))
 			},
 		},
 		queryBuilder: NewQueryBuilderV2(superGraph),
@@ -1203,7 +1212,15 @@ func (e *ExecutorV2) sendRequest(
 		defer cancel()
 	}
 
-	// Build request body
+	// Obtain a pooled buffer and encode the request body directly into it.
+	// This avoids the intermediate []byte allocation from json.Marshal and the
+	// bytes.NewReader wrapper. The buffer is returned to the pool after Do()
+	// completes because httpClient.Do reads the body synchronously before
+	// returning, making it safe to reuse the backing memory.
+	buf := e.bufPool.Get().(*bytes.Buffer)
+	buf.Reset()
+	defer e.bufPool.Put(buf)
+
 	reqBody := map[string]interface{}{
 		"query": query,
 	}
@@ -1211,13 +1228,13 @@ func (e *ExecutorV2) sendRequest(
 		reqBody["variables"] = variables
 	}
 
-	bodyBytes, err := json.Marshal(reqBody)
-	if err != nil {
+	if err := json.NewEncoder(buf).Encode(reqBody); err != nil {
 		return nil, fmt.Errorf("failed to marshal request: %w", err)
 	}
 
-	// Create HTTP request
-	req, err := http.NewRequestWithContext(ctx, "POST", host, bytes.NewReader(bodyBytes))
+	// Create HTTP request using the pooled buffer directly as the body.
+	// net/http detects *bytes.Buffer and sets Content-Length automatically.
+	req, err := http.NewRequestWithContext(ctx, "POST", host, buf)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
