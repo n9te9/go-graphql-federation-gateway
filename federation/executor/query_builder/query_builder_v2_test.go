@@ -1,10 +1,10 @@
-package executor_test
+package query_builder_test
 
 import (
 	"strings"
 	"testing"
 
-	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor/query_builder"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/graphql-parser/ast"
 	"github.com/n9te9/graphql-parser/token"
@@ -159,7 +159,7 @@ func TestBuildQuery(t *testing.T) {
 		},
 	}
 
-	qb := executor.NewQueryBuilderV2(nil)
+	qb := query_builder.NewQueryBuilderV2(nil)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

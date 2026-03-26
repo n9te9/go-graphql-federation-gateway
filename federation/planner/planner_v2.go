@@ -33,6 +33,17 @@ type StepV2 struct {
 	InsertionPath []string          // Path to insert results (for entity resolution)
 }
 
+func (s *StepV2) MergePath() []string {
+	ret := make([]string, 0, len(s.InsertionPath))
+	for i, segment := range s.InsertionPath {
+		if i == 0 && (segment == "Query" || segment == "Mutation" || segment == "Subscription") {
+			continue
+		}
+		ret = append(ret, segment)
+	}
+	return ret
+}
+
 // PlanV2 represents a query execution plan.
 type PlanV2 struct {
 	Steps            []*StepV2     // List of execution steps

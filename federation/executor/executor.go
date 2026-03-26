@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor/query_builder"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/graphql-parser/ast"
@@ -32,7 +33,7 @@ type Executor interface {
 }
 
 type executor struct {
-	QueryBuilder
+	QueryBuilder query_builder.QueryBuilder
 
 	superGraph                 *graph.SuperGraph
 	typeDefinitions            map[string]*ast.ObjectTypeDefinition
@@ -48,7 +49,7 @@ type ExecutorOption struct {
 }
 
 func NewExecutor(httpClient *http.Client, superGraph *graph.SuperGraph, option ExecutorOption) *executor {
-	qb := NewQueryBuilder()
+	qb := query_builder.NewQueryBuilder()
 	e := &executor{
 		QueryBuilder:               qb,
 		superGraph:                 superGraph,
@@ -153,7 +154,7 @@ func (e *executor) Execute(ctx context.Context, plan *planner.Plan, variables ma
 			defer close(ectx.concurrencyMap[step.ID])
 			e.waitDependStepEnded(ectx, plan, step)
 			var currentRefs []entityRef
-			var stepEntities Entities = make(Entities, 0)
+			var stepEntities query_builder.Entities = make(query_builder.Entities, 0)
 
 			if len(step.DependsOn) != 0 {
 				targetTypes := make(map[string]struct{})
