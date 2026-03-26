@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor/merger"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor/query_builder"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/graphql-parser/ast"
@@ -29,7 +31,8 @@ type ExecutorV2 struct {
 	httpClient      *http.Client
 	pool            sync.Pool // pool of *ExecutionContext
 	bufPool         sync.Pool // pool of *bytes.Buffer for request body serialization
-	queryBuilder    *QueryBuilderV2
+	queryBuilder    query_builder.QueryBuilderV2
+	merger          merger.Merger
 	superGraph      *graph.SuperGraphV2
 	subgraphTimeout time.Duration // per-subgraph request timeout; 0 means no extra timeout
 }
@@ -66,8 +69,9 @@ func newExecutorV2(httpClient *http.Client, superGraph *graph.SuperGraphV2, time
 				return bytes.NewBuffer(make([]byte, 0, 4096))
 			},
 		},
-		queryBuilder: NewQueryBuilderV2(superGraph),
+		queryBuilder: query_builder.NewQueryBuilderV2(superGraph),
 		superGraph:   superGraph,
+		merger:       merger.NewMerger(),
 	}
 }
 
@@ -82,11 +86,7 @@ type ExecutionContext struct {
 
 // Execute executes a query plan and returns the merged result.
 // It validates the plan is a DAG, then executes steps in dependency order.
-func (e *ExecutorV2) Execute(
-	ctx context.Context,
-	plan *planner.PlanV2,
-	variables map[string]interface{},
-) (map[string]interface{}, error) {
+func (e *ExecutorV2) Execute(ctx context.Context, plan *planner.PlanV2, variables map[string]interface{}) (map[string]interface{}, error) {
 	// Validate DAG
 	if err := e.validateDAG(plan); err != nil {
 		return nil, fmt.Errorf("invalid plan: %w", err)
@@ -206,11 +206,7 @@ func (e *ExecutorV2) validateDAG(plan *planner.PlanV2) error {
 }
 
 // executeSteps executes a group of steps in parallel and then recursively executes dependent steps.
-func (e *ExecutorV2) executeSteps(
-	execCtx *ExecutionContext,
-	stepIDs []int,
-	variables map[string]interface{},
-) error {
+func (e *ExecutorV2) executeSteps(execCtx *ExecutionContext, stepIDs []int, variables map[string]interface{}) error {
 	if len(stepIDs) == 0 {
 		return nil
 	}
@@ -335,12 +331,7 @@ func (e *ExecutorV2) findReadySteps(execCtx *ExecutionContext) []int {
 }
 
 // processStep processes a single step.
-func (e *ExecutorV2) processStep(
-	ctx context.Context,
-	execCtx *ExecutionContext,
-	step *planner.StepV2,
-	variables map[string]interface{},
-) error {
+func (e *ExecutorV2) processStep(ctx context.Context, execCtx *ExecutionContext, step *planner.StepV2, variables map[string]interface{}) error {
 	// Guard against nil subgraph
 	if step.SubGraph == nil {
 		err := fmt.Errorf("step %d has nil subgraph", step.ID)
@@ -398,14 +389,22 @@ func (e *ExecutorV2) processStep(
 		execCtx.results[step.ID] = result
 		execCtx.mu.Unlock()
 	} else {
-		// Merge entity results into parent
-		if err := e.mergeEntityResults(execCtx, step, result); err != nil {
-			e.recordError(execCtx, step, fmt.Errorf("failed to merge entity results: %w", err))
+		rootResult, rootResultIndex, err := e.extractRootResult(execCtx)
+		if err != nil {
+			e.recordError(execCtx, step, fmt.Errorf("failed to extract root result for merging: %w", err))
 			e.setNullForFailedStep(execCtx, step)
-			return nil // Don't propagate error
+			return nil
 		}
+
 		execCtx.mu.Lock()
-		execCtx.results[step.ID] = result
+		mergedRootResult, err := e.merger.MergeEntities(rootResult, result, step)
+		if err != nil {
+			e.recordError(execCtx, step, fmt.Errorf("failed to merge entities: %w", err))
+			e.setNullForFailedStep(execCtx, step)
+			return nil
+		}
+		execCtx.results[rootResultIndex] = mergedRootResult
+		execCtx.results[step.ID] = mergedRootResult
 		execCtx.mu.Unlock()
 	}
 
@@ -982,21 +981,12 @@ func (e *ExecutorV2) buildRepresentation(entity map[string]interface{}, typeName
 	return representation
 }
 
-// mergeEntityResults merges entity query results back into parent results.
-func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner.StepV2, result map[string]interface{}) error {
-	execCtx.mu.Lock()
-	defer execCtx.mu.Unlock()
+func (e *ExecutorV2) extractRootResult(execCtx *ExecutionContext) (map[string]interface{}, int, error) {
+	execCtx.mu.RLock()
+	defer execCtx.mu.RUnlock()
 
-	// Get parent step result
-	if len(step.DependsOn) == 0 {
-		return nil
-	}
-
-	// Always merge into the root step (Step 0), not the immediate parent
-	// This is because nested entity steps (e.g., Step 2 depends on Step 1)
-	// cannot merge into Step 1's _entities result format
 	var rootStepID int
-	var rootResult interface{}
+	var rootResult any
 	for _, s := range execCtx.plan.Steps {
 		if len(s.DependsOn) == 0 {
 			rootStepID = s.ID
@@ -1006,196 +996,15 @@ func (e *ExecutorV2) mergeEntityResults(execCtx *ExecutionContext, step *planner
 	}
 
 	if rootResult == nil {
-		return fmt.Errorf("root step result not found")
+		return nil, -1, fmt.Errorf("root step result not found")
 	}
 
-	// Extract data from root result
 	rootResultMap, ok := rootResult.(map[string]interface{})
 	if !ok {
-		return fmt.Errorf("root result is not a map")
+		return nil, -1, fmt.Errorf("root result is not a map")
 	}
 
-	rootData, ok := rootResultMap["data"].(map[string]interface{})
-	if !ok {
-		return fmt.Errorf("root result does not have data field")
-	}
-
-	// Extract _entities from entity query result
-	resultData, ok := result["data"].(map[string]interface{})
-	if !ok {
-		return nil // No data to merge
-	}
-
-	entitiesData, ok := resultData["_entities"]
-	if !ok {
-		return nil // No entities to merge
-	}
-
-	// Build merge path (skip root type name)
-	mergePath := make([]string, 0)
-	for i, segment := range step.InsertionPath {
-		// Skip root type names (Query, Mutation, Subscription)
-		if i == 0 && (segment == "Query" || segment == "Mutation" || segment == "Subscription") {
-			continue
-		}
-		mergePath = append(mergePath, segment)
-	}
-
-	// Navigate to the target field to check if it's an array or object
-	// Also collect all array positions in the path for nested array handling
-	var current interface{} = rootData
-	var firstArrayIndex = -1 // Index of the first array in the path
-
-	for i, segment := range mergePath {
-		if currentMap, ok := current.(map[string]interface{}); ok {
-			if next, exists := currentMap[segment]; exists {
-				current = next
-
-				// Check if the value we just navigated to is an array
-				if _, isArray := current.([]interface{}); isArray {
-					// We hit an array - mark it
-					if firstArrayIndex < 0 {
-						firstArrayIndex = i
-					}
-					break
-				}
-			} else {
-				// Path doesn't exist yet
-				current = nil
-				break
-			}
-		} else {
-			// Not a map or array, can't navigate further
-			current = nil
-			break
-		}
-	}
-
-	// Handle different merge scenarios
-	if firstArrayIndex >= 0 {
-		// We encountered an array - need to handle nested array merging
-		entities, ok := entitiesData.([]interface{})
-		if !ok {
-			return fmt.Errorf("entities data is not an array")
-		}
-
-		// Navigate to the first array
-		var arrayContainer interface{} = rootData
-		arrayPath := mergePath[:firstArrayIndex+1] // Include the array field itself
-		for _, segment := range arrayPath {
-			if containerMap, ok := arrayContainer.(map[string]interface{}); ok {
-				arrayContainer = containerMap[segment]
-			}
-		}
-
-		arrayData, ok := arrayContainer.([]interface{})
-		if !ok {
-			return fmt.Errorf("expected array at merge path %v", arrayPath)
-		}
-
-		// The remaining path after the array
-		remainingPath := mergePath[firstArrayIndex+1:]
-
-		// Merge entities into the nested structure
-		entityIndex := 0
-		for _, elem := range arrayData {
-			elemMap, ok := elem.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			// Recursively merge entities into potentially nested arrays
-			entityIndex = e.mergeIntoNestedArrays(elemMap, entities, remainingPath, entityIndex, step)
-		}
-
-	} else if current == nil {
-		// Path doesn't exist yet, treat as single object and let Merge handle it
-		entities, ok := entitiesData.([]interface{})
-		if !ok || len(entities) == 0 {
-			return nil
-		}
-
-		firstEntity, ok := entities[0].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("first entity is not a map")
-		}
-
-		if err := Merge(rootData, firstEntity, mergePath); err != nil {
-			return fmt.Errorf("failed to merge entity object: %w", err)
-		}
-	} else if _, isArray := current.([]interface{}); isArray {
-		// Target is an array, merge entities directly
-		if err := Merge(rootData, entitiesData, mergePath); err != nil {
-			return fmt.Errorf("failed to merge entities array: %w", err)
-		}
-	} else {
-		// Target is a single object, merge first entity
-		entities, ok := entitiesData.([]interface{})
-		if !ok || len(entities) == 0 {
-			return nil
-		}
-
-		// For single object, merge the first entity's fields
-		firstEntity, ok := entities[0].(map[string]interface{})
-		if !ok {
-			return fmt.Errorf("first entity is not a map")
-		}
-
-		if err := Merge(rootData, firstEntity, mergePath); err != nil {
-			return fmt.Errorf("failed to merge entity object: %w", err)
-		}
-	}
-
-	// Update the root step's result to reflect the merge
-	execCtx.results[rootStepID] = rootResultMap
-
-	return nil
-}
-
-// mergeIntoNestedArrays recursively merges entities into potentially nested array structures
-// Returns the next entity index to use
-func (e *ExecutorV2) mergeIntoNestedArrays(
-	current map[string]interface{},
-	entities []interface{},
-	path []string,
-	entityIndex int,
-	step *planner.StepV2,
-) int {
-	if len(path) == 0 {
-		// Reached the target - merge the entity here
-		if entityIndex < len(entities) {
-			if entityMap, ok := entities[entityIndex].(map[string]interface{}); ok {
-				// Deep merge entity fields into current
-				// Use the Merge function to properly handle nested structures
-				Merge(current, entityMap, []string{})
-			}
-			return entityIndex + 1
-		}
-		return entityIndex
-	}
-
-	segment := path[0]
-	remainingPath := path[1:]
-
-	next, exists := current[segment]
-	if !exists {
-		return entityIndex
-	}
-
-	// Check if next is an array
-	if arr, isArray := next.([]interface{}); isArray {
-		// Process each array element
-		for _, elem := range arr {
-			if elemMap, ok := elem.(map[string]interface{}); ok {
-				entityIndex = e.mergeIntoNestedArrays(elemMap, entities, remainingPath, entityIndex, step)
-			}
-		}
-	} else if nextMap, ok := next.(map[string]interface{}); ok {
-		// Continue navigating
-		entityIndex = e.mergeIntoNestedArrays(nextMap, entities, remainingPath, entityIndex, step)
-	}
-
-	return entityIndex
+	return rootResultMap, rootStepID, nil
 }
 
 // sendRequest sends a GraphQL request to a subgraph.

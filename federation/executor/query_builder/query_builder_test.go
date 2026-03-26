@@ -1,9 +1,9 @@
-package executor_test
+package query_builder_test
 
 import (
 	"testing"
 
-	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor/query_builder"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/graph"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 )
@@ -115,7 +115,7 @@ func TestQueryBuilder_Build(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qb := executor.NewQueryBuilder()
+			qb := query_builder.NewQueryBuilder()
 			got, _, err := qb.Build(tt.step, nil, nil)
 			if err != nil && tt.wantErr == nil {
 				t.Errorf("QueryBuilder.Build() unexpected error: %v", err)

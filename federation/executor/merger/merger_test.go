@@ -1,9 +1,9 @@
-package executor_test
+package merger_test
 
 import (
 	"testing"
 
-	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/executor/merger"
 )
 
 func TestMerge(t *testing.T) {
@@ -136,7 +136,7 @@ func TestMerge(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := executor.Merge(tt.target, tt.source, tt.path)
+			err := merger.NewMerger().Merge(tt.target, tt.source, tt.path)
 			if err != nil {
 				t.Fatalf("Merge() error = %v", err)
 			}

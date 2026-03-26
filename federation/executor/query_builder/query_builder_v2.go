@@ -1,4 +1,4 @@
-package executor
+package query_builder
 
 import (
 	"fmt"
@@ -10,13 +10,19 @@ import (
 )
 
 // QueryBuilderV2 builds GraphQL queries from steps.
-type QueryBuilderV2 struct {
+type queryBuilderV2 struct {
 	superGraph *graph.SuperGraphV2
 }
 
+type QueryBuilderV2 interface {
+	Build(step *planner.StepV2, representations []map[string]interface{}, variables map[string]interface{}, operationType string) (string, map[string]interface{}, error)
+}
+
+var _ QueryBuilderV2 = (*queryBuilderV2)(nil)
+
 // NewQueryBuilderV2 creates a new QueryBuilderV2 instance.
-func NewQueryBuilderV2(superGraph *graph.SuperGraphV2) *QueryBuilderV2 {
-	return &QueryBuilderV2{
+func NewQueryBuilderV2(superGraph *graph.SuperGraphV2) *queryBuilderV2 {
+	return &queryBuilderV2{
 		superGraph: superGraph,
 	}
 }
@@ -24,7 +30,7 @@ func NewQueryBuilderV2(superGraph *graph.SuperGraphV2) *QueryBuilderV2 {
 // Build generates a GraphQL query string and variables from a step.
 // For root queries (StepTypeQuery), it generates a regular query or mutation.
 // For entity queries (StepTypeEntity), it generates an _entities query with representations.
-func (qb *QueryBuilderV2) Build(
+func (qb *queryBuilderV2) Build(
 	step *planner.StepV2,
 	representations []map[string]interface{},
 	variables map[string]interface{},
@@ -37,7 +43,7 @@ func (qb *QueryBuilderV2) Build(
 }
 
 // buildRootQuery builds a root query or mutation from selections.
-func (qb *QueryBuilderV2) buildRootQuery(
+func (qb *queryBuilderV2) buildRootQuery(
 	step *planner.StepV2,
 	variables map[string]interface{},
 	operationType string,
@@ -85,7 +91,7 @@ func (qb *QueryBuilderV2) buildRootQuery(
 }
 
 // collectVariables collects all variable names used in the selection set.
-func (qb *QueryBuilderV2) collectVariables(selections []ast.Selection) []string {
+func (qb *queryBuilderV2) collectVariables(selections []ast.Selection) []string {
 	vars := make(map[string]bool)
 	qb.collectVariablesRecursive(selections, vars)
 
@@ -98,7 +104,7 @@ func (qb *QueryBuilderV2) collectVariables(selections []ast.Selection) []string 
 }
 
 // collectVariablesRecursive recursively collects variables from selections.
-func (qb *QueryBuilderV2) collectVariablesRecursive(selections []ast.Selection, vars map[string]bool) {
+func (qb *queryBuilderV2) collectVariablesRecursive(selections []ast.Selection, vars map[string]bool) {
 	for _, sel := range selections {
 		switch s := sel.(type) {
 		case *ast.Field:
@@ -119,7 +125,7 @@ func (qb *QueryBuilderV2) collectVariablesRecursive(selections []ast.Selection, 
 }
 
 // collectVariablesFromValue collects variables from a value.
-func (qb *QueryBuilderV2) collectVariablesFromValue(val ast.Value, vars map[string]bool) {
+func (qb *queryBuilderV2) collectVariablesFromValue(val ast.Value, vars map[string]bool) {
 	switch v := val.(type) {
 	case *ast.Variable:
 		vars[v.Name] = true
@@ -135,7 +141,7 @@ func (qb *QueryBuilderV2) collectVariablesFromValue(val ast.Value, vars map[stri
 }
 
 // inferVariableType infers the type of a variable from its value or schema.
-func (qb *QueryBuilderV2) inferVariableType(varName string, variables map[string]interface{}, step *planner.StepV2) string {
+func (qb *queryBuilderV2) inferVariableType(varName string, variables map[string]interface{}, step *planner.StepV2) string {
 	// Try to get type from schema if SubGraph is available
 	if step.SubGraph != nil && step.SubGraph.Schema != nil {
 		if varType := qb.getVariableTypeFromSchema(varName, step); varType != "" {
@@ -162,7 +168,7 @@ func (qb *QueryBuilderV2) inferVariableType(varName string, variables map[string
 }
 
 // getVariableTypeFromSchema gets the variable type from the schema.
-func (qb *QueryBuilderV2) getVariableTypeFromSchema(varName string, step *planner.StepV2) string {
+func (qb *queryBuilderV2) getVariableTypeFromSchema(varName string, step *planner.StepV2) string {
 	// Find the argument that uses this variable
 	for _, sel := range step.SelectionSet {
 		if field, ok := sel.(*ast.Field); ok {
@@ -178,7 +184,7 @@ func (qb *QueryBuilderV2) getVariableTypeFromSchema(varName string, step *planne
 }
 
 // getArgumentTypeFromSchema gets the argument type from schema.
-func (qb *QueryBuilderV2) getArgumentTypeFromSchema(step *planner.StepV2, parentType, fieldName, argName string) string {
+func (qb *queryBuilderV2) getArgumentTypeFromSchema(step *planner.StepV2, parentType, fieldName, argName string) string {
 	if step.SubGraph == nil || step.SubGraph.Schema == nil {
 		return ""
 	}
@@ -204,7 +210,7 @@ func (qb *QueryBuilderV2) getArgumentTypeFromSchema(step *planner.StepV2, parent
 }
 
 // getFieldType gets the field type name from schema.
-func (qb *QueryBuilderV2) getFieldType(step *planner.StepV2, parentType, fieldName string) string {
+func (qb *queryBuilderV2) getFieldType(step *planner.StepV2, parentType, fieldName string) string {
 	if step.SubGraph == nil || step.SubGraph.Schema == nil {
 		return ""
 	}
@@ -227,7 +233,7 @@ func (qb *QueryBuilderV2) getFieldType(step *planner.StepV2, parentType, fieldNa
 
 // extractBaseTypeName extracts the base type name from a type string.
 // For example: "[Product!]!" -> "Product", "String!" -> "String"
-func (qb *QueryBuilderV2) extractBaseTypeName(typeStr string) string {
+func (qb *queryBuilderV2) extractBaseTypeName(typeStr string) string {
 	// Remove [ ] and !
 	cleaned := strings.Trim(typeStr, "[]!")
 	cleaned = strings.ReplaceAll(cleaned, "[", "")
@@ -237,7 +243,7 @@ func (qb *QueryBuilderV2) extractBaseTypeName(typeStr string) string {
 }
 
 // buildEntityQuery builds an _entities query with representations.
-func (qb *QueryBuilderV2) buildEntityQuery(
+func (qb *queryBuilderV2) buildEntityQuery(
 	step *planner.StepV2,
 	representations []map[string]interface{},
 	variables map[string]interface{},
@@ -277,7 +283,7 @@ func (qb *QueryBuilderV2) buildEntityQuery(
 }
 
 // writeSelection writes a selection to the string builder.
-func (qb *QueryBuilderV2) writeSelection(sb *strings.Builder, sel ast.Selection, indent string, step *planner.StepV2, parentType string) error {
+func (qb *queryBuilderV2) writeSelection(sb *strings.Builder, sel ast.Selection, indent string, step *planner.StepV2, parentType string) error {
 	switch s := sel.(type) {
 	case *ast.Field:
 		fieldName := s.Name.String()
@@ -350,7 +356,7 @@ func (qb *QueryBuilderV2) writeSelection(sb *strings.Builder, sel ast.Selection,
 }
 
 // writeValue writes a value to the string builder.
-func (qb *QueryBuilderV2) writeValue(sb *strings.Builder, val ast.Value) {
+func (qb *queryBuilderV2) writeValue(sb *strings.Builder, val ast.Value) {
 	switch v := val.(type) {
 	case *ast.StringValue:
 		sb.WriteString("\"")
