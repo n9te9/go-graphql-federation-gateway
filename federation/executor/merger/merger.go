@@ -140,18 +140,9 @@ func (m *merger) MergeEntities(rootResult, result map[string]any, step *planner.
 			return nil, fmt.Errorf("entities data is not an array")
 		}
 
-		// Navigate to the first array
-		var arrayContainer any = current
-		arrayPath := mergePath[:index+1] // Include the array field itself
-		for _, segment := range arrayPath {
-			if containerMap, ok := arrayContainer.(map[string]any); ok {
-				arrayContainer = containerMap[segment]
-			}
-		}
-
-		array, ok := arrayContainer.([]any)
+		array, ok := current.([]any)
 		if !ok {
-			return nil, fmt.Errorf("expected array at merge path %v", arrayPath)
+			return nil, fmt.Errorf("expected array at merge path %v", mergePath[:index+1])
 		}
 
 		// The remaining path after the array
