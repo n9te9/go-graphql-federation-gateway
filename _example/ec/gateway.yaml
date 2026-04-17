@@ -5,6 +5,7 @@ timeout_duration: "5s"
 request_timeout: "30s"
 enable_complement_request_id: false
 enable_hang_over_request_header: false
+enable_introspection: true
 services:
 - name: products
   host: http://localhost:8101/query

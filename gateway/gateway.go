@@ -46,6 +46,7 @@ type GatewayOption struct {
 	TimeoutDuration             string                `yaml:"timeout_duration"  default:"5s"`
 	RequestTimeout              string                `yaml:"request_timeout"   default:"30s"`
 	EnableHangOverRequestHeader bool                  `yaml:"enable_hang_over_request_header" default:"true"`
+	EnableIntrospection         bool                  `yaml:"enable_introspection" default:"false"`
 	Services                    []GatewayService      `yaml:"services"`
 	Opentelemetry               OpentelemetrySetting  `yaml:"opentelemetry"`
 	ConnectionPool              ConnectionPoolSetting `yaml:"connection_pool"`
@@ -94,6 +95,7 @@ type gateway struct {
 	enableComplementRequestId   bool
 	enableHangOverRequestHeader bool
 	enableOpentelemetryTracing  bool
+	enableIntrospection         bool
 }
 
 var _ http.Handler = (*gateway)(nil)
@@ -179,6 +181,7 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		retryOptions:                retryOptions,
 		enableComplementRequestId:   true,
 		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
+		enableIntrospection:         settings.EnableIntrospection,
 		enableOpentelemetryTracing:  settings.Opentelemetry.TracingSetting.Enable,
 	}
 	gw.currentSchema.Store(store)
@@ -253,6 +256,26 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("Content-Type", "application/json")
 			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
 				"errors": p.Errors(),
+			})
+			return
+		}
+
+		// Intercept pure-introspection operations before the planner runs.
+		if documentHasIntrospection(doc) {
+			if !g.enableIntrospection {
+				w.Header().Set("Content-Type", "application/json")
+				json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+					"errors": []map[string]any{{
+						"message":    "GraphQL introspection has been disabled, but the requested query contained __schema or __type.",
+						"extensions": map[string]string{"code": "INTROSPECTION_DISABLED"},
+					}},
+				})
+				return
+			}
+			data := resolveIntrospection(doc, req.Variables, engine)
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+				"data": data,
 			})
 			return
 		}

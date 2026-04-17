@@ -1,6 +1,67 @@
 .PHONY: test-ec test-fintech test-saas test-social test-travel test-nestkey test-multikey test-provides test-all
 .PHONY: partial-test-ec partial-test-fintech partial-test-saas partial-test-social partial-test-travel partial-test-all
 .PHONY: setup benchmark benchmark-ec benchmark-fintech benchmark-saas benchmark-social benchmark-travel compare-benchmark all-compare-benchmark
+.PHONY: run stop
+
+# ── Per-domain service up/down ────────────────────────────────────────────────
+# Usage:
+#   make run <domain>        # e.g. make run ec
+#   make run-<domain>        # e.g. make run-ec
+#   make stop <domain>       # bring services down
+#   make run <domain> DETACH=1   # start detached (-d)
+#
+# Supported domains: ec, fintech, saas, social, travel, nestkey, multikey, provides
+DOMAINS := ec fintech saas social travel nestkey multikey provides
+
+# `make run ec` の 2 番目の引数をダミーターゲットとして受け流す。
+# (何も実行しないが、make が未知ターゲット扱いでエラーを出すのを防ぐ。)
+$(DOMAINS):
+	@:
+
+# run / stop が goal に含まれるときだけ、続く引数をドメイン名として取り出す。
+ifneq ($(filter run stop,$(MAKECMDGOALS)),)
+RUN_DOMAIN := $(firstword $(filter $(DOMAINS),$(MAKECMDGOALS)))
+endif
+
+DETACH ?=
+COMPOSE_UP_FLAGS := --build
+ifeq ($(DETACH),1)
+COMPOSE_UP_FLAGS += -d
+endif
+
+run:
+	@if [ -z "$(RUN_DOMAIN)" ]; then \
+		echo "usage: make run <domain>   (domains: $(DOMAINS))"; \
+		exit 2; \
+	fi
+	@echo "==> starting $(RUN_DOMAIN) services"
+	cd $(RUN_DOMAIN) && docker compose -f docker-compose.yaml up $(COMPOSE_UP_FLAGS)
+
+stop:
+	@if [ -z "$(RUN_DOMAIN)" ]; then \
+		echo "usage: make stop <domain>   (domains: $(DOMAINS))"; \
+		exit 2; \
+	fi
+	@echo "==> stopping $(RUN_DOMAIN) services"
+	cd $(RUN_DOMAIN) && docker compose -f docker-compose.yaml down
+
+# 便利な `make run-ec` スタイルのパターンターゲットも提供する。
+run-%:
+	@if ! echo "$(DOMAINS)" | tr ' ' '\n' | grep -qx "$*"; then \
+		echo "unknown domain: $*   (domains: $(DOMAINS))"; \
+		exit 2; \
+	fi
+	@echo "==> starting $* services"
+	cd $* && docker compose -f docker-compose.yaml up $(COMPOSE_UP_FLAGS)
+
+stop-%:
+	@if ! echo "$(DOMAINS)" | tr ' ' '\n' | grep -qx "$*"; then \
+		echo "unknown domain: $*   (domains: $(DOMAINS))"; \
+		exit 2; \
+	fi
+	@echo "==> stopping $* services"
+	cd $* && docker compose -f docker-compose.yaml down
+# ──────────────────────────────────────────────────────────────────────────────
 
 # Setup benchmark dependencies (hey, Docker check, gateway binary build)
 setup:
