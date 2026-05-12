@@ -164,11 +164,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+
       - name: Install hey (HTTP load generator)
         run: |
-          wget -q https://hey-release.s3.us-east-2.amazonaws.com/hey_linux_amd64
-          chmod +x hey_linux_amd64
-          sudo mv hey_linux_amd64 /usr/local/bin/hey
+          go install github.com/rakyll/hey@latest
+          sudo install -m 0755 "$(go env GOPATH)/bin/hey" /usr/local/bin/hey
+          hey -h >/dev/null 2>&1 || true
+          which hey
 
       - name: Install Apollo Router
         run: |
