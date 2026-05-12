@@ -1,6 +1,7 @@
 package gateway_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -372,6 +373,7 @@ func TestHandleApply_Returns200OnSuccess(t *testing.T) {
 	mu.Unlock()
 
 	req := httptest.NewRequest(http.MethodPost, "/products/apply", nil)
+	req.Header.Set("Authorization", "Bearer "+testAdminToken)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -409,6 +411,7 @@ func TestHandleApply_Returns500OnFailure(t *testing.T) {
 	mu.Unlock()
 
 	req := httptest.NewRequest(http.MethodPost, "/products/apply", nil)
+	req.Header.Set("Authorization", "Bearer "+testAdminToken)
 	w := httptest.NewRecorder()
 	gw.ServeHTTP(w, req)
 
@@ -602,10 +605,414 @@ func mustNewGatewayWithURLs(t *testing.T, urls map[string]string) *gateway.Gatew
 		Port:           9999,
 		RequestTimeout: "5s",
 		Services:       services,
+		Admin: gateway.AdminSetting{
+			Auth: gateway.AdminAuthSetting{Token: testAdminToken},
+		},
 	}
 	gw, err := gateway.NewGateway(settings)
 	if err != nil {
 		t.Fatalf("NewGateway: %v", err)
 	}
 	return gw
+}
+
+// testAdminToken is the bearer token used by /apply tests in this package.
+const testAdminToken = "test-admin-token"
+
+// ---------------------------------------------------------------------------
+// Apply endpoint authentication
+// ---------------------------------------------------------------------------
+
+func TestHandleApply_RejectsRequestWithoutBearerToken(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/products/apply", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 without Authorization header, got %d", w.Code)
+	}
+	if got := w.Header().Get("WWW-Authenticate"); !strings.Contains(got, "Bearer") {
+		t.Errorf("expected WWW-Authenticate Bearer challenge, got %q", got)
+	}
+}
+
+func TestHandleApply_RejectsRequestWithWrongToken(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/products/apply", nil)
+	req.Header.Set("Authorization", "Bearer wrong-token")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusUnauthorized {
+		t.Errorf("expected 401 with wrong token, got %d", w.Code)
+	}
+}
+
+// When admin auth is not configured, the apply endpoint must be hidden (404)
+// rather than reachable without authentication.
+func TestHandleApply_DisabledWhenTokenNotConfigured(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	settings := gateway.GatewayOption{
+		Endpoint:       "/graphql",
+		ServiceName:    "test-gateway",
+		Port:           9999,
+		RequestTimeout: "5s",
+		Services: []gateway.GatewayService{
+			{Name: "products", Host: pSrv.URL, Retry: gateway.RetryOption{Attempts: 1, Timeout: "3s"}},
+			{Name: "reviews", Host: rSrv.URL, Retry: gateway.RetryOption{Attempts: 1, Timeout: "3s"}},
+		},
+		// No Admin block: token is empty → endpoint disabled.
+	}
+	gw, err := gateway.NewGateway(settings)
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/products/apply", nil)
+	req.Header.Set("Authorization", "Bearer anything")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotFound {
+		t.Errorf("expected 404 when admin token not configured, got %d", w.Code)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Spec-compliant error response format
+// ---------------------------------------------------------------------------
+
+// graphQLResponse mirrors the shape of `{ "errors": [...] }`.
+type graphQLResponse struct {
+	Data   map[string]any `json:"data,omitempty"`
+	Errors []struct {
+		Message    string         `json:"message"`
+		Locations  []any          `json:"locations,omitempty"`
+		Path       []any          `json:"path,omitempty"`
+		Extensions map[string]any `json:"extensions,omitempty"`
+	} `json:"errors,omitempty"`
+}
+
+func TestErrorResponse_ParseFailure_IsSpecCompliant(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	body := strings.NewReader(`{"query":"this is { not valid graphql"}`)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v\nbody=%s", err, w.Body.String())
+	}
+	if len(resp.Errors) == 0 {
+		t.Fatalf("expected errors[] in response, got: %s", w.Body.String())
+	}
+	if resp.Errors[0].Message == "" {
+		t.Errorf("error must have non-empty 'message' (spec)")
+	}
+	if code, _ := resp.Errors[0].Extensions["code"].(string); code == "" {
+		t.Errorf("error must have extensions.code, got %v", resp.Errors[0].Extensions)
+	}
+}
+
+func TestErrorResponse_BadJSON_IsSpecCompliant(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/graphql", strings.NewReader(`not json`))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusBadRequest {
+		t.Errorf("expected 400, got %d", w.Code)
+	}
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v\nbody=%s", err, w.Body.String())
+	}
+	if len(resp.Errors) == 0 || resp.Errors[0].Message == "" {
+		t.Fatalf("expected error object with message, got: %s", w.Body.String())
+	}
+	if code, _ := resp.Errors[0].Extensions["code"].(string); code != "BAD_REQUEST" {
+		t.Errorf("expected extensions.code=BAD_REQUEST, got %q", code)
+	}
+}
+
+func TestErrorResponse_MethodNotAllowed_IsSpecCompliant(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/graphql", nil)
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusMethodNotAllowed {
+		t.Errorf("expected 405, got %d", w.Code)
+	}
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("response is not valid JSON: %v\nbody=%s", err, w.Body.String())
+	}
+	if len(resp.Errors) == 0 {
+		t.Errorf("expected errors[] for 405 response, got: %s", w.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Introspection
+// ---------------------------------------------------------------------------
+
+func TestIntrospection_SchemaQuery(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	body := strings.NewReader(`{"query":"{ __schema { queryType { name } types { name kind } } }"}`)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, w.Body.String())
+	}
+	if len(resp.Errors) > 0 {
+		t.Fatalf("unexpected errors: %+v", resp.Errors)
+	}
+	schema, ok := resp.Data["__schema"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected __schema in data, got %v", resp.Data)
+	}
+	qt, _ := schema["queryType"].(map[string]any)
+	if qt == nil || qt["name"] != "Query" {
+		t.Errorf("expected queryType.name=Query, got %v", schema["queryType"])
+	}
+	types, _ := schema["types"].([]any)
+	if len(types) == 0 {
+		t.Errorf("expected non-empty types[]")
+	}
+	// Look for Product type.
+	found := false
+	for _, ti := range types {
+		if m, ok := ti.(map[string]any); ok && m["name"] == "Product" {
+			found = true
+			if m["kind"] != "OBJECT" {
+				t.Errorf("expected Product kind=OBJECT, got %v", m["kind"])
+			}
+		}
+	}
+	if !found {
+		t.Errorf("expected to find type Product in introspection result")
+	}
+}
+
+func TestIntrospection_TypeQueryWithArguments(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+		"reviews":  rSrv.URL,
+	})
+
+	body := strings.NewReader(`{"query":"{ __type(name: \"Product\") { name kind fields { name } } }"}`)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, w.Body.String())
+	}
+	if len(resp.Errors) > 0 {
+		t.Fatalf("unexpected errors: %+v", resp.Errors)
+	}
+	tdef, ok := resp.Data["__type"].(map[string]any)
+	if !ok || tdef["name"] != "Product" {
+		t.Fatalf("expected __type.name=Product, got %v", resp.Data["__type"])
+	}
+	fields, _ := tdef["fields"].([]any)
+	if len(fields) == 0 {
+		t.Errorf("expected Product to have fields")
+	}
+}
+
+func TestIntrospection_DisabledByConfig(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProducts)
+	defer pSrv.Close()
+	rSrv := sdlServer(t, testSDLReviews)
+	defer rSrv.Close()
+
+	disabled := false
+	settings := gateway.GatewayOption{
+		Endpoint:       "/graphql",
+		ServiceName:    "test-gateway",
+		Port:           9999,
+		RequestTimeout: "5s",
+		Services: []gateway.GatewayService{
+			{Name: "products", Host: pSrv.URL, Retry: gateway.RetryOption{Attempts: 1, Timeout: "3s"}},
+			{Name: "reviews", Host: rSrv.URL, Retry: gateway.RetryOption{Attempts: 1, Timeout: "3s"}},
+		},
+		Introspection: gateway.IntrospectionSetting{Enable: &disabled},
+	}
+	gw, err := gateway.NewGateway(settings)
+	if err != nil {
+		t.Fatalf("NewGateway: %v", err)
+	}
+
+	body := strings.NewReader(`{"query":"{ __schema { queryType { name } } }"}`)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, w.Body.String())
+	}
+	if len(resp.Errors) == 0 {
+		t.Fatalf("expected error when introspection disabled, got: %s", w.Body.String())
+	}
+	if code, _ := resp.Errors[0].Extensions["code"].(string); code != "INTROSPECTION_DISABLED" {
+		t.Errorf("expected extensions.code=INTROSPECTION_DISABLED, got %q", code)
+	}
+}
+
+const testSDLProductsWithInaccessible = `
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.0", import: ["@key", "@inaccessible"])
+
+type Query {
+	product(id: ID!): Product
+}
+
+type Product @key(fields: "id") {
+	id:           ID!
+	name:         String
+	internalCost: Float @inaccessible
+}`
+
+func TestValidateAccessibility_FragmentSpread_RejectsInaccessibleField(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProductsWithInaccessible)
+	defer pSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+	})
+
+	query := `query Q { product(id: "1") { ...Secret } } fragment Secret on Product { internalCost }`
+	body := strings.NewReader(`{"query":` + jsonString(query) + `}`)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, w.Body.String())
+	}
+	if len(resp.Errors) == 0 {
+		t.Fatalf("expected an error for inaccessible field via fragment, got: %s", w.Body.String())
+	}
+	if code, _ := resp.Errors[0].Extensions["code"].(string); code != "INACCESSIBLE_FIELD" {
+		t.Errorf("expected code=INACCESSIBLE_FIELD, got %q (msg=%q)", code, resp.Errors[0].Message)
+	}
+}
+
+func TestValidateAccessibility_FragmentSpread_AllowsAccessibleField(t *testing.T) {
+	pSrv := sdlServer(t, testSDLProductsWithInaccessible)
+	defer pSrv.Close()
+
+	gw := mustNewGatewayWithURLs(t, map[string]string{
+		"products": pSrv.URL,
+	})
+
+	query := `query Q { product(id: "1") { ...Public } } fragment Public on Product { id name }`
+	body := strings.NewReader(`{"query":` + jsonString(query) + `}`)
+	req := httptest.NewRequest(http.MethodPost, "/graphql", body)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	gw.ServeHTTP(w, req)
+
+	// Validation must not reject this query. The executor will fail because the
+	// SDL server is not a real subgraph, but that is unrelated to validation.
+	var resp graphQLResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("invalid JSON: %v: %s", err, w.Body.String())
+	}
+	for _, e := range resp.Errors {
+		if code, _ := e.Extensions["code"].(string); code == "INACCESSIBLE_FIELD" {
+			t.Errorf("did not expect INACCESSIBLE_FIELD for accessible fragment, got: %+v", e)
+		}
+	}
+}
+
+// jsonString produces a JSON-encoded string literal for embedding into a
+// request body without escaping.
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
 }
