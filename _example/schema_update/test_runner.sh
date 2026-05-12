@@ -15,6 +15,10 @@ pass() { echo -e "${GREEN}✓ $1${NC}"; }
 fail() { echo -e "${RED}✗ $1${NC}"; exit 1; }
 info() { echo -e "${CYAN}→ $1${NC}"; }
 
+# Admin bearer token must match `admin.auth.token` in gateway.yaml
+# (or the GATEWAY_ADMIN_TOKEN env var passed to the gateway container).
+ADMIN_TOKEN="${GATEWAY_ADMIN_TOKEN:-e2e-admin-token}"
+
 # ---------------------------------------------------------------------------
 # Cleanup
 # ---------------------------------------------------------------------------
@@ -95,7 +99,8 @@ pass "Test 2: SDL v2 uploaded to subgraph (HTTP 200)"
 echo ""
 echo "─── Test 3: Apply new schema on gateway ────────────"
 APPLY_STATUS=$(curl -sf -o /dev/null -w "%{http_code}" \
-  -X POST http://localhost:9000/products/apply)
+  -X POST http://localhost:9000/products/apply \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}")
 [ "$APPLY_STATUS" = "200" ] || fail "Test 3: POST /products/apply returned HTTP ${APPLY_STATUS}"
 pass "Test 3: Gateway applied new schema (HTTP 200)"
 
@@ -118,7 +123,8 @@ curl -sf -X PUT http://localhost:8501/schema \
   --data-raw 'this { is {{ not }} valid SDL' > /dev/null
 
 INVALID_STATUS=$(curl -s -o /dev/null -w "%{http_code}" \
-  -X POST http://localhost:9000/products/apply)
+  -X POST http://localhost:9000/products/apply \
+  -H "Authorization: Bearer ${ADMIN_TOKEN}")
 [ "$INVALID_STATUS" = "500" ] || fail "Test 5: expected HTTP 500 for invalid SDL, got ${INVALID_STATUS}"
 pass "Test 5: Invalid SDL rejected (HTTP 500)"
 

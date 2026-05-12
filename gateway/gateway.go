@@ -1,17 +1,20 @@
 package gateway
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/n9te9/go-graphql-federation-gateway/federation/executor"
+	"github.com/n9te9/go-graphql-federation-gateway/federation/introspection"
 	"github.com/n9te9/go-graphql-federation-gateway/federation/planner"
 	"github.com/n9te9/graphql-parser/ast"
 	"github.com/n9te9/graphql-parser/lexer"
@@ -49,6 +52,33 @@ type GatewayOption struct {
 	Services                    []GatewayService      `yaml:"services"`
 	Opentelemetry               OpentelemetrySetting  `yaml:"opentelemetry"`
 	ConnectionPool              ConnectionPoolSetting `yaml:"connection_pool"`
+	Admin                       AdminSetting          `yaml:"admin"`
+	Introspection               IntrospectionSetting  `yaml:"introspection"`
+}
+
+// AdminSetting controls administrative HTTP endpoints (e.g. POST /{name}/apply).
+type AdminSetting struct {
+	// Auth holds authentication settings for admin endpoints.
+	Auth AdminAuthSetting `yaml:"auth"`
+}
+
+// AdminAuthSetting holds the bearer token used to authenticate admin requests.
+//
+// Token sources, in order of precedence:
+//  1. Environment variable GATEWAY_ADMIN_TOKEN (if set and non-empty).
+//  2. The Token field below.
+//
+// If neither source yields a non-empty token, admin endpoints are disabled
+// entirely and respond with 404 to all requests.
+type AdminAuthSetting struct {
+	Token string `yaml:"token"`
+}
+
+// IntrospectionSetting toggles GraphQL introspection support at the gateway.
+// When Enable is true (default), the gateway answers __schema / __type queries
+// from the composed supergraph. When false, introspection queries are rejected.
+type IntrospectionSetting struct {
+	Enable *bool `yaml:"enable"`
 }
 
 // OpentelemetrySetting holds OpenTelemetry config.
@@ -94,6 +124,14 @@ type gateway struct {
 	enableComplementRequestId   bool
 	enableHangOverRequestHeader bool
 	enableOpentelemetryTracing  bool
+
+	// adminToken is the bearer token required by admin endpoints.
+	// Empty string disables all admin endpoints.
+	adminToken string
+
+	// enableIntrospection controls whether __schema / __type queries are
+	// answered from the composed supergraph (true) or rejected (false).
+	enableIntrospection bool
 }
 
 var _ http.Handler = (*gateway)(nil)
@@ -171,6 +209,18 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 
 	store := &schemaStore{sdls: sdls, hosts: hosts, engine: engine}
 
+	// Admin token: env var overrides config.
+	adminToken := settings.Admin.Auth.Token
+	if env := os.Getenv("GATEWAY_ADMIN_TOKEN"); env != "" {
+		adminToken = env
+	}
+
+	// Introspection defaults to enabled.
+	enableIntrospection := true
+	if settings.Introspection.Enable != nil {
+		enableIntrospection = *settings.Introspection.Enable
+	}
+
 	gw := &gateway{
 		graphQLEndpoint:             settings.Endpoint,
 		serviceName:                 settings.ServiceName,
@@ -180,6 +230,8 @@ func NewGateway(settings GatewayOption) (*gateway, error) {
 		enableComplementRequestId:   true,
 		enableHangOverRequestHeader: settings.EnableHangOverRequestHeader,
 		enableOpentelemetryTracing:  settings.Opentelemetry.TracingSetting.Enable,
+		adminToken:                  adminToken,
+		enableIntrospection:         enableIntrospection,
 	}
 	gw.currentSchema.Store(store)
 
@@ -199,7 +251,7 @@ func (g *gateway) currentStore() *schemaStore {
 }
 
 // ServeHTTP dispatches incoming HTTP requests.
-// POST /{name}/apply  → schema update endpoint
+// POST /{name}/apply  → schema update endpoint (admin, requires bearer token)
 // POST /*             → GraphQL endpoint
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Route schema-update requests before the method check so apply always works.
@@ -208,14 +260,16 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(path, "/apply") {
 			name := strings.TrimSuffix(path, "/apply")
 			if name != "" {
-				g.handleApply(w, name)
+				g.handleAdminApply(w, r, name)
 				return
 			}
 		}
 	}
 
 	if r.Method != http.MethodPost {
-		w.WriteHeader(http.StatusMethodNotAllowed)
+		writeGraphQLError(w, http.StatusMethodNotAllowed,
+			"GraphQL endpoint only supports POST requests",
+			ErrCodeMethodNotAllowed)
 		return
 	}
 
@@ -230,7 +284,9 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var req graphQLRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		w.WriteHeader(http.StatusBadRequest)
+		writeGraphQLError(w, http.StatusBadRequest,
+			"invalid request body: "+err.Error(),
+			ErrCodeBadRequest)
 		return
 	}
 
@@ -249,35 +305,32 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		l := lexer.New(req.Query)
 		p := parser.New(l)
 		doc := p.ParseDocument()
-		if len(p.Errors()) > 0 {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"errors": p.Errors(),
-			})
+		if errs := p.Errors(); len(errs) > 0 {
+			gqlErrs := make([]GraphQLError, 0, len(errs))
+			for _, e := range errs {
+				gqlErrs = append(gqlErrs, newGraphQLError(e, ErrCodeGraphQLParseFailed))
+			}
+			writeGraphQLErrors(w, 0, gqlErrs...)
+			return
+		}
+
+		// Introspection-only queries are answered from the composed supergraph
+		// schema and never reach the planner.
+		if op := getQueryOperation(doc); op != nil && isIntrospectionOnly(op) {
+			g.handleIntrospection(w, doc, op, req.Variables, engine)
 			return
 		}
 
 		// Validate @inaccessible fields using the snapshot engine.
 		if err := g.validateAccessibility(doc, engine); err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"errors": []map[string]any{
-					{
-						"message":    err.Error(),
-						"extensions": map[string]string{"code": "INACCESSIBLE_FIELD"},
-					},
-				},
-			})
+			writeGraphQLError(w, 0, err.Error(), ErrCodeInaccessibleField)
 			return
 		}
 
 		var err error
 		plan, err = engine.planner.Plan(doc, req.Variables)
 		if err != nil {
-			w.Header().Set("Content-Type", "application/json")
-			json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-				"errors": []string{err.Error()},
-			})
+			writeGraphQLError(w, 0, err.Error(), ErrCodePlanningFailed)
 			return
 		}
 		engine.planner.PlanCache().Store(req.Query, plan)
@@ -285,11 +338,78 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	resp, err := engine.executor.Execute(ctx, plan, req.Variables)
 	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
-			"errors": []string{err.Error()},
-		})
+		writeGraphQLError(w, 0, err.Error(), ErrCodeInternalServerError)
 		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+}
+
+// handleAdminApply authenticates the request and delegates to handleApply.
+// If admin auth is not configured, returns 404 to hide the endpoint entirely.
+func (g *gateway) handleAdminApply(w http.ResponseWriter, r *http.Request, name string) {
+	if g.adminToken == "" {
+		// Admin endpoints are disabled. Return 404 so that the surface area
+		// of the gateway is not advertised to unauthenticated callers.
+		http.NotFound(w, r)
+		return
+	}
+
+	provided := bearerToken(r.Header.Get("Authorization"))
+	expected := g.adminToken
+	if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+		log.Printf("admin auth failed for %q from %s", name, r.RemoteAddr)
+		w.Header().Set("WWW-Authenticate", `Bearer realm="gateway-admin"`)
+		w.WriteHeader(http.StatusUnauthorized)
+		return
+	}
+
+	g.handleApply(w, name)
+}
+
+// bearerToken extracts the token from an "Authorization: Bearer <token>" header.
+// Returns empty string if the header is missing or malformed.
+func bearerToken(header string) string {
+	const prefix = "Bearer "
+	if len(header) <= len(prefix) {
+		return ""
+	}
+	if !strings.EqualFold(header[:len(prefix)], prefix) {
+		return ""
+	}
+	return strings.TrimSpace(header[len(prefix):])
+}
+
+// handleIntrospection answers an introspection-only query from the composed
+// supergraph schema, bypassing the planner and executor entirely.
+func (g *gateway) handleIntrospection(
+	w http.ResponseWriter,
+	doc *ast.Document,
+	op *ast.OperationDefinition,
+	vars map[string]any,
+	engine *executionEngine,
+) {
+	if !g.enableIntrospection {
+		writeGraphQLError(w, 0,
+			"introspection is disabled on this gateway",
+			ErrCodeIntrospectionDisabled)
+		return
+	}
+
+	resolver := introspection.NewResolver(engine.superGraph.Schema)
+	data, errs := resolver.Resolve(doc, op, vars)
+
+	resp := map[string]any{}
+	if data != nil {
+		resp["data"] = data
+	}
+	if len(errs) > 0 {
+		gqlErrs := make([]GraphQLError, 0, len(errs))
+		for _, e := range errs {
+			gqlErrs = append(gqlErrs, newGraphQLError(e.Error(), ErrCodeGraphQLValidationFailed))
+		}
+		resp["errors"] = gqlErrs
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -298,6 +418,8 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // handleApply processes a POST /{name}/apply request from a subgraph.
 // It delegates to applySubgraph and returns an appropriate HTTP response.
+//
+// Authentication is performed by handleAdminApply before this is called.
 func (g *gateway) handleApply(w http.ResponseWriter, name string) {
 	if err := g.applySubgraph(name); err != nil {
 		log.Printf("schema apply failed for %q: %v", name, err)
@@ -387,6 +509,7 @@ func (g *gateway) Start(port int) error {
 // ---------------------------------------------------------------------------
 
 func (g *gateway) validateAccessibility(doc *ast.Document, engine *executionEngine) error {
+	fragmentDefs := collectFragmentDefinitions(doc)
 	for _, def := range doc.Definitions {
 		if opDef, ok := def.(*ast.OperationDefinition); ok {
 			rootTypeName := "Query"
@@ -399,7 +522,8 @@ func (g *gateway) validateAccessibility(doc *ast.Document, engine *executionEngi
 				rootTypeName = "Subscription"
 			}
 
-			if err := g.validateSelectionSet(opDef.SelectionSet, rootTypeName, engine); err != nil {
+			visited := map[string]bool{}
+			if err := g.validateSelectionSet(opDef.SelectionSet, rootTypeName, engine, fragmentDefs, visited); err != nil {
 				return err
 			}
 		}
@@ -407,7 +531,13 @@ func (g *gateway) validateAccessibility(doc *ast.Document, engine *executionEngi
 	return nil
 }
 
-func (g *gateway) validateSelectionSet(selSet []ast.Selection, parentTypeName string, engine *executionEngine) error {
+func (g *gateway) validateSelectionSet(
+	selSet []ast.Selection,
+	parentTypeName string,
+	engine *executionEngine,
+	fragmentDefs map[string]*ast.FragmentDefinition,
+	visited map[string]bool,
+) error {
 	if selSet == nil {
 		return nil
 	}
@@ -427,7 +557,7 @@ func (g *gateway) validateSelectionSet(selSet []ast.Selection, parentTypeName st
 
 			nextTypeName := g.getFieldTypeName(parentTypeName, fieldName, engine)
 			if nextTypeName != "" {
-				if err := g.validateSelectionSet(s.SelectionSet, nextTypeName, engine); err != nil {
+				if err := g.validateSelectionSet(s.SelectionSet, nextTypeName, engine, fragmentDefs, visited); err != nil {
 					return err
 				}
 			}
@@ -440,16 +570,94 @@ func (g *gateway) validateSelectionSet(selSet []ast.Selection, parentTypeName st
 			if typeCondition == "" {
 				typeCondition = parentTypeName
 			}
-			if err := g.validateSelectionSet(s.SelectionSet, typeCondition, engine); err != nil {
+			if err := g.validateSelectionSet(s.SelectionSet, typeCondition, engine, fragmentDefs, visited); err != nil {
 				return err
 			}
 
 		case *ast.FragmentSpread:
-			// TODO: Implement fragment validation.
+			name := s.Name.String()
+			if visited[name] {
+				// Cyclic fragment reference. GraphQL spec forbids this; the
+				// planner / parser will surface the error elsewhere — here we
+				// just stop recursing to avoid an infinite loop.
+				continue
+			}
+			frag, ok := fragmentDefs[name]
+			if !ok {
+				// Unknown fragment name. Let the planner surface the error.
+				continue
+			}
+			typeCondition := ""
+			if frag.TypeCondition != nil {
+				typeCondition = frag.TypeCondition.String()
+			}
+			if typeCondition == "" {
+				typeCondition = parentTypeName
+			}
+			visited[name] = true
+			if err := g.validateSelectionSet(frag.SelectionSet, typeCondition, engine, fragmentDefs, visited); err != nil {
+				delete(visited, name)
+				return err
+			}
+			delete(visited, name)
 		}
 	}
 
 	return nil
+}
+
+// collectFragmentDefinitions extracts all named fragment definitions from a
+// GraphQL document. It is used by validateAccessibility to resolve
+// FragmentSpread references.
+func collectFragmentDefinitions(doc *ast.Document) map[string]*ast.FragmentDefinition {
+	fragments := make(map[string]*ast.FragmentDefinition)
+	if doc == nil {
+		return fragments
+	}
+	for _, def := range doc.Definitions {
+		if fragDef, ok := def.(*ast.FragmentDefinition); ok {
+			fragments[fragDef.Name.String()] = fragDef
+		}
+	}
+	return fragments
+}
+
+// getQueryOperation returns the first query OperationDefinition in the document,
+// or nil if no query operation is present.
+func getQueryOperation(doc *ast.Document) *ast.OperationDefinition {
+	if doc == nil {
+		return nil
+	}
+	for _, def := range doc.Definitions {
+		if op, ok := def.(*ast.OperationDefinition); ok {
+			if op.Operation == ast.Query || op.Operation == "" {
+				return op
+			}
+		}
+	}
+	return nil
+}
+
+// isIntrospectionOnly reports whether every top-level selection of op is one
+// of the introspection meta-fields (__schema / __type / __typename).
+func isIntrospectionOnly(op *ast.OperationDefinition) bool {
+	if op == nil {
+		return false
+	}
+	if len(op.SelectionSet) == 0 {
+		return false
+	}
+	for _, sel := range op.SelectionSet {
+		f, ok := sel.(*ast.Field)
+		if !ok {
+			return false
+		}
+		name := f.Name.String()
+		if name != "__schema" && name != "__type" && name != "__typename" {
+			return false
+		}
+	}
+	return true
 }
 
 func (g *gateway) checkFieldAccessibility(typeName, fieldName string, engine *executionEngine) error {
