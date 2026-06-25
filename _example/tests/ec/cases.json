@@ -260,6 +260,19 @@
     }
   },
   {
+    "name": "Federation v2: @requires with nested field set - DeliveryEstimate",
+    "description": "Verify that @requires(fields: \"shippingAddress { zipCode country }\") correctly fetches nested fields from another service and passes them as a nested object in the entity representation",
+    "query": "query ProductWithDelivery { product(id: \"p1\") { id name deliveryEstimate } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "name": "Premium p1",
+        "deliveryEstimate": "3-5 business days to US 10001"
+      }
+    }
+  },
+  {
     "name": "Federation v2: @inaccessible - Should block access to internal fields",
     "description": "Verify that @inaccessible field cannot be queried",
     "query": "query ProductWithInternalCode { product(id: \"p1\") { id name internalCode } }",

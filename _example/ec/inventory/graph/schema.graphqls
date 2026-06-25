@@ -2,9 +2,16 @@ extend schema
   @link(url: "https://specs.apollo.dev/federation/v2.0",
         import: ["@key", "@external", "@requires"])
 
+type ShippingAddress {
+  zipCode: String!
+  country: String!
+}
+
 extend type Product @key(fields: "id", resolvable: false) {
   id: ID! @external
   weight: Float! @external
+  shippingAddress: ShippingAddress! @external
   inStock: Boolean!
   shippingCost: Float! @requires(fields: "weight")
+  deliveryEstimate: String! @requires(fields: "shippingAddress { zipCode country }")
 }

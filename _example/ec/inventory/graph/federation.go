@@ -174,6 +174,14 @@ func (ec *executionContext) resolveEntity(
 			if err != nil {
 				return nil, err
 			}
+			entity.ShippingAddress.ZipCode, err = ec.unmarshalNString2string(ctx, rep["shippingAddress"].(map[string]any)["zipCode"])
+			if err != nil {
+				return nil, err
+			}
+			entity.ShippingAddress.Country, err = ec.unmarshalNString2string(ctx, rep["shippingAddress"].(map[string]any)["country"])
+			if err != nil {
+				return nil, err
+			}
 			return entity, nil
 		}
 

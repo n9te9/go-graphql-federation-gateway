@@ -19,5 +19,11 @@ type Product implements Node @key(fields: "id") {
   name: String! @shareable @tag(name: "public")
   price: Int! @shareable @tag(name: "public") @tag(name: "partner")
   weight: Float! @shareable
+  shippingAddress: ShippingAddress! @shareable
   internalCode: String! @inaccessible
+}
+
+type ShippingAddress {
+  zipCode: String!
+  country: String!
 }
