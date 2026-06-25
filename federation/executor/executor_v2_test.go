@@ -1519,6 +1519,187 @@ func TestExecutorV2_RequiresDependencyInjection(t *testing.T) {
 	}
 }
 
+// TestExecutorV2_NestedRequiresDependencyInjection tests that @requires with nested field sets
+// (e.g., "shippingAddress { zipCode country }") include nested objects in entity representations.
+func TestExecutorV2_NestedRequiresDependencyInjection(t *testing.T) {
+	productSchema := `
+		type ShippingAddress {
+			zipCode: String!
+			country: String!
+		}
+		type Product @key(fields: "id") {
+			id: ID!
+			name: String!
+			shippingAddress: ShippingAddress!
+		}
+		type Query {
+			product(id: ID!): Product
+		}
+	`
+	shippingSchema := `
+		type ShippingAddress {
+			zipCode: String!
+			country: String!
+		}
+		extend type Product @key(fields: "id") {
+			id: ID! @external
+			shippingAddress: ShippingAddress! @external
+			deliveryEstimate: String! @requires(fields: "shippingAddress { zipCode country }")
+		}
+	`
+
+	productSG, err := graph.NewSubGraphV2("products", []byte(productSchema), "http://products")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 for products failed: %v", err)
+	}
+	shippingSG, err := graph.NewSubGraphV2("shipping", []byte(shippingSchema), "http://shipping")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 for shipping failed: %v", err)
+	}
+
+	var capturedRepresentations []map[string]interface{}
+
+	productServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"product": map[string]interface{}{
+					"__typename": "Product",
+					"id":         "p1",
+					"name":       "Widget",
+					"shippingAddress": map[string]interface{}{
+						"zipCode": "10001",
+						"country": "US",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer productServer.Close()
+
+	shippingServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var reqBody map[string]interface{}
+		json.NewDecoder(r.Body).Decode(&reqBody)
+
+		if vars, ok := reqBody["variables"].(map[string]interface{}); ok {
+			if reps, ok := vars["representations"].([]interface{}); ok {
+				for _, rep := range reps {
+					if repMap, ok := rep.(map[string]interface{}); ok {
+						capturedRepresentations = append(capturedRepresentations, repMap)
+					}
+				}
+			}
+		}
+
+		resp := map[string]interface{}{
+			"data": map[string]interface{}{
+				"_entities": []interface{}{
+					map[string]interface{}{
+						"__typename":       "Product",
+						"deliveryEstimate": "3-5 business days to US 10001",
+					},
+				},
+			},
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer shippingServer.Close()
+
+	productSG, _ = graph.NewSubGraphV2("products", []byte(productSchema), productServer.URL)
+	shippingSG, _ = graph.NewSubGraphV2("shipping", []byte(shippingSchema), shippingServer.URL)
+	superGraph, _ := graph.NewSuperGraphV2([]*graph.SubGraphV2{productSG, shippingSG})
+
+	exec := executor.NewExecutorV2(http.DefaultClient, superGraph)
+
+	plan := &planner.PlanV2{
+		Steps: []*planner.StepV2{
+			{
+				ID:       0,
+				StepType: planner.StepTypeQuery,
+				SubGraph: productSG,
+				SelectionSet: []ast.Selection{
+					&ast.Field{
+						Name: &ast.Name{Value: "product"},
+						Arguments: []*ast.Argument{
+							{Name: &ast.Name{Value: "id"}, Value: &ast.StringValue{Value: "p1"}},
+						},
+						SelectionSet: []ast.Selection{
+							&ast.Field{Name: &ast.Name{Value: "__typename"}},
+							&ast.Field{Name: &ast.Name{Value: "id"}},
+							&ast.Field{Name: &ast.Name{Value: "name"}},
+							&ast.Field{
+								Name: &ast.Name{Value: "shippingAddress"},
+								SelectionSet: []ast.Selection{
+									&ast.Field{Name: &ast.Name{Value: "zipCode"}},
+									&ast.Field{Name: &ast.Name{Value: "country"}},
+								},
+							},
+						},
+					},
+				},
+				DependsOn:     []int{},
+				Path:          []string{"Query"},
+				InsertionPath: []string{"Query"},
+			},
+			{
+				ID:         1,
+				StepType:   planner.StepTypeEntity,
+				SubGraph:   shippingSG,
+				ParentType: "Product",
+				SelectionSet: []ast.Selection{
+					&ast.Field{Name: &ast.Name{Value: "__typename"}},
+					&ast.Field{Name: &ast.Name{Value: "id"}},
+					&ast.Field{Name: &ast.Name{Value: "deliveryEstimate"}},
+				},
+				DependsOn:     []int{0},
+				InsertionPath: []string{"Query", "product"},
+			},
+		},
+		RootStepIndexes: []int{0},
+	}
+
+	ctx := context.Background()
+	result, err := exec.Execute(ctx, plan, nil)
+	if err != nil {
+		t.Fatalf("Execute failed: %v", err)
+	}
+
+	data, ok := result["data"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected data in result, got: %+v", result)
+	}
+	product, ok := data["product"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected product in data, got: %+v", data)
+	}
+	if product["deliveryEstimate"] == nil {
+		t.Errorf("Expected deliveryEstimate in product, got nil")
+	}
+
+	// Verify the representation contains nested shippingAddress object
+	if len(capturedRepresentations) == 0 {
+		t.Fatal("Expected shipping service to be called with representations")
+	}
+	rep := capturedRepresentations[0]
+
+	shippingAddr, ok := rep["shippingAddress"]
+	if !ok {
+		t.Fatalf("Expected representation to contain 'shippingAddress', got: %+v", rep)
+	}
+	addrMap, ok := shippingAddr.(map[string]interface{})
+	if !ok {
+		t.Fatalf("Expected shippingAddress to be a nested object, got: %T", shippingAddr)
+	}
+	if addrMap["zipCode"] != "10001" {
+		t.Errorf("Expected zipCode='10001', got: %v", addrMap["zipCode"])
+	}
+	if addrMap["country"] != "US" {
+		t.Errorf("Expected country='US', got: %v", addrMap["country"])
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Error Handling tests (DesignDoc: improve-error-handling)
 // ---------------------------------------------------------------------------

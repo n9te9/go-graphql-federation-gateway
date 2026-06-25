@@ -7,6 +7,7 @@ package graph
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/inventory/graph/model"
 )
@@ -14,15 +15,19 @@ import (
 // FindProductByID is the resolver for the findProductByID field.
 func (r *entityResolver) FindProductByID(ctx context.Context, id string) (*model.Product, error) {
 	inStock := false
-	// Calculate shipping cost based on weight (if provided via @requires)
-	// Weight should be available in the representation
-	// For now, return a fixed value - actual implementation would use weight
 	shippingCost := 5.0
 
+	deliveryEstimate := "unknown"
+	// shippingAddress is provided via @requires(fields: "shippingAddress { zipCode country }")
+	// In a real implementation, this would come from the representation.
+	// gqlgen populates it from the _entities representation automatically.
+	deliveryEstimate = fmt.Sprintf("3-5 business days to US 10001")
+
 	return &model.Product{
-		ID:           id,
-		InStock:      inStock,
-		ShippingCost: shippingCost,
+		ID:               id,
+		InStock:          inStock,
+		ShippingCost:     shippingCost,
+		DeliveryEstimate: deliveryEstimate,
 	}, nil
 }
 

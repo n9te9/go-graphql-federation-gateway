@@ -3,13 +3,20 @@
 package model
 
 type Product struct {
-	ID           string  `json:"id"`
-	Weight       float64 `json:"weight"`
-	InStock      bool    `json:"inStock"`
-	ShippingCost float64 `json:"shippingCost"`
+	ID               string           `json:"id"`
+	Weight           float64          `json:"weight"`
+	ShippingAddress  *ShippingAddress `json:"shippingAddress"`
+	InStock          bool             `json:"inStock"`
+	ShippingCost     float64          `json:"shippingCost"`
+	DeliveryEstimate string           `json:"deliveryEstimate"`
 }
 
 func (Product) IsEntity() {}
 
 type Query struct {
+}
+
+type ShippingAddress struct {
+	ZipCode string `json:"zipCode"`
+	Country string `json:"country"`
 }

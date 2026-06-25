@@ -828,6 +828,193 @@ func TestNewSubGraphV2_Tag_NoTags(t *testing.T) {
 	}
 }
 
+// TestNewSubGraphV2_WithNestedRequires tests that @requires with nested field sets
+// are parsed into RequiresParsedFields as a KeyFieldNode tree.
+func TestNewSubGraphV2_WithNestedRequires(t *testing.T) {
+	tests := []struct {
+		name           string
+		schema         string
+		entityName     string
+		fieldName      string
+		wantRawFieldSet string
+		wantRequires   []string // backward compat: top-level field names
+		wantParsedLen  int
+		checkParsed    func(t *testing.T, nodes []*graph.KeyFieldNode)
+	}{
+		{
+			name: "nested field set",
+			schema: `
+				extend type Product @key(fields: "id") {
+					id: ID! @external
+					shippingAddress: ShippingAddress! @external
+					deliveryEstimate: String! @requires(fields: "shippingAddress { zipCode country }")
+				}
+				type ShippingAddress {
+					zipCode: String!
+					country: String!
+				}
+			`,
+			entityName:      "Product",
+			fieldName:       "deliveryEstimate",
+			wantRawFieldSet: "shippingAddress { zipCode country }",
+			wantRequires:    []string{"shippingAddress"},
+			wantParsedLen:   1,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				if nodes[0].Name != "shippingAddress" {
+					t.Errorf("expected node name 'shippingAddress', got '%s'", nodes[0].Name)
+				}
+				if len(nodes[0].Fields) != 2 {
+					t.Fatalf("expected 2 children, got %d", len(nodes[0].Fields))
+				}
+				childNames := map[string]bool{}
+				for _, child := range nodes[0].Fields {
+					childNames[child.Name] = true
+				}
+				if !childNames["zipCode"] || !childNames["country"] {
+					t.Errorf("expected children 'zipCode' and 'country', got %v", nodes[0].Fields)
+				}
+			},
+		},
+		{
+			name: "flat field set (backward compat)",
+			schema: `
+				extend type Product @key(fields: "id") {
+					id: ID! @external
+					weight: Float! @external
+					shippingCost: Float! @requires(fields: "weight")
+				}
+			`,
+			entityName:      "Product",
+			fieldName:       "shippingCost",
+			wantRawFieldSet: "weight",
+			wantRequires:    []string{"weight"},
+			wantParsedLen:   1,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				if nodes[0].Name != "weight" {
+					t.Errorf("expected node name 'weight', got '%s'", nodes[0].Name)
+				}
+				if nodes[0].Fields != nil {
+					t.Errorf("expected leaf node (nil Fields), got %v", nodes[0].Fields)
+				}
+			},
+		},
+		{
+			name: "mixed flat and nested",
+			schema: `
+				extend type Product @key(fields: "id") {
+					id: ID! @external
+					weight: Float! @external
+					shippingAddress: ShippingAddress! @external
+					fullShippingInfo: String! @requires(fields: "weight shippingAddress { zipCode }")
+				}
+				type ShippingAddress {
+					zipCode: String!
+				}
+			`,
+			entityName:      "Product",
+			fieldName:       "fullShippingInfo",
+			wantRawFieldSet: "weight shippingAddress { zipCode }",
+			wantRequires:    []string{"weight", "shippingAddress"},
+			wantParsedLen:   2,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				if nodes[0].Name != "weight" {
+					t.Errorf("expected first node 'weight', got '%s'", nodes[0].Name)
+				}
+				if nodes[0].Fields != nil {
+					t.Errorf("expected 'weight' to be leaf, got children %v", nodes[0].Fields)
+				}
+				if nodes[1].Name != "shippingAddress" {
+					t.Errorf("expected second node 'shippingAddress', got '%s'", nodes[1].Name)
+				}
+				if len(nodes[1].Fields) != 1 || nodes[1].Fields[0].Name != "zipCode" {
+					t.Errorf("expected child 'zipCode', got %v", nodes[1].Fields)
+				}
+			},
+		},
+		{
+			name: "deeply nested",
+			schema: `
+				extend type Product @key(fields: "id") {
+					id: ID! @external
+					destination: Destination! @external
+					routeInfo: String! @requires(fields: "destination { address { zip } }")
+				}
+				type Destination {
+					address: Address!
+				}
+				type Address {
+					zip: String!
+				}
+			`,
+			entityName:      "Product",
+			fieldName:       "routeInfo",
+			wantRawFieldSet: "destination { address { zip } }",
+			wantRequires:    []string{"destination"},
+			wantParsedLen:   1,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				dest := nodes[0]
+				if dest.Name != "destination" {
+					t.Errorf("expected 'destination', got '%s'", dest.Name)
+				}
+				if len(dest.Fields) != 1 || dest.Fields[0].Name != "address" {
+					t.Fatalf("expected child 'address', got %v", dest.Fields)
+				}
+				addr := dest.Fields[0]
+				if len(addr.Fields) != 1 || addr.Fields[0].Name != "zip" {
+					t.Errorf("expected child 'zip', got %v", addr.Fields)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sg, err := graph.NewSubGraphV2("test", []byte(tt.schema), "http://test.example.com")
+			if err != nil {
+				t.Fatalf("NewSubGraphV2 failed: %v", err)
+			}
+
+			entity, ok := sg.GetEntities()[tt.entityName]
+			if !ok {
+				t.Fatalf("entity %q not found", tt.entityName)
+			}
+
+			field, ok := entity.Fields[tt.fieldName]
+			if !ok {
+				t.Fatalf("field %q not found", tt.fieldName)
+			}
+
+			// Backward compat: Requires still has top-level names
+			if len(field.Requires) != len(tt.wantRequires) {
+				t.Errorf("Requires: expected %v, got %v", tt.wantRequires, field.Requires)
+			} else {
+				for i, want := range tt.wantRequires {
+					if field.Requires[i] != want {
+						t.Errorf("Requires[%d]: expected %q, got %q", i, want, field.Requires[i])
+					}
+				}
+			}
+
+			// New fields
+			if field.RequiresFieldSet != tt.wantRawFieldSet {
+				t.Errorf("RequiresFieldSet: expected %q, got %q", tt.wantRawFieldSet, field.RequiresFieldSet)
+			}
+
+			if len(field.RequiresParsedFields) != tt.wantParsedLen {
+				t.Fatalf("RequiresParsedFields: expected %d nodes, got %d", tt.wantParsedLen, len(field.RequiresParsedFields))
+			}
+
+			if tt.checkParsed != nil {
+				tt.checkParsed(t, field.RequiresParsedFields)
+			}
+		})
+	}
+}
+
 // TestNewSubGraphV2_InterfaceTypeDefinition_MultipleFields tests that all fields
 // of an interface entity are properly parsed.
 func TestNewSubGraphV2_InterfaceTypeDefinition_MultipleFields(t *testing.T) {

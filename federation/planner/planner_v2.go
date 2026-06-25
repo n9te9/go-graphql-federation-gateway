@@ -1343,28 +1343,95 @@ func (p *PlannerV2) getNamedType(t ast.Type) string {
 
 // injectRequiresDependencies injects @requires fields into parent steps.
 // This ensures that required fields are fetched before they're needed by child steps.
+// Supports nested field sets (e.g., @requires(fields: "address { city country }")).
 func (p *PlannerV2) injectRequiresDependencies(plan *PlanV2) {
-	// For each step, check if any field has @requires
 	for _, step := range plan.Steps {
-		// Only entity steps need dependency injection
 		if step.StepType != StepTypeEntity {
 			continue
 		}
 
-		// Get required fields for this step's selections
-		requiredFields := p.collectRequiredFields(step.SelectionSet, step.ParentType, step.SubGraph)
-
-		if len(requiredFields) == 0 {
+		requiredNodes := p.collectRequiredFieldNodes(step.SelectionSet, step.ParentType, step.SubGraph)
+		if len(requiredNodes) == 0 {
 			continue
 		}
 
-		// Inject required fields into parent steps (steps this one depends on)
+		requiredSelections := keyFieldNodesToASTSelections(requiredNodes)
+
 		for _, parentStepID := range step.DependsOn {
 			parentStep := plan.Steps[parentStepID]
+			p.injectRequiresSelectionsIntoParent(
+				parentStep.SelectionSet, parentStep.ParentType, step.ParentType, requiredSelections,
+			)
+		}
+	}
+}
 
-			// Inject into the entity fields within parent step
-			// We need to find fields that return the entity type (step.ParentType)
-			p.injectFieldsIntoSelections(parentStep.SelectionSet, parentStep.ParentType, step.ParentType, requiredFields)
+// collectRequiredFieldNodes collects all @requires fields as parsed KeyFieldNode trees.
+func (p *PlannerV2) collectRequiredFieldNodes(selections []ast.Selection, parentTypeName string, subGraph *graph.SubGraphV2) []*graph.KeyFieldNode {
+	var allNodes []*graph.KeyFieldNode
+	seen := make(map[string]bool)
+
+	for _, sel := range selections {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		fieldName := field.Name.String()
+
+		if entity, exists := subGraph.GetEntity(parentTypeName); exists {
+			if fieldMetadata, ok := entity.Fields[fieldName]; ok {
+				for _, node := range fieldMetadata.RequiresParsedFields {
+					if !seen[node.Name] {
+						seen[node.Name] = true
+						allNodes = append(allNodes, node)
+					}
+				}
+			}
+		}
+
+		if len(field.SelectionSet) > 0 {
+			fieldTypeName, err := p.getFieldTypeName(parentTypeName, fieldName)
+			if err == nil {
+				nested := p.collectRequiredFieldNodes(field.SelectionSet, fieldTypeName, subGraph)
+				for _, node := range nested {
+					if !seen[node.Name] {
+						seen[node.Name] = true
+						allNodes = append(allNodes, node)
+					}
+				}
+			}
+		}
+	}
+	return allNodes
+}
+
+// injectRequiresSelectionsIntoParent navigates to fields returning targetTypeName
+// and merges the required AST selections into their SelectionSet.
+func (p *PlannerV2) injectRequiresSelectionsIntoParent(
+	selections []ast.Selection, currentTypeName, targetTypeName string,
+	selectionsToInject []ast.Selection,
+) {
+	for _, sel := range selections {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		fieldName := field.Name.String()
+		if fieldName == "__typename" {
+			continue
+		}
+
+		fieldTypeName, err := p.getFieldTypeName(currentTypeName, fieldName)
+		if err != nil {
+			continue
+		}
+
+		if fieldTypeName == targetTypeName {
+			field.SelectionSet = mergeKeySelectionsInto(field.SelectionSet, selectionsToInject)
+		}
+
+		if len(field.SelectionSet) > 0 {
+			p.injectRequiresSelectionsIntoParent(field.SelectionSet, fieldTypeName, targetTypeName, selectionsToInject)
 		}
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/99designs/gqlgen/plugin/federation/fedruntime"
+	"github.com/n9te9/go-graphql-federation-gateway/_example/ec/inventory/graph/model"
 )
 
 var (
@@ -170,9 +171,26 @@ func (ec *executionContext) resolveEntity(
 				return nil, fmt.Errorf(`resolving Entity "Product": %w`, err)
 			}
 
-			entity.Weight, err = ec.unmarshalNFloat2float64(ctx, rep["weight"])
-			if err != nil {
-				return nil, err
+			if weightVal, ok := rep["weight"]; ok {
+				entity.Weight, err = ec.unmarshalNFloat2float64(ctx, weightVal)
+				if err != nil {
+					return nil, err
+				}
+			}
+			if addrVal, ok := rep["shippingAddress"]; ok {
+				if addrMap, ok := addrVal.(map[string]any); ok {
+					if entity.ShippingAddress == nil {
+						entity.ShippingAddress = &model.ShippingAddress{}
+					}
+					entity.ShippingAddress.ZipCode, err = ec.unmarshalNString2string(ctx, addrMap["zipCode"])
+					if err != nil {
+						return nil, err
+					}
+					entity.ShippingAddress.Country, err = ec.unmarshalNString2string(ctx, addrMap["country"])
+					if err != nil {
+						return nil, err
+					}
+				}
 			}
 			return entity, nil
 		}

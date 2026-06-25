@@ -39,9 +39,13 @@ type OverrideMetadata struct {
 type Field struct {
 	Name        string   // Field name
 	Type        ast.Type // Field type
-	Requires    []string // Fields specified in @requires directive
+	Requires    []string // Top-level field names from @requires (backward compat)
 	Provides    []string // Fields specified in @provides directive
 	isShareable bool     // Whether @shareable directive is present
+
+	// @requires parsed tree (supports nested field sets like "address { city country }")
+	RequiresFieldSet     string          // Raw @requires field set string
+	RequiresParsedFields []*KeyFieldNode // Parsed tree representation
 
 	// Federation v2 directives
 	Override       *OverrideMetadata // @override(from: "products")
@@ -251,6 +255,15 @@ func parseKeyFieldNodes(tokens []string, pos int) ([]*KeyFieldNode, int) {
 	return nodes, pos
 }
 
+// flattenKeyFieldNodes extracts top-level field names from a KeyFieldNode tree.
+func flattenKeyFieldNodes(nodes []*KeyFieldNode) []string {
+	names := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		names = append(names, node.Name)
+	}
+	return names
+}
+
 // parseField creates a Field structure from field definition.
 func parseField(field *ast.FieldDefinition) *Field {
 	f := &Field{
@@ -267,10 +280,12 @@ func parseField(field *ast.FieldDefinition) *Field {
 	for _, d := range field.Directives {
 		switch d.Name {
 		case "requires":
-			// Parse fields argument of @requires directive
+			// Parse fields argument of @requires directive (supports nested field sets)
 			if len(d.Arguments) > 0 {
 				fieldsVal := strings.Trim(d.Arguments[0].Value.String(), "\"")
-				f.Requires = strings.Fields(fieldsVal)
+				f.RequiresFieldSet = fieldsVal
+				f.RequiresParsedFields = parseKeyFieldSet(fieldsVal)
+				f.Requires = flattenKeyFieldNodes(f.RequiresParsedFields)
 			}
 		case "provides":
 			// Parse fields argument of @provides directive

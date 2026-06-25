@@ -52,15 +52,22 @@ type ComplexityRoot struct {
 	}
 
 	Product struct {
-		ID           func(childComplexity int) int
-		InStock      func(childComplexity int) int
-		ShippingCost func(childComplexity int) int
-		Weight       func(childComplexity int) int
+		DeliveryEstimate func(childComplexity int) int
+		ID               func(childComplexity int) int
+		InStock          func(childComplexity int) int
+		ShippingAddress  func(childComplexity int) int
+		ShippingCost     func(childComplexity int) int
+		Weight           func(childComplexity int) int
 	}
 
 	Query struct {
 		__resolve__service func(childComplexity int) int
 		__resolve_entities func(childComplexity int, representations []map[string]any) int
+	}
+
+	ShippingAddress struct {
+		Country func(childComplexity int) int
+		ZipCode func(childComplexity int) int
 	}
 
 	_Service struct {
@@ -103,6 +110,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 
 		return e.complexity.Entity.FindProductByID(childComplexity, args["id"].(string)), true
 
+	case "Product.deliveryEstimate":
+		if e.complexity.Product.DeliveryEstimate == nil {
+			break
+		}
+
+		return e.complexity.Product.DeliveryEstimate(childComplexity), true
 	case "Product.id":
 		if e.complexity.Product.ID == nil {
 			break
@@ -115,6 +128,12 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Product.InStock(childComplexity), true
+	case "Product.shippingAddress":
+		if e.complexity.Product.ShippingAddress == nil {
+			break
+		}
+
+		return e.complexity.Product.ShippingAddress(childComplexity), true
 	case "Product.shippingCost":
 		if e.complexity.Product.ShippingCost == nil {
 			break
@@ -145,6 +164,19 @@ func (e *executableSchema) Complexity(ctx context.Context, typeName, field strin
 		}
 
 		return e.complexity.Query.__resolve_entities(childComplexity, args["representations"].([]map[string]any)), true
+
+	case "ShippingAddress.country":
+		if e.complexity.ShippingAddress.Country == nil {
+			break
+		}
+
+		return e.complexity.ShippingAddress.Country(childComplexity), true
+	case "ShippingAddress.zipCode":
+		if e.complexity.ShippingAddress.ZipCode == nil {
+			break
+		}
+
+		return e.complexity.ShippingAddress.ZipCode(childComplexity), true
 
 	case "_Service.sdl":
 		if e.complexity._Service.SDL == nil {
@@ -444,10 +476,14 @@ func (ec *executionContext) fieldContext_Entity_findProductByID(ctx context.Cont
 				return ec.fieldContext_Product_id(ctx, field)
 			case "weight":
 				return ec.fieldContext_Product_weight(ctx, field)
+			case "shippingAddress":
+				return ec.fieldContext_Product_shippingAddress(ctx, field)
 			case "inStock":
 				return ec.fieldContext_Product_inStock(ctx, field)
 			case "shippingCost":
 				return ec.fieldContext_Product_shippingCost(ctx, field)
+			case "deliveryEstimate":
+				return ec.fieldContext_Product_deliveryEstimate(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type Product", field.Name)
 		},
@@ -524,6 +560,41 @@ func (ec *executionContext) fieldContext_Product_weight(_ context.Context, field
 	return fc, nil
 }
 
+func (ec *executionContext) _Product_shippingAddress(ctx context.Context, field graphql.CollectedField, obj *model.Product) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Product_shippingAddress,
+		func(ctx context.Context) (any, error) {
+			return obj.ShippingAddress, nil
+		},
+		nil,
+		ec.marshalNShippingAddress2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋinventoryᚋgraphᚋmodelᚐShippingAddress,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Product_shippingAddress(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Product",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			switch field.Name {
+			case "zipCode":
+				return ec.fieldContext_ShippingAddress_zipCode(ctx, field)
+			case "country":
+				return ec.fieldContext_ShippingAddress_country(ctx, field)
+			}
+			return nil, fmt.Errorf("no field named %q was found under type ShippingAddress", field.Name)
+		},
+	}
+	return fc, nil
+}
+
 func (ec *executionContext) _Product_inStock(ctx context.Context, field graphql.CollectedField, obj *model.Product) (ret graphql.Marshaler) {
 	return graphql.ResolveField(
 		ctx,
@@ -577,6 +648,35 @@ func (ec *executionContext) fieldContext_Product_shippingCost(_ context.Context,
 		IsResolver: false,
 		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
 			return nil, errors.New("field of type Float does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _Product_deliveryEstimate(ctx context.Context, field graphql.CollectedField, obj *model.Product) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_Product_deliveryEstimate,
+		func(ctx context.Context) (any, error) {
+			return obj.DeliveryEstimate, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_Product_deliveryEstimate(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "Product",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -759,6 +859,64 @@ func (ec *executionContext) fieldContext_Query___schema(_ context.Context, field
 				return ec.fieldContext___Schema_directives(ctx, field)
 			}
 			return nil, fmt.Errorf("no field named %q was found under type __Schema", field.Name)
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ShippingAddress_zipCode(ctx context.Context, field graphql.CollectedField, obj *model.ShippingAddress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ShippingAddress_zipCode,
+		func(ctx context.Context) (any, error) {
+			return obj.ZipCode, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ShippingAddress_zipCode(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ShippingAddress",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
+		},
+	}
+	return fc, nil
+}
+
+func (ec *executionContext) _ShippingAddress_country(ctx context.Context, field graphql.CollectedField, obj *model.ShippingAddress) (ret graphql.Marshaler) {
+	return graphql.ResolveField(
+		ctx,
+		ec.OperationContext,
+		field,
+		ec.fieldContext_ShippingAddress_country,
+		func(ctx context.Context) (any, error) {
+			return obj.Country, nil
+		},
+		nil,
+		ec.marshalNString2string,
+		true,
+		true,
+	)
+}
+
+func (ec *executionContext) fieldContext_ShippingAddress_country(_ context.Context, field graphql.CollectedField) (fc *graphql.FieldContext, err error) {
+	fc = &graphql.FieldContext{
+		Object:     "ShippingAddress",
+		Field:      field,
+		IsMethod:   false,
+		IsResolver: false,
+		Child: func(ctx context.Context, field graphql.CollectedField) (*graphql.FieldContext, error) {
+			return nil, errors.New("field of type String does not have child fields")
 		},
 	}
 	return fc, nil
@@ -2352,6 +2510,11 @@ func (ec *executionContext) _Product(ctx context.Context, sel ast.SelectionSet, 
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
+		case "shippingAddress":
+			out.Values[i] = ec._Product_shippingAddress(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		case "inStock":
 			out.Values[i] = ec._Product_inStock(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
@@ -2359,6 +2522,11 @@ func (ec *executionContext) _Product(ctx context.Context, sel ast.SelectionSet, 
 			}
 		case "shippingCost":
 			out.Values[i] = ec._Product_shippingCost(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "deliveryEstimate":
+			out.Values[i] = ec._Product_deliveryEstimate(ctx, field, obj)
 			if out.Values[i] == graphql.Null {
 				out.Invalids++
 			}
@@ -2456,6 +2624,50 @@ func (ec *executionContext) _Query(ctx context.Context, sel ast.SelectionSet) gr
 			out.Values[i] = ec.OperationContext.RootResolverMiddleware(innerCtx, func(ctx context.Context) (res graphql.Marshaler) {
 				return ec._Query___schema(ctx, field)
 			})
+		default:
+			panic("unknown field " + strconv.Quote(field.Name))
+		}
+	}
+	out.Dispatch(ctx)
+	if out.Invalids > 0 {
+		return graphql.Null
+	}
+
+	atomic.AddInt32(&ec.deferred, int32(len(deferred)))
+
+	for label, dfs := range deferred {
+		ec.processDeferredGroup(graphql.DeferredGroup{
+			Label:    label,
+			Path:     graphql.GetPath(ctx),
+			FieldSet: dfs,
+			Context:  ctx,
+		})
+	}
+
+	return out
+}
+
+var shippingAddressImplementors = []string{"ShippingAddress"}
+
+func (ec *executionContext) _ShippingAddress(ctx context.Context, sel ast.SelectionSet, obj *model.ShippingAddress) graphql.Marshaler {
+	fields := graphql.CollectFields(ec.OperationContext, sel, shippingAddressImplementors)
+
+	out := graphql.NewFieldSet(fields)
+	deferred := make(map[string]*graphql.FieldSet)
+	for i, field := range fields {
+		switch field.Name {
+		case "__typename":
+			out.Values[i] = graphql.MarshalString("ShippingAddress")
+		case "zipCode":
+			out.Values[i] = ec._ShippingAddress_zipCode(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
+		case "country":
+			out.Values[i] = ec._ShippingAddress_country(ctx, field, obj)
+			if out.Values[i] == graphql.Null {
+				out.Invalids++
+			}
 		default:
 			panic("unknown field " + strconv.Quote(field.Name))
 		}
@@ -2926,6 +3138,16 @@ func (ec *executionContext) marshalNProduct2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraph
 		return graphql.Null
 	}
 	return ec._Product(ctx, sel, v)
+}
+
+func (ec *executionContext) marshalNShippingAddress2ᚖgithubᚗcomᚋn9te9ᚋgoᚑgraphqlᚑfederationᚑgatewayᚋ_exampleᚋecᚋinventoryᚋgraphᚋmodelᚐShippingAddress(ctx context.Context, sel ast.SelectionSet, v *model.ShippingAddress) graphql.Marshaler {
+	if v == nil {
+		if !graphql.HasFieldError(ctx, graphql.GetFieldContext(ctx)) {
+			graphql.AddErrorf(ctx, "the requested element is null which the schema does not allow")
+		}
+		return graphql.Null
+	}
+	return ec._ShippingAddress(ctx, sel, v)
 }
 
 func (ec *executionContext) unmarshalNString2string(ctx context.Context, v any) (string, error) {

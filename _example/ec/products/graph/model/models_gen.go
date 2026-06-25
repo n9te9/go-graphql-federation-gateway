@@ -11,11 +11,12 @@ type Mutation struct {
 }
 
 type Product struct {
-	ID           string  `json:"id"`
-	Name         string  `json:"name"`
-	Price        int     `json:"price"`
-	Weight       float64 `json:"weight"`
-	InternalCode string  `json:"internalCode"`
+	ID              string           `json:"id"`
+	Name            string           `json:"name"`
+	Price           int              `json:"price"`
+	Weight          float64          `json:"weight"`
+	ShippingAddress *ShippingAddress `json:"shippingAddress"`
+	InternalCode    string           `json:"internalCode"`
 }
 
 func (Product) IsNode()            {}
@@ -24,4 +25,9 @@ func (this Product) GetID() string { return this.ID }
 func (Product) IsEntity() {}
 
 type Query struct {
+}
+
+type ShippingAddress struct {
+	ZipCode string `json:"zipCode"`
+	Country string `json:"country"`
 }

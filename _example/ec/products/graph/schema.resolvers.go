@@ -14,18 +14,37 @@ import (
 
 // CreateProduct is the resolver for the createProduct field.
 func (r *mutationResolver) CreateProduct(ctx context.Context, name string, price int) (*model.Product, error) {
-	// Generate a simple ID (in production, use UUID or database auto-increment)
 	id := fmt.Sprintf("%d", len(name)+price)
-	weight := 1.5 // Default weight
+	weight := 1.5
 	internalCode := fmt.Sprintf("INTERNAL-%s", id)
-	return &model.Product{ID: id, Name: name, Price: price, Weight: weight, InternalCode: internalCode}, nil
+	return &model.Product{
+		ID:     id,
+		Name:   name,
+		Price:  price,
+		Weight: weight,
+		ShippingAddress: &model.ShippingAddress{
+			ZipCode: "10001",
+			Country: "US",
+		},
+		InternalCode: internalCode,
+	}, nil
 }
 
 // Product is the resolver for the product field.
 func (r *queryResolver) Product(ctx context.Context, id string) (*model.Product, error) {
-	weight := 2.5 // Default weight for products
+	weight := 2.5
 	internalCode := fmt.Sprintf("INTERNAL-%s", id)
-	return &model.Product{ID: id, Name: "Product " + id, Price: 1000, Weight: weight, InternalCode: internalCode}, nil
+	return &model.Product{
+		ID:     id,
+		Name:   "Product " + id,
+		Price:  1000,
+		Weight: weight,
+		ShippingAddress: &model.ShippingAddress{
+			ZipCode: "10001",
+			Country: "US",
+		},
+		InternalCode: internalCode,
+	}, nil
 }
 
 // Mutation returns MutationResolver implementation.
