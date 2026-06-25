@@ -58,9 +58,19 @@ type Product
   name: String! @join__field(graph: PRODUCTS)
   price: Int! @join__field(graph: PRODUCTS)
   weight: Float! @join__field(graph: PRODUCTS) @join__field(graph: INVENTORY, external: true)
+  shippingAddress: ShippingAddress! @join__field(graph: PRODUCTS) @join__field(graph: INVENTORY, external: true)
   reviews: [Review] @join__field(graph: REVIEWS)
   inStock: Boolean! @join__field(graph: INVENTORY)
   shippingCost: Float! @join__field(graph: INVENTORY, requires: "weight")
+  deliveryEstimate: String! @join__field(graph: INVENTORY, requires: "shippingAddress { zipCode country }")
+}
+
+type ShippingAddress
+  @join__type(graph: PRODUCTS)
+  @join__type(graph: INVENTORY)
+{
+  zipCode: String!
+  country: String!
 }
 
 type Query
