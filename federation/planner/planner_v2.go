@@ -572,10 +572,11 @@ func (p *PlannerV2) findAndBuildEntitySteps(
 			// subgraph schema (e.g. Review.product @provides(fields: "name price") where the
 			// reviews service does not declare Product.name — its resolver cannot return it).
 			if entityTypeToResolve != parentType {
+				providesNodes := p.getFieldProvidesNodes(parentStep.SubGraph, parentType, fieldName)
 				provides := p.getFieldProvides(parentStep.SubGraph, parentType, fieldName)
 				if len(provides) > 0 {
 					expandedChildSels := p.expandFragmentsInSelections(field.SelectionSet, fragmentDefs)
-					if p.childFieldsCoveredByProvides(expandedChildSels, provides, entityTypeToResolve, targetSubGraph) &&
+					if p.childFieldsCoveredByProvidesNodes(expandedChildSels, providesNodes, entityTypeToResolve, targetSubGraph) &&
 						p.providedFieldsDeclaredInSchema(parentStep.SubGraph, entityTypeToResolve, expandedChildSels, provides, targetSubGraph) {
 						// Compute injection path (same formula as injectKeyFieldsIntoParentStep).
 						// buildStepSelections uses the ownership map and excludes @external fields,
@@ -914,7 +915,6 @@ func (p *PlannerV2) buildProvidesSelections(requestedSels []ast.Selection, provi
 // object types (without @key, e.g. Review) by searching the schema AST.
 // Returns nil if @provides is not declared.
 func (p *PlannerV2) getFieldProvides(subGraph *graph.SubGraphV2, parentType, fieldName string) []string {
-	// Check entity types first (types with @key — stored in subGraph.entities)
 	entity, ok := subGraph.GetEntity(parentType)
 	if ok {
 		field, ok := entity.Fields[fieldName]
@@ -923,7 +923,6 @@ func (p *PlannerV2) getFieldProvides(subGraph *graph.SubGraphV2, parentType, fie
 		}
 	}
 
-	// For non-entity types (no @key), parse @provides directly from the schema AST.
 	for _, def := range subGraph.Schema.Definitions {
 		obj, ok := def.(*ast.ObjectTypeDefinition)
 		if !ok || obj.Name.String() != parentType {
@@ -940,7 +939,42 @@ func (p *PlannerV2) getFieldProvides(subGraph *graph.SubGraphV2, parentType, fie
 				for _, arg := range d.Arguments {
 					if arg.Name.String() == "fields" {
 						fieldsVal := strings.Trim(arg.Value.String(), "\"")
-						return strings.Fields(fieldsVal)
+						return graph.FlattenKeyFieldNodes(graph.ParseKeyFieldSetPublic(fieldsVal))
+					}
+				}
+			}
+		}
+	}
+	return nil
+}
+
+// getFieldProvidesNodes returns the @provides fields as parsed KeyFieldNode trees.
+func (p *PlannerV2) getFieldProvidesNodes(subGraph *graph.SubGraphV2, parentType, fieldName string) []*graph.KeyFieldNode {
+	entity, ok := subGraph.GetEntity(parentType)
+	if ok {
+		field, ok := entity.Fields[fieldName]
+		if ok && len(field.ProvidesParsedFields) > 0 {
+			return field.ProvidesParsedFields
+		}
+	}
+
+	for _, def := range subGraph.Schema.Definitions {
+		obj, ok := def.(*ast.ObjectTypeDefinition)
+		if !ok || obj.Name.String() != parentType {
+			continue
+		}
+		for _, f := range obj.Fields {
+			if f.Name.String() != fieldName {
+				continue
+			}
+			for _, d := range f.Directives {
+				if d.Name != "provides" {
+					continue
+				}
+				for _, arg := range d.Arguments {
+					if arg.Name.String() == "fields" {
+						fieldsVal := strings.Trim(arg.Value.String(), "\"")
+						return graph.ParseKeyFieldSetPublic(fieldsVal)
 					}
 				}
 			}
@@ -1011,18 +1045,32 @@ func (p *PlannerV2) providedFieldsDeclaredInSchema(subGraph *graph.SubGraphV2, e
 }
 
 // childFieldsCoveredByProvides reports whether every requested non-trivial child field
-// (i.e., excluding __typename and key fields of the entity type) is listed in provides.
+// (i.e., excluding __typename and key fields of the entity type) is covered by provides.
+// Supports nested field sets: for a provides node with children, the requested sub-selections
+// must all be covered by the provides node's children recursively.
 func (p *PlannerV2) childFieldsCoveredByProvides(childSels []ast.Selection, provides []string, entityType string, targetSubGraph *graph.SubGraphV2) bool {
+	providesNodes := p.getFieldProvidesNodes(targetSubGraph, entityType, "")
+	if len(providesNodes) == 0 {
+		providesSet := make(map[string]bool, len(provides))
+		for _, pf := range provides {
+			providesSet[pf] = true
+		}
+		return p.childFieldsCoveredByProvidesFlat(childSels, providesSet, entityType, targetSubGraph)
+	}
+	return p.childFieldsCoveredByProvidesNodes(childSels, providesNodes, entityType, targetSubGraph)
+}
+
+// childFieldsCoveredByProvidesNodes checks coverage using parsed KeyFieldNode trees.
+func (p *PlannerV2) childFieldsCoveredByProvidesNodes(childSels []ast.Selection, providesNodes []*graph.KeyFieldNode, entityType string, targetSubGraph *graph.SubGraphV2) bool {
 	if len(childSels) == 0 {
-		return true // No child fields requested — trivially covered
+		return true
 	}
 
-	providesSet := make(map[string]bool, len(provides))
-	for _, pf := range provides {
-		providesSet[pf] = true
+	providesMap := make(map[string]*graph.KeyFieldNode, len(providesNodes))
+	for _, node := range providesNodes {
+		providesMap[node.Name] = node
 	}
 
-	// Key fields are always available so don't need to be in @provides
 	keyFields := p.getKeyFields(entityType, targetSubGraph)
 	keySet := make(map[string]bool, len(keyFields))
 	for _, kf := range keyFields {
@@ -1036,10 +1084,44 @@ func (p *PlannerV2) childFieldsCoveredByProvides(childSels []ast.Selection, prov
 		}
 		fname := field.Name.String()
 		if fname == "__typename" || keySet[fname] {
-			continue // Always available
+			continue
+		}
+		provNode, ok := providesMap[fname]
+		if !ok {
+			return false
+		}
+		if len(provNode.Fields) > 0 && len(field.SelectionSet) > 0 {
+			if !p.childFieldsCoveredByProvidesNodes(field.SelectionSet, provNode.Fields, entityType, targetSubGraph) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// childFieldsCoveredByProvidesFlat is the original flat-string check (backward compat fallback).
+func (p *PlannerV2) childFieldsCoveredByProvidesFlat(childSels []ast.Selection, providesSet map[string]bool, entityType string, targetSubGraph *graph.SubGraphV2) bool {
+	if len(childSels) == 0 {
+		return true
+	}
+
+	keyFields := p.getKeyFields(entityType, targetSubGraph)
+	keySet := make(map[string]bool, len(keyFields))
+	for _, kf := range keyFields {
+		keySet[kf] = true
+	}
+
+	for _, sel := range childSels {
+		field, ok := sel.(*ast.Field)
+		if !ok {
+			continue
+		}
+		fname := field.Name.String()
+		if fname == "__typename" || keySet[fname] {
+			continue
 		}
 		if !providesSet[fname] {
-			return false // Field not covered by @provides
+			return false
 		}
 	}
 	return true

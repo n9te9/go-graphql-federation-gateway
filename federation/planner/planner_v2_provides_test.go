@@ -268,6 +268,144 @@ func TestPlannerV2_Provides_MultipleFields(t *testing.T) {
 	}
 }
 
+// TestPlannerV2_Provides_NestedFieldSet_SkipsEntityStep verifies that when @provides
+// declares nested fields covering ALL requested child fields, the entity step is skipped.
+func TestPlannerV2_Provides_NestedFieldSet_SkipsEntityStep(t *testing.T) {
+	postsSchema := `
+		type Address {
+			city: String!
+			country: String!
+		}
+
+		type Post @key(fields: "id") {
+			id: ID!
+			title: String!
+			author: User! @provides(fields: "address { city country }")
+		}
+
+		type User @key(fields: "id") {
+			id: ID! @external
+			address: Address! @external
+		}
+
+		type Query {
+			post(id: ID!): Post
+		}
+	`
+
+	usersSchema := `
+		type Address {
+			city: String!
+			country: String!
+		}
+
+		type User @key(fields: "id") {
+			id: ID!
+			address: Address!
+		}
+
+		type Query {
+			user(id: ID!): User
+		}
+	`
+
+	postsSG, err := graph.NewSubGraphV2("posts", []byte(postsSchema), "http://posts.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 (posts) failed: %v", err)
+	}
+	usersSG, err := graph.NewSubGraphV2("users", []byte(usersSchema), "http://users.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 (users) failed: %v", err)
+	}
+
+	sg, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{postsSG, usersSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	p := planner.NewPlannerV2(sg)
+
+	// Query requests address { city country } — fully covered by @provides
+	plan := parsePlan(t, p, `{ post(id: "p1") { title author { address { city country } } } }`)
+
+	entitySteps := countEntitySteps(plan)
+	if entitySteps != 0 {
+		t.Errorf("expected 0 entity steps (all fields provided via nested @provides), got %d", entitySteps)
+		for _, s := range plan.Steps {
+			t.Logf("  step %d: type=%v subgraph=%s parentType=%s", s.ID, s.StepType, s.SubGraph.Name, s.ParentType)
+		}
+	}
+}
+
+// TestPlannerV2_Provides_NestedFieldSet_PartialCoverage verifies that when @provides
+// declares nested fields but the query requests uncovered fields, an entity step IS created.
+func TestPlannerV2_Provides_NestedFieldSet_PartialCoverage(t *testing.T) {
+	postsSchema := `
+		type Address {
+			city: String!
+			country: String!
+			state: String!
+		}
+
+		type Post @key(fields: "id") {
+			id: ID!
+			title: String!
+			author: User! @provides(fields: "address { city }")
+		}
+
+		type User @key(fields: "id") {
+			id: ID! @external
+			address: Address! @external
+		}
+
+		type Query {
+			post(id: ID!): Post
+		}
+	`
+
+	usersSchema := `
+		type Address {
+			city: String!
+			country: String!
+			state: String!
+		}
+
+		type User @key(fields: "id") {
+			id: ID!
+			address: Address!
+		}
+
+		type Query {
+			user(id: ID!): User
+		}
+	`
+
+	postsSG, err := graph.NewSubGraphV2("posts", []byte(postsSchema), "http://posts.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 (posts) failed: %v", err)
+	}
+	usersSG, err := graph.NewSubGraphV2("users", []byte(usersSchema), "http://users.example.com")
+	if err != nil {
+		t.Fatalf("NewSubGraphV2 (users) failed: %v", err)
+	}
+
+	sg, err := graph.NewSuperGraphV2([]*graph.SubGraphV2{postsSG, usersSG})
+	if err != nil {
+		t.Fatalf("NewSuperGraphV2 failed: %v", err)
+	}
+
+	p := planner.NewPlannerV2(sg)
+
+	// Query requests address { city country } but @provides only covers address { city }
+	// → "country" is NOT covered → entity step needed
+	plan := parsePlan(t, p, `{ post(id: "p1") { title author { address { city country } } } }`)
+
+	entitySteps := countEntitySteps(plan)
+	if entitySteps == 0 {
+		t.Error("expected entity step for 'country' (not covered by @provides), got 0")
+	}
+}
+
 // TestPlannerV2_ProvidesFieldOptimization is the original parsing test, kept for regression.
 func TestPlannerV2_ProvidesFieldOptimization(t *testing.T) {
 	productSchema := `

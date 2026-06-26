@@ -47,6 +47,10 @@ type Field struct {
 	RequiresFieldSet     string          // Raw @requires field set string
 	RequiresParsedFields []*KeyFieldNode // Parsed tree representation
 
+	// @provides parsed tree (supports nested field sets like "address { city country }")
+	ProvidesFieldSet     string          // Raw @provides field set string
+	ProvidesParsedFields []*KeyFieldNode // Parsed tree representation
+
 	// Federation v2 directives
 	Override       *OverrideMetadata // @override(from: "products")
 	isInaccessible bool              // @inaccessible
@@ -255,6 +259,32 @@ func parseKeyFieldNodes(tokens []string, pos int) ([]*KeyFieldNode, int) {
 	return nodes, pos
 }
 
+// ParseKeyFieldSetPublic is the exported version of parseKeyFieldSet for use by other packages.
+func ParseKeyFieldSetPublic(fieldSet string) []*KeyFieldNode {
+	return parseKeyFieldSet(fieldSet)
+}
+
+// FlattenKeyFieldNodes extracts top-level field names from a KeyFieldNode tree.
+func FlattenKeyFieldNodes(nodes []*KeyFieldNode) []string {
+	return flattenKeyFieldNodes(nodes)
+}
+
+// flattenKeyFieldLeaves recursively collects all leaf field names from a KeyFieldNode tree.
+// For nested nodes, it descends to the deepest level and returns those names.
+// Example: [{Name:"address", Fields:[{Name:"city"},{Name:"country"}]}] → ["city", "country"]
+// Example: [{Name:"name"}] → ["name"]
+func flattenKeyFieldLeaves(nodes []*KeyFieldNode) []string {
+	var leaves []string
+	for _, node := range nodes {
+		if len(node.Fields) == 0 {
+			leaves = append(leaves, node.Name)
+		} else {
+			leaves = append(leaves, flattenKeyFieldLeaves(node.Fields)...)
+		}
+	}
+	return leaves
+}
+
 // flattenKeyFieldNodes extracts top-level field names from a KeyFieldNode tree.
 func flattenKeyFieldNodes(nodes []*KeyFieldNode) []string {
 	names := make([]string, 0, len(nodes))
@@ -288,10 +318,12 @@ func parseField(field *ast.FieldDefinition) *Field {
 				f.Requires = flattenKeyFieldNodes(f.RequiresParsedFields)
 			}
 		case "provides":
-			// Parse fields argument of @provides directive
+			// Parse fields argument of @provides directive (supports nested field sets)
 			if len(d.Arguments) > 0 {
 				fieldsVal := strings.Trim(d.Arguments[0].Value.String(), "\"")
-				f.Provides = strings.Fields(fieldsVal)
+				f.ProvidesFieldSet = fieldsVal
+				f.ProvidesParsedFields = parseKeyFieldSet(fieldsVal)
+				f.Provides = flattenKeyFieldNodes(f.ProvidesParsedFields)
 			}
 		case "shareable":
 			f.isShareable = true
