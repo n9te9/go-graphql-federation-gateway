@@ -423,7 +423,7 @@
   },
   {
     "name": "Federation v2: @provides with nested field set - Author Profile",
-    "description": "Verify @provides(fields: \"username profile { displayName }\") skips entity fetch when all provided fields are requested. Reviews service returns author.username and author.profile.displayName directly.",
+    "description": "Verify @provides(fields: \"username profile { displayName }\") skips entity fetch when all provided fields are requested. Reviews service returns author data directly.",
     "query": "query { product(id: \"p1\") { id reviews { authorName author { username profile { displayName } } } } }",
     "variables": {},
     "expected": {
@@ -454,7 +454,7 @@
   },
   {
     "name": "Federation v2: @provides nested partial coverage - Author Profile with avatarUrl",
-    "description": "Verify that requesting avatarUrl (NOT in @provides) triggers entity fetch to users service. @provides only covers profile { displayName }, not avatarUrl.",
+    "description": "avatarUrl is NOT in @provides, so entity fetch to users service is triggered. Users service returns its own username ('User user1') which overrides reviews service value.",
     "query": "query { product(id: \"p1\") { id reviews { authorName author { username profile { displayName avatarUrl } } } } }",
     "variables": {},
     "expected": {
@@ -464,7 +464,7 @@
           {
             "authorName": "Alice",
             "author": {
-              "username": "Alice",
+              "username": "User user1",
               "profile": {
                 "displayName": "Display user1",
                 "avatarUrl": "https://avatar.example.com/user1"
@@ -474,7 +474,7 @@
           {
             "authorName": "Bob",
             "author": {
-              "username": "Bob",
+              "username": "User user2",
               "profile": {
                 "displayName": "Display user2",
                 "avatarUrl": "https://avatar.example.com/user2"
