@@ -13,18 +13,27 @@ import (
 
 // FindUserByID is the resolver for the findUserByID field.
 func (r *entityResolver) FindUserByID(ctx context.Context, id string) (*model.User, error) {
-	return &model.User{ID: id, Username: "User " + id, Email: id + "@example.com"}, nil
+	return &model.User{
+		ID: id, Username: "User " + id, Email: id + "@example.com",
+		Profile: &model.Profile{DisplayName: "Display " + id, AvatarURL: "https://avatar.example.com/" + id},
+	}, nil
 }
 
 // FindUserByUsername is the resolver for the findUserByUsername field.
 func (r *entityResolver) FindUserByUsername(ctx context.Context, username string) (*model.User, error) {
-	return &model.User{ID: "user_id_for_" + username, Username: username, Email: username + "@example.com"}, nil
+	return &model.User{
+		ID: "user_id_for_" + username, Username: username, Email: username + "@example.com",
+		Profile: &model.Profile{DisplayName: "Display " + username, AvatarURL: "https://avatar.example.com/" + username},
+	}, nil
 }
 
 // FindUserByEmail is the resolver for the findUserByEmail field.
 func (r *entityResolver) FindUserByEmail(ctx context.Context, email string) (*model.User, error) {
 	username := "user_for_" + email
-	return &model.User{ID: "user_id_" + email, Username: username, Email: email}, nil
+	return &model.User{
+		ID: "user_id_" + email, Username: username, Email: email,
+		Profile: &model.Profile{DisplayName: "Display " + email, AvatarURL: "https://avatar.example.com/" + email},
+	}, nil
 }
 
 // Entity returns EntityResolver implementation.
