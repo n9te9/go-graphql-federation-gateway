@@ -6,10 +6,16 @@ interface Node {
   id: ID!
 }
 
+type Profile {
+  displayName: String!
+  avatarUrl: String!
+}
+
 type User implements Node @key(fields: "id") @key(fields: "username") @key(fields: "email") {
   id: ID!
   username: String! @shareable
   email: String!
+  profile: Profile!
 }
 
 type Query {

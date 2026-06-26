@@ -14,6 +14,10 @@ type Product struct {
 
 func (Product) IsEntity() {}
 
+type Profile struct {
+	DisplayName string `json:"displayName"`
+}
+
 type Query struct {
 }
 
@@ -29,8 +33,9 @@ func (Review) IsNode()            {}
 func (this Review) GetID() string { return this.ID }
 
 type User struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
+	ID       string   `json:"id"`
+	Username string   `json:"username"`
+	Profile  *Profile `json:"profile"`
 }
 
 func (User) IsEntity() {}

@@ -13,39 +13,30 @@ import (
 
 // Me is the resolver for the me field.
 func (r *queryResolver) Me(ctx context.Context) (*model.User, error) {
-	return &model.User{ID: "1", Username: "me", Email: "me@example.com"}, nil
+	return &model.User{ID: "1", Username: "me", Email: "me@example.com",
+		Profile: &model.Profile{DisplayName: "Display me", AvatarURL: "https://avatar.example.com/me"}}, nil
 }
 
 // UserByID is the resolver for the userById field.
 func (r *queryResolver) UserByID(ctx context.Context, id string) (*model.User, error) {
-	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com"}, nil
+	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com",
+		Profile: &model.Profile{DisplayName: "Display " + id, AvatarURL: "https://avatar.example.com/" + id}}, nil
 }
 
 // UserByUsername is the resolver for the userByUsername field.
 func (r *queryResolver) UserByUsername(ctx context.Context, username string) (*model.User, error) {
-	return &model.User{ID: "user_id_for_" + username, Username: username, Email: username + "@example.com"}, nil
+	return &model.User{ID: "user_id_for_" + username, Username: username, Email: username + "@example.com",
+		Profile: &model.Profile{DisplayName: "Display " + username, AvatarURL: "https://avatar.example.com/" + username}}, nil
 }
 
 // UserByEmail is the resolver for the userByEmail field.
 func (r *queryResolver) UserByEmail(ctx context.Context, email string) (*model.User, error) {
 	username := "user_for_" + email
-	return &model.User{ID: "user_id_" + email, Username: username, Email: email}, nil
+	return &model.User{ID: "user_id_" + email, Username: username, Email: email,
+		Profile: &model.Profile{DisplayName: "Display " + email, AvatarURL: "https://avatar.example.com/" + email}}, nil
 }
 
 // Query returns QueryResolver implementation.
 func (r *Resolver) Query() QueryResolver { return &queryResolver{r} }
 
 type queryResolver struct{ *Resolver }
-
-// !!! WARNING !!!
-// The code below was going to be deleted when updating resolvers. It has been copied here so you have
-// one last chance to move it out of harms way if you want. There are two reasons this happens:
-//  - When renaming or deleting a resolver the old code will be put in here. You can safely delete
-//    it when you're done.
-//  - You have helper methods in this file. Move them out to keep these resolver files clean.
-/*
-	func (r *queryResolver) Node(ctx context.Context, id string) (model.Node, error) {
-	// Return a User as Node interface implementation
-	return &model.User{ID: id, Username: "user_" + id, Email: id + "@example.com"}, nil
-}
-*/

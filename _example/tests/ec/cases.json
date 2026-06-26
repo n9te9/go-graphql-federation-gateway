@@ -422,6 +422,70 @@
     }
   },
   {
+    "name": "Federation v2: @provides with nested field set - Author Profile",
+    "description": "Verify @provides(fields: \"username profile { displayName }\") skips entity fetch when all provided fields are requested. Reviews service returns author.username and author.profile.displayName directly.",
+    "query": "query { product(id: \"p1\") { id reviews { authorName author { username profile { displayName } } } } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "reviews": [
+          {
+            "authorName": "Alice",
+            "author": {
+              "username": "Alice",
+              "profile": {
+                "displayName": "Alice Display"
+              }
+            }
+          },
+          {
+            "authorName": "Bob",
+            "author": {
+              "username": "Bob",
+              "profile": {
+                "displayName": "Bob Display"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
+    "name": "Federation v2: @provides nested partial coverage - Author Profile with avatarUrl",
+    "description": "Verify that requesting avatarUrl (NOT in @provides) triggers entity fetch to users service. @provides only covers profile { displayName }, not avatarUrl.",
+    "query": "query { product(id: \"p1\") { id reviews { authorName author { username profile { displayName avatarUrl } } } } }",
+    "variables": {},
+    "expected": {
+      "product": {
+        "id": "p1",
+        "reviews": [
+          {
+            "authorName": "Alice",
+            "author": {
+              "username": "Alice",
+              "profile": {
+                "displayName": "Display user1",
+                "avatarUrl": "https://avatar.example.com/user1"
+              }
+            }
+          },
+          {
+            "authorName": "Bob",
+            "author": {
+              "username": "Bob",
+              "profile": {
+                "displayName": "Display user2",
+                "avatarUrl": "https://avatar.example.com/user2"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  {
     "name": "Federation v2: @override - Price Field Override",
     "description": "Product price can be overridden in products-v2 service",
     "query": "query { product(id: \"p2\") { id name price } }",

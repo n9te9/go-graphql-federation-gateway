@@ -7,13 +7,19 @@ type Node interface {
 	GetID() string
 }
 
+type Profile struct {
+	DisplayName string `json:"displayName"`
+	AvatarURL   string `json:"avatarUrl"`
+}
+
 type Query struct {
 }
 
 type User struct {
-	ID       string `json:"id"`
-	Username string `json:"username"`
-	Email    string `json:"email"`
+	ID       string   `json:"id"`
+	Username string   `json:"username"`
+	Email    string   `json:"email"`
+	Profile  *Profile `json:"profile"`
 }
 
 func (User) IsNode()            {}
