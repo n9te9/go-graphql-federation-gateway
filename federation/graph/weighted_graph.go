@@ -231,9 +231,10 @@ func BuildGraph(subGraphs []*SubGraphV2) *WeightedDirectedGraph {
 
 				// @provides: field node → provided field node (shortcut, weight 0)
 				// Store placeholder keys; they are resolved in the third pass.
-				for _, providedField := range field.Provides {
-					// placeholder format: "{sgName}:{typeName}.{fieldName}:{providedField}"
-					placeholderKey := fmt.Sprintf("%s:%s.%s:%s", sg.Name, typeName, fieldName, providedField)
+				// For nested @provides (e.g., "address { city country }"), extract leaf
+				// field names so ShortCuts target the actual resolvable fields.
+				for _, leafField := range flattenKeyFieldLeaves(field.ProvidesParsedFields) {
+					placeholderKey := fmt.Sprintf("%s:%s.%s:%s", sg.Name, typeName, fieldName, leafField)
 					g.AddShortCut(fieldKey, placeholderKey)
 				}
 			}

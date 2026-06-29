@@ -84,12 +84,21 @@ type Query
   userByEmail(email: String!): User @join__field(graph: USERS)
 }
 
+type Profile
+  @join__type(graph: USERS)
+  @join__type(graph: REVIEWS)
+{
+  displayName: String!
+  avatarUrl: String! @join__field(graph: USERS)
+}
+
 type Review
   @join__type(graph: REVIEWS)
 {
   id: ID!
   body: String!
   authorName: String!
+  author: User @join__field(graph: REVIEWS, provides: "username profile { displayName }")
   product: Product
 }
 
@@ -97,8 +106,10 @@ type User
   @join__type(graph: USERS, key: "id")
   @join__type(graph: USERS, key: "username")
   @join__type(graph: USERS, key: "email")
+  @join__type(graph: REVIEWS, key: "id", extension: true)
 {
-  id: ID!
-  username: String!
-  email: String!
+  id: ID! @join__field(graph: USERS) @join__field(graph: REVIEWS, external: true)
+  username: String! @join__field(graph: USERS) @join__field(graph: REVIEWS, external: true)
+  email: String! @join__field(graph: USERS)
+  profile: Profile! @join__field(graph: USERS) @join__field(graph: REVIEWS, external: true)
 }

@@ -828,6 +828,164 @@ func TestNewSubGraphV2_Tag_NoTags(t *testing.T) {
 	}
 }
 
+// TestNewSubGraphV2_WithNestedProvides tests that @provides with nested field sets
+// are parsed into ProvidesParsedFields as a KeyFieldNode tree.
+func TestNewSubGraphV2_WithNestedProvides(t *testing.T) {
+	tests := []struct {
+		name            string
+		schema          string
+		entityName      string
+		fieldName       string
+		wantRawFieldSet string
+		wantProvides    []string // backward compat: top-level field names
+		wantParsedLen   int
+		checkParsed     func(t *testing.T, nodes []*graph.KeyFieldNode)
+	}{
+		{
+			name: "nested field set",
+			schema: `
+				type Post @key(fields: "id") {
+					id: ID!
+					title: String!
+					author: User! @provides(fields: "address { city country }")
+				}
+				type User @key(fields: "id") {
+					id: ID! @external
+					address: Address! @external
+				}
+				type Address {
+					city: String!
+					country: String!
+				}
+			`,
+			entityName:      "Post",
+			fieldName:       "author",
+			wantRawFieldSet: "address { city country }",
+			wantProvides:    []string{"address"},
+			wantParsedLen:   1,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				if nodes[0].Name != "address" {
+					t.Errorf("expected node name 'address', got '%s'", nodes[0].Name)
+				}
+				if len(nodes[0].Fields) != 2 {
+					t.Fatalf("expected 2 children, got %d", len(nodes[0].Fields))
+				}
+				childNames := map[string]bool{}
+				for _, child := range nodes[0].Fields {
+					childNames[child.Name] = true
+				}
+				if !childNames["city"] || !childNames["country"] {
+					t.Errorf("expected children 'city' and 'country', got %v", nodes[0].Fields)
+				}
+			},
+		},
+		{
+			name: "flat field set (backward compat)",
+			schema: `
+				type Review @key(fields: "id") {
+					id: ID!
+					product: Product @provides(fields: "name")
+				}
+				type Product @key(fields: "id") {
+					id: ID! @external
+					name: String! @external
+				}
+			`,
+			entityName:      "Review",
+			fieldName:       "product",
+			wantRawFieldSet: "name",
+			wantProvides:    []string{"name"},
+			wantParsedLen:   1,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				if nodes[0].Name != "name" {
+					t.Errorf("expected 'name', got '%s'", nodes[0].Name)
+				}
+				if nodes[0].Fields != nil {
+					t.Errorf("expected leaf node, got children %v", nodes[0].Fields)
+				}
+			},
+		},
+		{
+			name: "mixed flat and nested",
+			schema: `
+				type Post @key(fields: "id") {
+					id: ID!
+					author: User! @provides(fields: "name address { city }")
+				}
+				type User @key(fields: "id") {
+					id: ID! @external
+					name: String! @external
+					address: Address! @external
+				}
+				type Address {
+					city: String!
+				}
+			`,
+			entityName:      "Post",
+			fieldName:       "author",
+			wantRawFieldSet: "name address { city }",
+			wantProvides:    []string{"name", "address"},
+			wantParsedLen:   2,
+			checkParsed: func(t *testing.T, nodes []*graph.KeyFieldNode) {
+				t.Helper()
+				if nodes[0].Name != "name" || nodes[0].Fields != nil {
+					t.Errorf("expected leaf 'name', got %+v", nodes[0])
+				}
+				if nodes[1].Name != "address" {
+					t.Errorf("expected 'address', got '%s'", nodes[1].Name)
+				}
+				if len(nodes[1].Fields) != 1 || nodes[1].Fields[0].Name != "city" {
+					t.Errorf("expected child 'city', got %v", nodes[1].Fields)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sg, err := graph.NewSubGraphV2("test", []byte(tt.schema), "http://test.example.com")
+			if err != nil {
+				t.Fatalf("NewSubGraphV2 failed: %v", err)
+			}
+
+			entity, ok := sg.GetEntities()[tt.entityName]
+			if !ok {
+				t.Fatalf("entity %q not found", tt.entityName)
+			}
+
+			field, ok := entity.Fields[tt.fieldName]
+			if !ok {
+				t.Fatalf("field %q not found", tt.fieldName)
+			}
+
+			// Backward compat: Provides still has top-level names
+			if len(field.Provides) != len(tt.wantProvides) {
+				t.Errorf("Provides: expected %v, got %v", tt.wantProvides, field.Provides)
+			} else {
+				for i, want := range tt.wantProvides {
+					if field.Provides[i] != want {
+						t.Errorf("Provides[%d]: expected %q, got %q", i, want, field.Provides[i])
+					}
+				}
+			}
+
+			if field.ProvidesFieldSet != tt.wantRawFieldSet {
+				t.Errorf("ProvidesFieldSet: expected %q, got %q", tt.wantRawFieldSet, field.ProvidesFieldSet)
+			}
+
+			if len(field.ProvidesParsedFields) != tt.wantParsedLen {
+				t.Fatalf("ProvidesParsedFields: expected %d nodes, got %d", tt.wantParsedLen, len(field.ProvidesParsedFields))
+			}
+
+			if tt.checkParsed != nil {
+				tt.checkParsed(t, field.ProvidesParsedFields)
+			}
+		})
+	}
+}
+
 // TestNewSubGraphV2_WithNestedRequires tests that @requires with nested field sets
 // are parsed into RequiresParsedFields as a KeyFieldNode tree.
 func TestNewSubGraphV2_WithNestedRequires(t *testing.T) {
